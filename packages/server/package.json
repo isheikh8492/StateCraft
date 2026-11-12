@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",
+    "@statecraft/director": "^0.1.0",
     "@statecraft/engine": "^0.1.0",
     "@statecraft/ledger": "^0.1.0",
+    "@statecraft/models": "^0.1.0",
     "@statecraft/protocol": "^0.1.0",
     "fastify": "^5.12.8",
     "zod": "^4.6.7"

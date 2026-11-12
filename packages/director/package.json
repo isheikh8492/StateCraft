@@ -1,0 +1,19 @@
+{
+  "name": "@statecraft/director",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@statecraft/engine": "^0.1.0",
+    "@statecraft/ledger": "^0.1.0",
+    "@statecraft/models": "^0.1.0",
+    "@statecraft/protocol": "^0.1.0",
+    "@statecraft/scenarios": "^0.1.0"
+  }
+}

@@ -67,6 +67,11 @@ export function addEffects(world: World, effects: readonly Effect[]): World {
   return { ...world, effects: [...world.effects, ...effects] };
 }
 
+/** Repeal: drop every effect whose id starts with the prefix (a policy id). */
+export function removeEffects(world: World, idPrefix: string): World {
+  return { ...world, effects: world.effects.filter((e) => !e.id.startsWith(`${idPrefix}:`)) };
+}
+
 export function isActive(effect: Effect, day: number): boolean {
   return effect.startDay <= day && (effect.endDay === null || day < effect.endDay);
 }

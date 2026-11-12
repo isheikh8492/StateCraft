@@ -24,7 +24,7 @@ export type WindowLayout = Record<string, WindowFrame>;
 
 const MIN_W = 300;
 const MIN_H = 200;
-const STORAGE_KEY = 'statecraft.windows.v1';
+const STORAGE_KEY = 'statecraft.windows.v3';
 
 function loadLayout(defaults: WindowLayout): WindowLayout {
   try {

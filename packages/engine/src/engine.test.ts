@@ -21,6 +21,8 @@ const scenario: Scenario = {
   country: 'TST',
   startDate: '2026-01-01',
   headOfGovernment: { name: 'A. Tester', office: 'Prime Minister' },
+  office: { title: 'Prime Minister', powers: ['budget', 'executive', 'security'], limits: {} },
+  brief: 'Testland is a made-up country.',
   economy: {
     gdpUsdBn: 100,
     trendGrowth: 3,

@@ -1,28 +1,78 @@
-import { type LucideIcon, ScrollText, SquarePen } from 'lucide-react';
-import { useState } from 'react';
+import type { Health } from '@statecraft/protocol';
+import {
+  Cpu,
+  Globe,
+  History,
+  Landmark,
+  type LucideIcon,
+  ScrollText,
+  SquarePen,
+  Wrench,
+} from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Chronicle } from '@/features/chronicle/Chronicle';
 import { PolicyDesk } from '@/features/desk/PolicyDesk';
+import { Inspector } from '@/features/inspector/Inspector';
+import { WorldMap } from '@/features/map/WorldMap';
+import { ModelPanel } from '@/features/model/ModelPanel';
+import { Policies } from '@/features/policies/Policies';
+import { StartScreen } from '@/features/start/StartScreen';
+import { Timeline } from '@/features/timeline/Timeline';
+import { Briefing } from '@/features/world/Briefing';
+import { api } from '@/lib/api';
+import { formatDate, GameProvider, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
-import { useWindowLayout, Window, type WindowLayout } from '@/ui/window';
-import { MapBackdrop } from './MapBackdrop';
-import { useHealth } from './useHealth';
+import { useWindowLayout, Window, type WindowFrame, type WindowLayout } from '@/ui/window';
 
+const frame = (
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  z: number,
+  minimized = false,
+): WindowFrame => ({ x, y, w, h, z, minimized, maximized: false });
 const DEFAULT_LAYOUT: WindowLayout = {
-  desk: { x: 24, y: 24, w: 440, h: 520, z: 2, minimized: false, maximized: false },
-  chronicle: { x: 488, y: 24, w: 520, h: 360, z: 1, minimized: false, maximized: false },
+  desk: frame(16, 16, 400, 540, 3),
+  chronicle: frame(432, 16, 560, 300, 2),
+  briefing: frame(1064, 16, 360, 600, 1),
+  policies: frame(488, 120, 520, 480, 0, true),
+  timeline: frame(540, 160, 480, 380, 0, true),
+  model: frame(580, 100, 480, 520, 0, true),
+  inspector: frame(300, 80, 720, 520, 0, true),
 };
 
-const WINDOWS: { id: string; title: string; icon: LucideIcon }[] = [
-  { id: 'desk', title: 'Policy desk', icon: SquarePen },
-  { id: 'chronicle', title: 'Chronicle', icon: ScrollText },
+const WINDOWS: { id: string; title: string; icon: LucideIcon; body: () => ReactNode }[] = [
+  { id: 'desk', title: 'Policy desk', icon: SquarePen, body: () => <PolicyDesk /> },
+  { id: 'chronicle', title: 'Chronicle', icon: ScrollText, body: () => <Chronicle /> },
+  { id: 'briefing', title: 'Briefing', icon: Globe, body: () => <Briefing /> },
+  { id: 'policies', title: 'Policies', icon: Landmark, body: () => <Policies /> },
+  { id: 'timeline', title: 'Timeline', icon: History, body: () => <Timeline /> },
+  { id: 'model', title: 'Model', icon: Cpu, body: () => <ModelPanel /> },
+  { id: 'inspector', title: 'Inspector', icon: Wrench, body: () => <Inspector /> },
 ];
 
 export function Shell() {
-  const { layout, update, focus, open } = useWindowLayout(DEFAULT_LAYOUT);
-  const [changes, setChanges] = useState(0);
-  const status = useHealth(changes);
-  const topZ = Math.max(...Object.values(layout).map((frame) => frame.z));
+  const windows = useWindowLayout(DEFAULT_LAYOUT);
+  return (
+    <GameProvider onOpenWindow={windows.open}>
+      <Desktop windows={windows} />
+    </GameProvider>
+  );
+}
+
+function Desktop({ windows }: { windows: ReturnType<typeof useWindowLayout> }) {
+  const { layout, update, focus, open } = windows;
+  const { view, error, act } = useGame();
+  const [health, setHealth] = useState<Health | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
+  const topZ = Math.max(...Object.values(layout).map((f) => f.z));
+  const campaign = view?.campaign ?? null;
+  const events = health?.events;
+  useEffect(() => {
+    api.health().then(setHealth, () => setHealth(null));
+  }, [view]);
 
   return (
     <div className="flex h-full flex-col">
@@ -30,7 +80,7 @@ export function Shell() {
         <h1 className="text-ui font-semibold tracking-[0.14em] uppercase">
           State<span className="text-accent">Craft</span>
         </h1>
-        <nav aria-label="Windows" className="flex items-center gap-1">
+        <nav aria-label="Windows" className="flex items-center gap-0.5">
           {WINDOWS.map(({ id, title, icon: Icon }) => (
             <Button key={id} variant="ghost" size="sm" onClick={() => open(id)}>
               <Icon />
@@ -39,52 +89,88 @@ export function Shell() {
           ))}
         </nav>
         <div className="flex-1" />
-        {status.state === 'connected' && (
-          <Badge tone="good" title={`Engine ${status.health.engineVersion}`}>
+        {campaign && (
+          <p className="flex items-center gap-2 text-xs whitespace-nowrap text-fg-muted">
+            <span>
+              {campaign.office}, {campaign.title.split(',')[0]}
+            </span>
+            <time
+              dateTime={campaign.date}
+              data-testid="game-date"
+              className="tabular rounded-control border border-border bg-surface-2 px-2 py-0.5 text-fg"
+            >
+              {formatDate(campaign.date, true)}
+            </time>
+            {campaign.branch > 1 && <Badge tone="accent">Line {campaign.branch}</Badge>}
+          </p>
+        )}
+        {view !== null && events !== undefined && (
+          <Badge tone="good" title={health ? `Engine ${health.engineVersion}` : undefined}>
             Connected
             <span className="tabular text-fg-muted">
-              {status.health.events} {status.health.events === 1 ? 'event' : 'events'}
+              {events} {events === 1 ? 'event' : 'events'}
             </span>
           </Badge>
         )}
-        {status.state === 'checking' && <Badge>Connecting</Badge>}
-        {status.state === 'offline' && (
-          <Badge tone="bad" title={status.message}>
+        {view === null && error === null && <Badge>Connecting</Badge>}
+        {view === null && error !== null && (
+          <Badge tone="bad" title={error}>
             Server offline
           </Badge>
         )}
-        <a
-          href="#gallery"
-          className="rounded-control px-2 py-1 text-xs text-fg-muted hover:bg-raised hover:text-fg"
-        >
-          Component gallery
-        </a>
+        {campaign &&
+          (confirmNew ? (
+            <>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  setConfirmNew(false);
+                  void act(() => api.newCampaign());
+                }}
+              >
+                Set this campaign aside
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmNew(false)}>
+                Keep playing
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={view?.running != null}
+              onClick={() => setConfirmNew(true)}
+            >
+              New campaign
+            </Button>
+          ))}
       </header>
 
       <main data-desktop className="relative min-h-0 flex-1 overflow-hidden">
-        <MapBackdrop />
-        {WINDOWS.map(({ id, title, icon }) => {
-          const frame = layout[id];
-          if (!frame) return null;
-          return (
-            <Window
-              key={id}
-              id={id}
-              title={title}
-              icon={icon}
-              frame={frame}
-              focused={frame.z === topZ}
-              onChange={update}
-              onFocus={focus}
-            >
-              {id === 'desk' ? (
-                <PolicyDesk onChanged={() => setChanges((n) => n + 1)} />
-              ) : (
-                <Chronicle />
-              )}
-            </Window>
-          );
-        })}
+        <WorldMap />
+        {view !== null && campaign === null ? (
+          <StartScreen />
+        ) : (
+          WINDOWS.map(({ id, title, icon, body }) => {
+            const f = layout[id];
+            if (!f) return null;
+            return (
+              <Window
+                key={id}
+                id={id}
+                title={title}
+                icon={icon}
+                frame={f}
+                focused={f.z === topZ}
+                onChange={update}
+                onFocus={focus}
+              >
+                {body()}
+              </Window>
+            );
+          })
+        )}
       </main>
     </div>
   );

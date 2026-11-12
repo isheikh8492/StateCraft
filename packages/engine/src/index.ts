@@ -3,19 +3,24 @@
  * except the seeded generator. Same inputs, same outputs.
  */
 export {
+  AUTHORITIES,
   type Authority,
   CATALOGUE,
   checkFunding,
+  type Direction,
   findInstrument,
   fiscalCost,
   type Instrument,
   type InstrumentEffect,
   NOVEL_LIMITS,
+  narrow,
+  PROCEDURE_DAYS,
   type Resolution,
   resolveInstrument,
   resolveNovel,
+  type Scale,
 } from './catalogue.ts';
-export { addEffects, isValidTarget, offsetsOn } from './effects.ts';
+export { addEffects, isValidTarget, offsetsOn, removeEffects } from './effects.ts';
 export { DT, PARAMS } from './params.ts';
 export { roll, rollInt } from './rng.ts';
 export {

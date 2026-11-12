@@ -14,10 +14,24 @@ export interface InstrumentEffect {
   lagDays: number;
   /** How long the effect lasts; left out means it stays. */
   lastsDays?: number;
+  /** For a range that spans zero: this effect moves against the policy's direction. */
+  against?: boolean;
   sourced: boolean;
 }
 
-export type Authority = 'budget' | 'executive' | 'monetary' | 'security';
+export const AUTHORITIES = ['budget', 'executive', 'monetary', 'security'] as const;
+export type Authority = (typeof AUTHORITIES)[number];
+
+/** Days between announcing a policy and its taking legal effect. Placeholders. */
+export const PROCEDURE_DAYS: Readonly<Record<Authority, number>> = {
+  budget: 14,
+  executive: 2,
+  monetary: 1,
+  security: 3,
+};
+
+export type Scale = 'small' | 'medium' | 'large';
+export type Direction = 'raise' | 'lower';
 
 export interface Instrument {
   id: string;
@@ -137,9 +151,9 @@ export const CATALOGUE: readonly Instrument[] = [
     authority: 'monetary',
     effects: [
       fx('baseRate', -3, 3, 'points', 0),
-      fx('inflation', -2, 2, 'points', 180, 540),
-      fx('growth', -1, 1, 'points', 90, 540),
-      fx('approval.business', -5, 5, 'points', 30, 365),
+      { ...fx('inflation', -2, 2, 'points', 180, 540), against: true },
+      { ...fx('growth', -1, 1, 'points', 90, 540), against: true },
+      { ...fx('approval.business', -5, 5, 'points', 30, 365), against: true },
     ],
   },
   {
@@ -186,6 +200,30 @@ export interface Resolution {
   /** Makes effect ids unique, usually the policy id. */
   idPrefix: string;
   region?: string;
+}
+
+/**
+ * The part of a catalogue range that fits the size and direction the player asked for.
+ * Size splits the range into thirds by distance from zero.
+ */
+export function narrow(
+  effect: InstrumentEffect,
+  scale: Scale,
+  direction: Direction = 'raise',
+): [number, number] {
+  let [min, max] = effect.range;
+  if (min < 0 && max > 0) {
+    const positive = (direction === 'raise') !== (effect.against === true);
+    if (positive) min = 0;
+    else max = 0;
+  }
+  const near = Math.abs(min) <= Math.abs(max) ? min : max;
+  const far = near === min ? max : min;
+  const third = (far - near) / 3;
+  const index = scale === 'small' ? 0 : scale === 'medium' ? 1 : 2;
+  const a = near + third * index;
+  const b = near + third * (index + 1);
+  return a <= b ? [a, b] : [b, a];
 }
 
 export function findInstrument(id: string): Instrument {

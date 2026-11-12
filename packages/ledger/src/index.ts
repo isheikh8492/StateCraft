@@ -1,25 +1,40 @@
 /**
  * The ledger: an append-only record of events in one SQLite file per campaign.
- * Nothing is ever updated or deleted; current state is a projection of the events.
+ * Nothing is ever updated or deleted. Rewinding starts a new branch that shares the past
+ * with its parent up to the fork; the abandoned future stays in the file.
  */
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import {
-  LedgerEvent,
-  type PolicyCard,
-  SCHEMA_VERSION,
-  type StoredEvent,
-} from '@statecraft/protocol';
+import { LedgerEvent, SCHEMA_VERSION, type StoredEvent } from '@statecraft/protocol';
+
+export interface Branch {
+  id: number;
+  parent: number | null;
+  /** Events of the parent line up to and including this sequence number are shared. */
+  forkSeq: number | null;
+  label: string;
+}
 
 export interface Ledger {
-  /** Validates and appends one event. Returns it with its sequence number and time. */
+  /** Validates and appends one event to the current branch. */
   append(event: LedgerEvent, at?: Date): StoredEvent;
-  /** Every event, oldest first. */
+  /** Appends an event and stores a snapshot under its sequence number, together or not at all. */
+  appendWithSnapshot(event: LedgerEvent, day: number, world: unknown): StoredEvent;
+  /** Every event visible from the current branch, oldest first. */
   events(): StoredEvent[];
   count(): number;
-  /** Projection: policy boxes that have been created and not deleted, oldest first. */
-  draftCards(): PolicyCard[];
+  /** The newest snapshot visible from the current branch. */
+  latestSnapshot(): { seq: number; day: number; world: unknown } | undefined;
+  snapshotAt(seq: number): { seq: number; day: number; world: unknown } | undefined;
+  branches(): Branch[];
+  currentBranch(): number;
+  /** Start a new branch that shares history up to `seq`, and switch to it. */
+  fork(seq: number, label: string): Branch;
+  recordCall(id: string, resolution: string, record: unknown): void;
+  calls(resolution?: string): unknown[];
+  /** Bumps on every write, so readers can cache. */
+  version(): number;
   /** The engine version this campaign is pinned to. */
   readonly engineVersion: string;
   close(): void;
@@ -48,51 +63,161 @@ export function openLedger(path: string, engineVersion: string): Ledger {
   `);
 
   const getMeta = db.prepare('SELECT value FROM meta WHERE key = ?');
-  const setMeta = db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)');
+  const setMeta = db.prepare(
+    'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+  );
   const readMeta = (key: string): string | undefined =>
     (getMeta.get(key) as { value: string } | undefined)?.value;
 
   const storedSchema = readMeta('schema_version');
-  if (storedSchema === undefined) {
-    setMeta.run('schema_version', String(SCHEMA_VERSION));
-    setMeta.run('engine_version', engineVersion);
-  } else if (Number(storedSchema) > SCHEMA_VERSION) {
+  if (storedSchema !== undefined && Number(storedSchema) > SCHEMA_VERSION) {
     db.close();
     throw new LedgerVersionError(
       `This save uses format ${storedSchema}, but this version of StateCraft reads up to ${SCHEMA_VERSION}. Update StateCraft to open it.`,
     );
   }
+  if (storedSchema === undefined) setMeta.run('engine_version', engineVersion);
+
+  // Format 2 adds branches, snapshots and the model call log.
+  const columns = db.prepare('PRAGMA table_info(events)').all() as unknown as { name: string }[];
+  if (!columns.some((c) => c.name === 'branch')) {
+    db.exec('ALTER TABLE events ADD COLUMN branch INTEGER NOT NULL DEFAULT 1');
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS branches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent INTEGER,
+      fork_seq INTEGER,
+      label TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS snapshots (
+      seq INTEGER PRIMARY KEY,
+      day INTEGER NOT NULL,
+      world TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS calls (
+      id TEXT PRIMARY KEY,
+      resolution TEXT NOT NULL,
+      record TEXT NOT NULL
+    ) STRICT;
+    INSERT OR IGNORE INTO branches (id, parent, fork_seq, label) VALUES (1, NULL, NULL, 'Main line');
+  `);
+  setMeta.run('schema_version', String(SCHEMA_VERSION));
   const pinnedEngine = readMeta('engine_version') ?? engineVersion;
 
-  const insert = db.prepare('INSERT INTO events (at, type, payload) VALUES (?, ?, ?)');
-  const selectAll = db.prepare('SELECT seq, at, payload FROM events ORDER BY seq');
-  const selectCount = db.prepare('SELECT COUNT(*) AS n FROM events');
+  let current = Number(readMeta('current_branch') ?? 1);
+  let writes = 0;
 
-  const events = (): StoredEvent[] =>
-    (selectAll.all() as unknown as EventRow[]).map((row) => ({
+  const insert = db.prepare('INSERT INTO events (at, type, payload, branch) VALUES (?, ?, ?, ?)');
+  const selectBranch = db.prepare(
+    'SELECT seq, at, payload FROM events WHERE branch = ? AND seq <= ? ORDER BY seq',
+  );
+  const selectCount = db.prepare('SELECT COUNT(*) AS n FROM events');
+  const selectBranches = db.prepare(
+    'SELECT id, parent, fork_seq AS forkSeq, label FROM branches ORDER BY id',
+  );
+  const insertSnapshot = db.prepare('INSERT INTO snapshots (seq, day, world) VALUES (?, ?, ?)');
+  const selectSnapshot = db.prepare('SELECT seq, day, world FROM snapshots WHERE seq = ?');
+  const insertCall = db.prepare(
+    'INSERT OR REPLACE INTO calls (id, resolution, record) VALUES (?, ?, ?)',
+  );
+
+  const branches = (): Branch[] => selectBranches.all() as unknown as Branch[];
+
+  /** The current branch and its ancestors, each with the last sequence number it contributes. */
+  const lineage = (): { id: number; upTo: number }[] => {
+    const all = new Map(branches().map((b) => [b.id, b]));
+    const line: { id: number; upTo: number }[] = [];
+    let id: number | null = current;
+    let upTo = Number.MAX_SAFE_INTEGER;
+    while (id !== null) {
+      const branch = all.get(id);
+      if (!branch) break;
+      line.unshift({ id, upTo });
+      upTo = Math.min(upTo, branch.forkSeq ?? upTo);
+      id = branch.parent;
+    }
+    return line;
+  };
+
+  const events = (): StoredEvent[] => {
+    const rows: EventRow[] = [];
+    for (const { id, upTo } of lineage()) {
+      rows.push(...(selectBranch.all(id, upTo) as unknown as EventRow[]));
+    }
+    return rows.map((row) => ({
       seq: row.seq,
       at: row.at,
       event: LedgerEvent.parse(JSON.parse(row.payload)),
     }));
+  };
+
+  const append = (event: LedgerEvent, at = new Date()): StoredEvent => {
+    const valid = LedgerEvent.parse(event);
+    const iso = at.toISOString();
+    const result = insert.run(iso, valid.type, JSON.stringify(valid), current);
+    writes++;
+    return { seq: Number(result.lastInsertRowid), at: iso, event: valid };
+  };
+
+  const readSnapshot = (seq: number) => {
+    const row = selectSnapshot.get(seq) as { seq: number; day: number; world: string } | undefined;
+    return row
+      ? { seq: row.seq, day: row.day, world: JSON.parse(row.world) as unknown }
+      : undefined;
+  };
 
   return {
     engineVersion: pinnedEngine,
-    append(event, at = new Date()) {
-      const valid = LedgerEvent.parse(event);
-      const iso = at.toISOString();
-      const result = insert.run(iso, valid.type, JSON.stringify(valid));
-      return { seq: Number(result.lastInsertRowid), at: iso, event: valid };
+    append,
+    appendWithSnapshot(event, day, world) {
+      db.exec('BEGIN');
+      try {
+        const stored = append(event);
+        insertSnapshot.run(stored.seq, day, JSON.stringify(world));
+        db.exec('COMMIT');
+        return stored;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     },
     events,
     count: () => Number((selectCount.get() as { n: number }).n),
-    draftCards() {
-      const cards = new Map<string, PolicyCard>();
-      for (const { event } of events()) {
-        if (event.type === 'card.created') cards.set(event.card.id, event.card);
-        else if (event.type === 'card.deleted') cards.delete(event.cardId);
+    latestSnapshot() {
+      const visible = events();
+      for (let i = visible.length - 1; i >= 0; i--) {
+        const snapshot = readSnapshot(visible[i]?.seq ?? 0);
+        if (snapshot) return snapshot;
       }
-      return [...cards.values()];
+      return undefined;
     },
+    snapshotAt: readSnapshot,
+    branches,
+    currentBranch: () => current,
+    fork(seq, label) {
+      const result = db
+        .prepare('INSERT INTO branches (parent, fork_seq, label) VALUES (?, ?, ?)')
+        .run(current, seq, label);
+      const branch = { id: Number(result.lastInsertRowid), parent: current, forkSeq: seq, label };
+      current = branch.id;
+      setMeta.run('current_branch', String(current));
+      writes++;
+      return branch;
+    },
+    recordCall(id, resolution, record) {
+      insertCall.run(id, resolution, JSON.stringify(record));
+      writes++;
+    },
+    calls(resolution) {
+      const rows = (resolution === undefined
+        ? db.prepare('SELECT record FROM calls ORDER BY rowid DESC LIMIT 200').all()
+        : db
+            .prepare('SELECT record FROM calls WHERE resolution = ? ORDER BY rowid')
+            .all(resolution)) as unknown as { record: string }[];
+      return rows.map((r) => JSON.parse(r.record) as unknown);
+    },
+    version: () => writes,
     close: () => db.close(),
   };
 }

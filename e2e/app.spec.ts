@@ -1,84 +1,204 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 /**
- * End-to-end: the real UI against the real server and a real campaign file.
- * Each test covers one thing a player can do.
+ * End-to-end: the real UI against the real server, engine and campaign file. The model is
+ * the scripted stand-in, reached over HTTP through the real adapter. The tests share one
+ * campaign and run in order, like one sitting of play.
  */
 
 const composer = 'New policy box';
+const boxes = (page: Page) =>
+  page.getByRole('list', { name: 'Policy boxes' }).getByRole('listitem');
+const win = (page: Page, name: string) => page.getByRole('region', { name });
+const openWindow = (page: Page, name: string) =>
+  page.getByRole('navigation', { name: 'Windows' }).getByRole('button', { name }).click();
+const date = (page: Page) => page.getByTestId('game-date');
+const addBox = async (page: Page, text: string) => {
+  await page.getByLabel(composer).fill(text);
+  await page.getByRole('button', { name: 'Add policy box' }).click();
+};
 
-test('the app opens and reaches the server', async ({ page }) => {
+test('a campaign starts: you take office and the map shows the country', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'StateCraft', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Choose where to begin' })).toBeVisible();
+  await page.getByRole('button', { name: 'Take office' }).click();
+
+  await expect(win(page, 'Policy desk')).toBeVisible();
   await expect(page.getByText('Connected')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Policy desk' })).toBeVisible();
-  await expect(page.getByText('No policy boxes yet')).toBeVisible();
+  await expect(date(page)).toHaveText('1 November 2026');
+  await expect(page.locator('[data-region="balochistan"]')).toHaveAttribute(
+    'data-status',
+    'contested',
+  );
+  await expect(page.locator('[data-region="punjab"]')).toHaveAttribute('data-stage', 'calm');
+  await expect(win(page, 'Briefing').getByText('Inflation')).toBeVisible();
 });
 
-test('a policy box goes from the screen to the campaign file and back', async ({ page }) => {
+test('a policy box is read back, survives a reload, and can be deleted', async ({ page }) => {
   await page.goto('/');
-  const boxes = page.getByRole('list', { name: 'Policy boxes' }).getByRole('listitem');
-
-  await page.getByLabel(composer).fill('Cut the fuel subsidy by a fifth');
-  await page.getByRole('button', { name: 'Add policy box' }).click();
-  await expect(boxes).toHaveCount(1);
-  await expect(boxes.first()).toContainText('Cut the fuel subsidy by a fifth');
+  await addBox(page, 'Cut the fuel subsidy sharply');
+  await expect(boxes(page)).toHaveCount(1);
   await expect(page.getByLabel(composer)).toHaveValue('');
+  // The game's reading arrives on its own, under the player's untouched words.
+  await expect(boxes(page).first().getByTestId('reading')).toContainText(
+    'Cut fuel or power subsidies',
+  );
+  await expect(boxes(page).first()).toContainText('Cut the fuel subsidy sharply');
 
   // Enter adds a box; Shift+Enter makes a new line inside one.
   await page.getByLabel(composer).fill('Open talks with the port union');
   await page.getByLabel(composer).press('Shift+Enter');
   await page.getByLabel(composer).pressSequentially('before the strike deadline');
   await page.getByLabel(composer).press('Enter');
-  await expect(boxes).toHaveCount(2);
-  await expect(boxes.nth(1)).toContainText('before the strike deadline');
+  await expect(boxes(page)).toHaveCount(2);
 
-  // The server recorded both: they survive a reload, and the event count shows them.
   await page.reload();
-  await expect(boxes).toHaveCount(2);
-  await expect(page.getByText('2 events')).toBeVisible();
-
-  // Deleting is a new event, not an erasure.
-  await boxes.first().getByRole('button', { name: 'Delete policy box' }).click();
-  await expect(boxes).toHaveCount(1);
+  await expect(boxes(page)).toHaveCount(2);
+  await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
+  await expect(boxes(page)).toHaveCount(1);
   await page.reload();
-  await expect(boxes).toHaveCount(1);
-  await expect(boxes.first()).toContainText('Open talks with the port union');
-  await expect(page.getByText('3 events')).toBeVisible();
-});
+  await expect(boxes(page)).toHaveCount(1);
 
-test('an empty box cannot be added', async ({ page }) => {
-  await page.goto('/');
   await expect(page.getByRole('button', { name: 'Add policy box' })).toBeDisabled();
   await page.getByLabel(composer).fill('   ');
   await expect(page.getByRole('button', { name: 'Add policy box' })).toBeDisabled();
 });
 
-test('windows can be minimised and reopened', async ({ page }) => {
+test('executing turns boxes into policies, moves the clock and writes the chronicle', async ({
+  page,
+}) => {
   await page.goto('/');
-  const desk = page.getByRole('region', { name: 'Policy desk' });
-  await page.getByRole('button', { name: 'Minimise Policy desk' }).click();
-  await expect(desk).toBeHidden();
-  await page
-    .getByRole('navigation', { name: 'Windows' })
-    .getByRole('button', { name: 'Policy desk' })
+  await addBox(page, 'Order the State Bank to lower the interest rate');
+  await expect(boxes(page)).toHaveCount(2);
+  await page.getByRole('button', { name: /^Execute 2 boxes/ }).click();
+
+  // Results arrive without a reload: the boxes are consumed and time has moved.
+  await expect(page.getByText('No policy boxes yet')).toBeVisible();
+  await expect(date(page)).not.toHaveText('1 November 2026');
+  const chronicle = page.getByRole('list', { name: 'Chronicle' });
+  await expect(chronicle.getByRole('listitem').first()).toBeVisible();
+  await expect(chronicle).toContainText('Cut fuel or power subsidies');
+  await expect(chronicle.getByText('Simulated').first()).toBeVisible();
+
+  // The chronicle links to the policy page, which is built from the record.
+  await chronicle.getByRole('button', { name: 'Cut fuel or power subsidies' }).first().click();
+  const page1 = win(page, 'Policies').getByRole('article');
+  await expect(page1.getByText('Cut the fuel subsidy sharply')).toBeVisible();
+  await expect(page1.getByText(/Saves .*% of GDP a year/)).toBeVisible();
+  await expect(page1.getByRole('cell', { name: 'Subsidies spending' })).toBeVisible();
+  await expect(page1.getByRole('list', { name: 'Stage' })).toBeVisible();
+
+  // An order outside the office's powers comes back with the reason.
+  await page1.getByRole('button', { name: 'All policies' }).click();
+  await win(page, 'Policies')
+    .getByRole('button', { name: /Change the central bank rate/ })
     .click();
-  await expect(desk).toBeVisible();
+  await expect(win(page, 'Policies').getByRole('alert')).toContainText(
+    'State Bank of Pakistan sets the policy rate independently',
+  );
 });
 
-test('the component gallery opens', async ({ page }) => {
+test('conflicting boxes are held until you choose', async ({ page }) => {
+  await page.goto('/');
+  await addBox(page, 'Build new roads and dams across the country');
+  await addBox(page, 'Freeze and cut the development budget');
+  await expect(boxes(page)).toHaveCount(2);
+  const before = await date(page).textContent();
+  await page.getByRole('button', { name: /^Execute 2 boxes/ }).click();
+  await expect(page.getByText('Some boxes pull against each other')).toBeVisible();
+  await expect(date(page)).toHaveText(before ?? '');
+  await expect(boxes(page)).toHaveCount(2);
+
+  await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
+  await page.getByRole('button', { name: /^Execute 1 box/ }).click();
+  await expect(page.getByText('No policy boxes yet')).toBeVisible();
+  await expect(date(page)).not.toHaveText(before ?? '');
+});
+
+test('time advances, the chronicle places events on the map, and the inspector shows the cost', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const before = await date(page).textContent();
+  await page.getByLabel('How far to advance').selectOption('30');
+  await page.getByRole('button', { name: 'Advance' }).click();
+  await expect(date(page)).not.toHaveText(before ?? '');
+  await expect(page.getByRole('list', { name: 'Chronicle' })).toContainText(
+    'Official figures were published',
+  );
+
+  await win(page, 'Briefing')
+    .getByRole('button', { name: /Balochistan/ })
+    .click();
+  await expect(page.locator('[data-region="balochistan"]')).toHaveAttribute('aria-pressed', 'true');
+
+  await openWindow(page, 'Inspector');
+  const inspector = win(page, 'Inspector');
+  await expect(inspector.getByText('Model calls')).toBeVisible();
+  await expect(
+    inspector.getByRole('list', { name: 'Model calls' }).getByText('turn.adjudicate v1'),
+  ).toBeVisible();
+  await expect(
+    inspector
+      .getByRole('list', { name: 'Model calls' })
+      .getByText('model', { exact: true })
+      .first(),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Minimise Inspector' }).click();
+  await expect(inspector).toBeHidden();
+});
+
+test('the model can be checked before you rely on it', async ({ page }) => {
+  await page.goto('/');
+  await openWindow(page, 'Model');
+  const panel = win(page, 'Model');
+  await expect(panel.getByLabel('Model name, exactly as the server lists it')).toHaveValue(
+    'standin',
+  );
+  await panel.getByRole('button', { name: 'Check this model' }).click();
+  await expect(panel.getByRole('region', { name: 'Model check result' })).toContainText('suitable');
+  await page.getByRole('button', { name: 'Minimise Model' }).click();
+});
+
+test('rewinding goes back to an earlier day on a new line of history', async ({ page }) => {
+  await page.goto('/');
+  await openWindow(page, 'Timeline');
+  const timeline = win(page, 'Timeline');
+  const start = timeline
+    .getByRole('list', { name: 'Saved points' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Campaign start' });
+  await start.getByRole('button', { name: 'Rewind' }).click();
+  await start.getByRole('button', { name: 'Go back to here' }).click();
+
+  await expect(date(page)).toHaveText('1 November 2026');
+  await expect(page.getByText('Line 2')).toBeVisible();
+  await expect(page.getByText('Nothing has happened yet')).toBeVisible();
+  await expect(timeline.getByText('Lines of history')).toBeVisible();
+  await page.reload();
+  await expect(date(page)).toHaveText('1 November 2026');
+  await expect(page.getByText('Line 2')).toBeVisible();
+});
+
+test('windows can be minimised and reopened, and the gallery opens', async ({ page }) => {
+  await page.goto('/');
+  const desk = win(page, 'Policy desk');
+  await page.getByRole('button', { name: 'Minimise Policy desk' }).click();
+  await expect(desk).toBeHidden();
+  await openWindow(page, 'Policy desk');
+  await expect(desk).toBeVisible();
+
   await page.goto('/#gallery');
   await expect(page.getByRole('heading', { name: 'Component gallery' })).toBeVisible();
   await page.getByRole('link', { name: 'Back to the game' }).click();
-  await expect(page.getByRole('region', { name: 'Policy desk' })).toBeVisible();
+  await expect(win(page, 'Policy desk')).toBeVisible();
 });
 
 test('the API refuses callers without the session token or from another site', async ({
   request,
 }) => {
-  const noToken = await request.get('/api/cards');
-  expect(noToken.status()).toBe(401);
-
+  expect((await request.get('/api/view')).status()).toBe(401);
   const wrongToken = await request.post('/api/cards', {
     headers: { 'x-statecraft-token': 'not-the-token' },
     data: { text: 'Injected by another program' },
@@ -86,16 +206,15 @@ test('the API refuses callers without the session token or from another site', a
   expect(wrongToken.status()).toBe(401);
 
   const { token } = (await (await request.get('/api/session')).json()) as { token: string };
-  const otherSite = await request.get('/api/cards', {
+  const otherSite = await request.get('/api/view', {
     headers: { 'x-statecraft-token': token, Origin: 'https://example.com' },
   });
   expect(otherSite.status()).toBe(403);
-
   const crossSiteHandshake = await request.get('/api/session', {
     headers: { 'Sec-Fetch-Site': 'cross-site' },
   });
   expect(crossSiteHandshake.status()).toBe(403);
-
-  const ok = await request.get('/api/cards', { headers: { 'x-statecraft-token': token } });
-  expect(ok.status()).toBe(200);
+  expect(
+    (await request.get('/api/view', { headers: { 'x-statecraft-token': token } })).status(),
+  ).toBe(200);
 });

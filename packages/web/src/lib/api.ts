@@ -1,12 +1,14 @@
 import {
   API_TOKEN_HEADER,
   ApiError,
-  CardList,
+  type CallView,
   Health,
-  PolicyCard,
+  type ModelCheck,
+  type ModelSettings,
+  type ScenarioInfo,
   Session,
+  type View,
 } from '@statecraft/protocol';
-import type { z } from 'zod';
 
 export class ApiFailure extends Error {
   readonly status: number;
@@ -57,17 +59,40 @@ async function send(path: string, init: RequestInit, retry = true): Promise<Resp
   return response;
 }
 
-async function read<S extends z.ZodType>(schema: S, path: string, init: RequestInit = {}) {
-  const response = await send(path, init);
-  return schema.parse(await response.json()) as z.infer<S>;
+/** The server builds these replies itself, so they are trusted as typed. */
+async function get<T>(path: string): Promise<T> {
+  return (await (await send(path, {})).json()) as T;
+}
+async function post<T>(path: string, body: unknown = {}, method = 'POST'): Promise<T> {
+  return (await (await send(path, { method, body: JSON.stringify(body) })).json()) as T;
+}
+
+export interface ModelInfo {
+  settings: ModelSettings;
+  keyPresent: boolean;
 }
 
 export const api = {
-  health: () => read(Health, '/api/health'),
-  listCards: async () => (await read(CardList, '/api/cards')).cards,
-  addCard: (text: string) =>
-    read(PolicyCard, '/api/cards', { method: 'POST', body: JSON.stringify({ text }) }),
+  health: async () => Health.parse(await get('/api/health')),
+  view: () => get<View>('/api/view'),
+  scenarios: () => get<ScenarioInfo[]>('/api/scenarios'),
+  start: (scenarioId: string) => post<View>('/api/campaign', { scenarioId }),
+  newCampaign: () => post<View>('/api/campaign/new'),
+  addCard: (text: string) => post<unknown>('/api/cards', { text }),
   deleteCard: async (id: string): Promise<void> => {
     await send(`/api/cards/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
+  execute: (mixedSignals: boolean) => post<View>('/api/execute', { mixedSignals }),
+  advance: (days: number) => post<View>('/api/advance', { days }),
+  cancel: () => post<View>('/api/cancel'),
+  repeal: (id: string) => post<View>(`/api/policies/${encodeURIComponent(id)}/repeal`),
+  rewind: (seq: number) => post<View>('/api/rewind', { seq }),
+  model: () => get<ModelInfo>('/api/model'),
+  saveModel: (settings: ModelSettings) => post<ModelInfo>('/api/model', settings, 'PUT'),
+  checkModel: () => post<ModelCheck>('/api/model/check'),
+  calls: (resolution?: string) =>
+    get<CallView[]>(
+      `/api/calls${resolution ? `?resolution=${encodeURIComponent(resolution)}` : ''}`,
+    ),
+  debugWorld: () => get<unknown>('/api/debug/world'),
 };

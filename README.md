@@ -2,7 +2,7 @@
 
 An open-source geopolitics simulator, played in plain text on a live world map. You hold one position in a real country, and AI models play everyone else. A deterministic engine owns the numbers and the record of events, so any model can be connected without corrupting the world.
 
-**Status:** early. The project skeleton, design system and the first path from screen to campaign file work. The engine for the economy, approval, unrest and control runs (`npm run sim -w @statecraft/scenarios` prints a year of Pakistan with no player), but it is not yet connected to the screen or to a model. See the [roadmap](#roadmap).
+**Status:** the first slice is playable. You take office as Prime Minister of Pakistan in November 2026, write policy in plain words, execute it, advance time, and read what happened. It has been tested end to end with a scripted stand-in model and with no model; it has not yet been played on a real model. [docs/progress.md](docs/progress.md) lists exactly what is and is not built.
 
 ## Run it
 
@@ -18,6 +18,17 @@ npm start
 ```
 
 The first run installs dependencies and builds the app, then opens it in your browser at `http://127.0.0.1:4317`. Your campaign is saved in `data/campaign.statecraft`.
+
+## Connect a model
+
+The game plays without a model, in plain built-in wording. A model makes it read better and lets the world surprise you.
+
+1. Open the **Model** window.
+2. For a local model, start [LM Studio](https://lmstudio.ai) (or Ollama), load a model, start its local server, and press **LM Studio** under Quick setup. Type the model's name exactly as the server lists it.
+3. For a hosted model, choose the connection, put your key in a file called `.env` in this folder (copy `.env.example`), and restart StateCraft. The key never leaves that file.
+4. Press **Check this model**. It runs four short jobs and tells you whether the model is suitable, usable or unsuitable.
+
+The **Inspector** window shows every model call of the last resolution and what it cost.
 
 ## Develop
 
@@ -42,8 +53,9 @@ Open `http://127.0.0.1:4317/#gallery` to see every component of the design syste
 packages/
   protocol/   Zod schemas for everything that crosses a boundary. Types derive from these.
   engine/     The deterministic core: no I/O, no clock, seeded dice only.
-  scenarios/  Starting worlds as data, each with a list of its sources.
-  ledger/     Append-only event store, one SQLite file per campaign.
+  ledger/     Append-only event store, one SQLite file per campaign, with branches and snapshots.
+  models/     The model harness: adapters, the seven jobs, checks, repair, fallbacks, stand-in.
+  director/   The turn pipeline: compile, adjudicate, apply, narrate, report.
   server/     Local HTTP API (Fastify). Binds to 127.0.0.1 and checks host, origin and token.
   web/        The interface (React, Vite, Tailwind). Design tokens in src/theme/tokens.css.
 e2e/          End-to-end tests: the real UI against the real server.
@@ -52,8 +64,6 @@ docs/
   requirements.md Numbered requirements extracted from the specification.
   decisions/      Short records of significant technical decisions.
 ```
-
-Two more packages arrive with the first simulation build: `models` (the model harness and adapters) and `director` (the turn pipeline).
 
 Dependencies point one way: `web` and `server` depend on `protocol`; `server` depends on `ledger` and `engine`; `engine` depends on nothing.
 

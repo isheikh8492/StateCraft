@@ -1,14 +1,20 @@
 /**
  * Shared shapes for everything that crosses a boundary: API routes, ledger events, save files.
- * Types are always derived from these schemas, never written by hand.
+ * Anything that comes in (request bodies, stored events) is a schema and is validated.
+ * Read-only views sent to the screen are plain types in `view.ts`.
  */
 import { z } from 'zod';
+
+export * from './view.ts';
 
 /** Header that carries the per-run session token on every API request. */
 export const API_TOKEN_HEADER = 'x-statecraft-token';
 
 /** Version of the save-file layout. Bump on any change to stored shapes. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/** Advancing time is capped at six months (REQ-CLK-01). */
+export const MAX_ADVANCE_DAYS = 183;
 
 export const CardSource = z.enum(['composer', 'advisor', 'dm', 'call', 'meeting', 'event']);
 export type CardSource = z.infer<typeof CardSource>;
@@ -31,10 +37,45 @@ export const NewPolicyCard = z.object({
 });
 export type NewPolicyCard = z.input<typeof NewPolicyCard>;
 
-/** Everything that can be appended to the ledger. The ledger is append-only. */
+export const CardReading = z.object({
+  reading: z.string(),
+  instrument: z.string(),
+  question: z.string().optional(),
+});
+export type CardReading = z.infer<typeof CardReading>;
+
+export const RESOLUTION_STEPS = ['compile', 'adjudicate', 'apply', 'narrate', 'report'] as const;
+export type ResolutionStep = (typeof RESOLUTION_STEPS)[number];
+
+/**
+ * Everything that can be appended to the ledger. The ledger is append-only.
+ * Step data is produced and read back by the director alone, so it is stored as it is.
+ */
 export const LedgerEvent = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('campaign.started'), scenarioId: z.string(), seed: z.string() }),
   z.object({ type: z.literal('card.created'), card: PolicyCard }),
   z.object({ type: z.literal('card.deleted'), cardId: z.string().min(1) }),
+  z.object({ type: z.literal('card.read'), cardId: z.string().min(1), reading: CardReading }),
+  z.object({
+    type: z.literal('resolution.started'),
+    id: z.string(),
+    kind: z.enum(['execute', 'advance']),
+    fromDay: z.number().int(),
+    days: z.number().int().nullable(),
+    cardIds: z.array(z.string()),
+    mixedSignals: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('resolution.step'),
+    id: z.string(),
+    step: z.enum(RESOLUTION_STEPS),
+    data: z.unknown(),
+  }),
+  z.object({ type: z.literal('resolution.blocked'), id: z.string(), data: z.unknown() }),
+  z.object({ type: z.literal('resolution.committed'), id: z.string(), toDay: z.number().int() }),
+  z.object({ type: z.literal('resolution.cancelled'), id: z.string() }),
+  z.object({ type: z.literal('policy.repealed'), policyId: z.string(), day: z.number().int() }),
+  z.object({ type: z.literal('digest.written'), month: z.string(), text: z.string() }),
 ]);
 export type LedgerEvent = z.infer<typeof LedgerEvent>;
 
@@ -57,8 +98,22 @@ export const Health = z.object({
 });
 export type Health = z.infer<typeof Health>;
 
-export const CardList = z.object({ cards: z.array(PolicyCard) });
-export type CardList = z.infer<typeof CardList>;
-
 export const ApiError = z.object({ error: z.string(), detail: z.string().optional() });
 export type ApiError = z.infer<typeof ApiError>;
+
+export const ExecuteRequest = z.object({ mixedSignals: z.boolean().default(false) });
+export const AdvanceRequest = z.object({ days: z.number().int().min(1).max(MAX_ADVANCE_DAYS) });
+export const RewindRequest = z.object({ seq: z.number().int().positive() });
+export const StartRequest = z.object({ scenarioId: z.string().min(1) });
+
+export const MODEL_KINDS = ['none', 'openai', 'anthropic', 'gemini'] as const;
+/** How to reach a model. The key itself never leaves the server's environment. */
+export const ModelSettings = z.object({
+  kind: z.enum(MODEL_KINDS),
+  /** For `openai`: any compatible server, such as LM Studio or Ollama. */
+  baseUrl: z.string().max(500).default(''),
+  model: z.string().max(200).default(''),
+  /** Name of the environment variable that holds the key, if one is needed. */
+  keyEnv: z.string().max(100).default(''),
+});
+export type ModelSettings = z.infer<typeof ModelSettings>;

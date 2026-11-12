@@ -9,3 +9,4 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0003](0003-run-typescript-directly.md)           | Run the server's TypeScript directly with tsx | 2026-11-11 |
 | [0004](0004-own-components-on-tailwind-tokens.md) | Own components on Tailwind tokens             | 2026-11-11 |
 | [0005](0005-effects-are-offsets.md)               | Policies change the world through caused, bounded offsets | 2026-11-11 |
+| [0006](0006-saved-steps-branches-and-an-svg-map.md) | Saved steps, branches in one file, and an SVG map for M0 | 2026-11-11 |

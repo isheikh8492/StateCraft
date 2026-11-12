@@ -137,6 +137,15 @@ export const ScenarioSchema = z.object({
   country: z.string().min(1),
   startDate: z.iso.date(),
   headOfGovernment: z.object({ name: z.string(), office: z.string() }),
+  /** What the player's office may order. An authority that is missing needs someone else. */
+  office: z.object({
+    title: z.string().min(1),
+    powers: z.array(z.enum(['budget', 'executive', 'monetary', 'security'])),
+    /** Why each missing authority is out of reach, shown when a policy is blocked. */
+    limits: z.record(z.string(), z.string()),
+  }),
+  /** Facts every model is given, and must prefer over its own memory. */
+  brief: z.string().min(1),
   economy: z.object({
     gdpUsdBn: z.number().positive(),
     trendGrowth: z.number(),

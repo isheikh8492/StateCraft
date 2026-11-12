@@ -1,0 +1,17 @@
+{
+  "name": "@statecraft/models",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@statecraft/engine": "^0.1.0",
+    "@statecraft/protocol": "^0.1.0",
+    "zod": "^4.6.7"
+  }
+}

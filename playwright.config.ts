@@ -24,6 +24,10 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/api/session`,
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { STATECRAFT_PORT: String(PORT), STATECRAFT_DATA: DATA_DIR },
+    env: {
+      STATECRAFT_PORT: String(PORT),
+      STATECRAFT_DATA: DATA_DIR,
+      STATECRAFT_STANDIN_PORT: String(PORT + 1),
+    },
   },
 });

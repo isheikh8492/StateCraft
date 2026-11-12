@@ -34,14 +34,27 @@ describe('ledger', () => {
     second.close();
   });
 
-  it('never deletes: a removed card is a new event, and the projection hides it', () => {
+  it('never deletes: rewinding starts a branch that shares the past and keeps the old future', () => {
     const ledger = openLedger(file, '0.1.0');
     ledger.append({ type: 'card.created', card: card('a', 'Cut the fuel subsidy') });
-    ledger.append({ type: 'card.created', card: card('b', 'Raise the wheat price') });
+    const kept = ledger.appendWithSnapshot(
+      { type: 'card.created', card: card('b', 'Raise the wheat price') },
+      3,
+      { day: 3 },
+    );
     ledger.append({ type: 'card.deleted', cardId: 'a' });
-    expect(ledger.count()).toBe(3);
-    expect(ledger.draftCards().map((c) => c.id)).toEqual(['b']);
+    expect(ledger.latestSnapshot()).toMatchObject({ seq: kept.seq, day: 3 });
+
+    ledger.fork(kept.seq, 'Second try');
+    ledger.append({ type: 'card.created', card: card('c', 'Open talks') });
+    expect(ledger.events().map((e) => e.seq)).toEqual([1, 2, 4]);
+    expect(ledger.count()).toBe(4);
     ledger.close();
+
+    const reopened = openLedger(file, '0.1.0');
+    expect(reopened.currentBranch()).toBe(2);
+    expect(reopened.events().map((e) => e.seq)).toEqual([1, 2, 4]);
+    reopened.close();
   });
 
   it('rejects an event that does not match the schema', () => {
