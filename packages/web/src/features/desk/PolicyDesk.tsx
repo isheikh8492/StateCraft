@@ -58,7 +58,6 @@ export function PolicyDesk() {
   const span = jump === 0 ? daysUntil : jump;
   const running = view?.running ?? null;
   const blocked = running ? null : (view?.blocked ?? null);
-  const question = new Map((blocked?.needsDetail ?? []).map((n) => [n.card, n.question]));
   const inConflict = new Set((blocked?.conflicts ?? []).flatMap((c) => c.cards));
   const conflictStillOpen = (blocked?.conflicts ?? []).some((c) =>
     c.cards.every((id) => cards.some((card) => card.id === id)),
@@ -107,20 +106,6 @@ export function PolicyDesk() {
                   previous={cards[index - 1]?.id}
                   afterNext={index < cards.length - 1 ? (cards[index + 2]?.id ?? null) : undefined}
                 />
-                {card.reading && card.reading.instrument !== 'unclear' && (
-                  <p
-                    data-testid="reading"
-                    className="mt-2 border-t border-border pt-2 text-xs text-fg-muted"
-                  >
-                    <span className="label-caps mr-2 text-fg-subtle">Read as</span>
-                    {card.reading.reading}
-                  </p>
-                )}
-                {(question.get(card.id) ?? card.reading?.question) && (
-                  <p className="mt-1 text-xs text-warn">
-                    {question.get(card.id) ?? card.reading?.question} Edit this box to say more.
-                  </p>
-                )}
               </li>
             ))}
           </ul>

@@ -87,7 +87,7 @@ Yes, the game should move time for you. The clock runs on events: everything tha
 
 1. **Beats.** When something small concludes (a call ends, you sign an order), the game resolves just that: the people involved react, commitments are recorded, the clock moves by minutes or hours. A beat is quick and touches only the actors concerned.
 2. **Auto-advance.** When nothing is waiting on you, the game shows what is coming ("Delhi's reply expected in about 2 days; budget vote in 5 days") and moves to the next event. One setting makes this automatic.
-3. **Manual advance.** You can still jump ahead by any amount up to six months, or to a date. The jump stops early for anything urgent.
+3. **Manual advance.** You can still jump ahead by any amount from one hour up to one year, or to a date and hour (see "The time control" in the overview). The jump stops early for anything urgent.
 
 ### What moves the clock by itself
 

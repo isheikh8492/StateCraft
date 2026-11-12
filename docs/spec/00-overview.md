@@ -175,6 +175,21 @@ Failures are classified, because each class needs a different response:
 
 **Everything is recorded.** Each call stores its prompt hash, model, strategy, latency, tokens, cost and raw reply in the ledger. Replays and reverts read recorded replies instead of calling the model again. The same recordings become test cassettes, so CI runs whole turns with no model attached.
 
+## Speed
+
+Decided in play-testing: cost is not the constraint, waiting is. The game is tuned for the shortest time between pressing a control and reading what happened.
+
+- **Results before prose.** As soon as the period has been judged and the engine has applied it, the turn commits: the date, the figures, the map and each order's outcome appear at once. The chronicle's written pieces and the ministry reports arrive afterwards, each as it finishes, while you carry on. A turn never waits for writing.
+- **Writing arrives as it is written.** Long pieces stream onto the page word by word.
+- **Everything independent runs at once.** Each notable event is narrated by its own call; reactions from different actors are written side by side; reports run beside the chronicle. On a server that handles one request at a time these simply queue.
+- **Nothing is asked that rules can answer.** Adding or editing a box, routine notices, monthly summaries, and choosing where "to next major event" stops involve no model.
+- **Short moves are instant.** A move of a day or less with nothing ordered is resolved by the engine and the dice-driven event deck alone. The judge runs when orders are sent, or when a week or more passes.
+- **Small prompts.** Each job is given a compact description of its output, not a full schema, and only the judge receives the world brief. Fixed text comes first so servers can reuse it.
+- **Short where it does not show.** Internal reasoning and structured fields are kept terse; length is spent only on prose the player reads.
+- **Fewer second tries.** Structured jobs get two repairs; prose gets one, then built-in wording.
+- **Up to three written reactions per order,** chosen by how strongly each actor is touched; the rest are summarised in one line.
+- **Measured.** The Inspector shows, per turn, the time to first result, the time to last word, and every call.
+
 ## Responsiveness
 
 Models are slow, so the server is built to keep the player from ever waiting on a blank screen. The interface always responds at once, and model work happens behind it in a job queue.
@@ -184,7 +199,6 @@ Models are slow, so the server is built to keep the player from ever waiting on 
 | Action | Target with a hosted model | Target with a local model |
 | --- | --- | --- |
 | Any click, typing, opening a window, moving the map | Under 100 ms; no model involved | Same |
-| Reading of a new policy box appears | 2 seconds | 5 seconds |
 | First words of a character's reply | 2 seconds, then streamed | 5 seconds, then streamed |
 | A beat (a call ends, an order is signed) | 5 seconds | 15 seconds |
 | A full world resolution: first results on screen | 10 seconds | 30 seconds |
@@ -258,6 +272,25 @@ interface Policy {
 
 Policies persist. A standing policy keeps acting every turn until you repeal it, and its costs keep coming. The cabinet panel lists everything in force with its running cost.
 
+## The time control
+
+A pill at the top of the screen shows the date, with an arrow on each side. Right moves forward; left looks back.
+
+**Forward.** The right arrow opens a panel:
+
+| Option | What it does |
+| --- | --- |
+| To next major event | Runs day by day and stops at the first major event, crisis line, or message addressed to you, up to one year. The engine decides where to stop; no model is asked. |
+| 1 hour, 1 day, 1 week, 1 month, 3 months, 6 months, 1 year | Runs exactly that far, unless something urgent stops it early. Each option shows the date it lands on. |
+| Jump to a specific time | Any date and hour up to one year ahead. |
+
+- **Whatever you choose sends the desk first.** There is no separate Execute.
+- **One year is the limit** for a single move (raised from six months in play-testing).
+- **The clock has a time of day.** The engine's systems still move in whole days. A move of less than a day lets reactions, messages and events arrive, and does not move the economy, approval or unrest.
+- **Long moves are coarser by design,** as before: one judgement covers the whole span.
+
+**Back.** The left arrow opens history, described under "Knowing what happened".
+
 ## Policy desk and advisors
 
 Setting policy is just typing. You write what you want in plain words and press **+**, and it becomes a card. Each card holds one idea, and before the turn resolves the game turns the pile of cards into a clean slate of distinct policies.
@@ -304,12 +337,13 @@ A typed Task, `policy.compile`, reads every draft card together with standing po
 | Duplicates | "Raise the fuel subsidy" written twice, or a card repeating a standing policy | Folded into one, counted once, marked duplicate |
 | Conflicts | "Cut the fuel subsidy by 20%" and "freeze fuel prices" | Flagged; you keep one, edit, or send both as mixed signals, which costs credibility |
 | Several ideas in one card | "Sanction Iran and recall our ambassador" | Split into two policies from one card |
-| Unclear | "Fix the economy" | Marked needs detail, with a question from the relevant advisor; can go through as a broad directive with weaker effect |
+| Unclear | "Fix the economy" | Sent as written. The world answers it: ministries cannot act on it, the chronicle says so, and nothing is done. The game never stops to ask you a question |
 
 Rules the compiler follows:
 
-- **Live reading.** A one-line interpretation appears under each card within seconds of adding it, so you see how the game reads you before you commit.
-- **Every card accounted for.** The engine checks that each card maps to exactly one outcome: a policy, a duplicate or needs detail. A compile that drops or double-counts a card fails validation and is retried.
+- **No reading back.** The game does not show its interpretation under a card, and it does not ask follow-up questions. You find out how an order was understood the way a head of government does: from what happens next. (Decided in play-testing: the reading cost a model call per card and broke the fiction.)
+- **One control.** Moving time forward sends whatever is on the desk first. With an empty desk it just runs the clock. See "The time control".
+- **Every card accounted for.** The engine checks that each card maps to exactly one outcome: a policy, a duplicate or an unclear order. A compile that drops or double-counts a card fails validation and is retried.
 - **Conflicts block End turn.** Silently choosing one side would feel like the game ignoring you, so you resolve each conflict with one click.
 - **Your earlier words count.** A card that breaks a commitment you made in a DM or meeting is flagged, with the commitment quoted.
 
@@ -468,6 +502,28 @@ You reach actors through channels, and each channel carries different weight in 
 
 **Cost control: salience-based activation.** There are about 200 states and thousands of possible actors, and they cannot all call a model every turn. An actor runs its own model turn only if the player touched it, a flashpoint it belongs to moved, or a scheduled event names it. The rest of the world moves through cheap rule-based drift and one batched "world digest" call per turn.
 
+## Every order gets an answer
+
+A policy is not a change to a number. It is an act that other people see, and they answer it. Play-testing M0 showed the gap plainly: you could order a ceasefire in a contested region and nothing came back from the other side, the army or anyone else. This section fixes that as a rule of the game, and it is the first thing built in M1.
+
+**The rule.** Every order that takes effect draws at least one visible response from someone it touches, in the same resolution. Silence is allowed only as a stated fact ("the group has not responded"), never as an absence.
+
+**The cast.** Each scenario lists its stakeholders: the army, armed groups, provincial governments, coalition partners, the opposition, religious parties, business bodies, unions, lenders, and the neighbours and powers that watch the country. Each entry has an id, a name, what it cares about (regions, groups, kinds of policy), its stance toward the player, and what it can actually do. Until M2 gives other countries full models, foreign actors are in the cast as reactors only: they speak and take positions, and nothing more.
+
+**How a response is made.**
+
+1. The engine works out who an order touches, from the cast's interests. This is a rule, not a model's guess, so nobody relevant is forgotten.
+2. For each touched actor, a model job (`policy.react`) writes the response in that actor's voice, given your exact wording, the actor's interests and stance, and what the actor can do. With no model, a template per kind of actor and policy is used.
+3. A response is one of: a **statement** (public or private), an **action** from that actor's allowed list (a strike, a walkout, a raid, a vote against, a recall of an envoy), or **stated silence**.
+4. Actions go through the same bounded effects as any event, and the engine checks they are within the actor's power.
+5. A response may schedule a **later beat** that dice decide: a ceasefire holds or is broken, talks open or collapse, a strike is called off. Each beat is its own event, cites the order as its cause, and can draw responses in turn. One order therefore has a story with a second and third act, not one bundle of effects.
+
+**Your words matter.** The catalogue still bounds the numbers, but the response is written against what you actually said. "An immediate ceasefire" and "open talks with the elders" may use the same instrument and will draw different answers.
+
+**Where you see it.** Responses appear in the chronicle beside the order, on the policy's page under "Reactions", and, when addressed to you, in the inbox.
+
+**Limits.** The engine caps responses per order and per resolution so a long advance stays affordable; actors that are only lightly touched are batched into one line. A response can never invent a number or change control of territory.
+
 ## The world comes to you
 
 Most of what you deal with arrives unasked: leaders call, ministers resign, provinces defy you, markets panic. The Director generates inbound events from five sources, and paces them so every turn has something to answer and no turn is a flood.
@@ -579,6 +635,19 @@ Four mechanisms keep it together:
 
 ### The chronicle: one linear narrative
 
+**Length follows weight.** An entry is as long as its event deserves:
+
+| Event | Entry |
+| --- | --- |
+| Routine notice (an order announced, a law in force, monthly figures) | One line, in built-in wording. No model is called. |
+| Minor | Two or three sentences. |
+| Significant | A paragraph or two under a dateline: place, date and hour. |
+| Major | A full piece: dateline, several paragraphs, quotes, and a short list where figures are best read as a list. |
+
+**People speak.** An entry may quote the actors involved. Every quote belongs to a named member of the cast, is written to fit that actor's stance and voice, and is stored in the ledger as something that actor said, so it can be held against them later. Quotes are set apart visually and, like everything generated, marked as simulated. A real person is only ever quoted saying what their modelled position supports.
+
+**Detail figures.** A story needs texture the engine does not hold: a share price, a crowd size, a vote in a committee. The narrator may supply such figures, on two conditions. Each one is declared alongside the text and stored in the ledger as a recorded detail, so later entries repeat it rather than contradict it. And none of them may restate or contradict a number the engine owns (inflation, reserves, seats, casualties the engine counted); those must still come from the input. Detail figures never feed back into the rules.
+
 Every input becomes a ledger event with an in-game timestamp and causal links: your policies, DMs, calls, meetings, events, intelligence and widget posts. At each world resolution the Director writes the **chronicle**, one concise narrative of what happened, why, and what it means for you.
 
 - **In order.** Entries run in in-game time, and a reaction is never told before its cause.
@@ -649,7 +718,15 @@ Type the question and address it to anyone you can reach, or leave it unaddresse
 - **Asking is noticed.** Who you ask, and what about, tells them what worries you. A question to the wrong person can tip off a plotter.
 - **Their answers are remembered.** What you were told and by whom is recorded, so you can later see who was right, who was wrong and who lied.
 
-### 4. The timeline
+### 4. History
+
+Opened with the left arrow of the time control. The same record, three ways:
+
+- **By turn.** Each turn shows **Your move** (the orders you sent, or simply how far you ran the clock) followed by **World response**: everything that happened as a result, in order. This is the plainest answer to whether a policy did anything.
+- **By time.** One continuous dated stream.
+- **By story.** Entries grouped into running threads, such as a ceasefire, a budget fight or a strike, each marked open or closed.
+
+Stepping through turns moves the map and the figures to that moment. While you are looking at the past the desk is disabled, with one control to return to the present. Looking is not rewinding: going back to change history is a separate, deliberate act that starts a new line. The chronicle can be exported to a file.
 
 A scrollable history of the whole campaign on one line, with the chronicle, your policies, and major world events as layers. Selecting any point shows the map, the numbers and the news as they were then.
 
@@ -782,7 +859,7 @@ The suite is deliberately small. Its job is to guarantee that when a build is ha
 | Live smoke | One real resolution against a real model, run by hand before a release | 1 script |
 
 - **The stand-in model** returns valid, scripted answers for each job and can be told to misbehave (invalid output, refusal, timeout), so the tests also prove that fallbacks and recovery work. It costs no tokens.
-- **M0's end-to-end flows:** start a campaign; add boxes and see their readings; execute and watch results arrive; read the chronicle and a policy page; see the map change; save, rewind and branch; kill the server mid-resolution and resume.
+- **M0's end-to-end flows:** start a campaign; add, edit and reorder boxes; execute and watch results arrive; read the chronicle and a policy page; see the map change; save, rewind and branch; kill the server mid-resolution and resume.
 - **The rule for handing over a build:** the end-to-end suite passes on a clean checkout. If it does not, the build is not described as working.
 - **What these tests do not prove:** that a given model writes well or judges sensibly. That is the model test suite's job.
 
@@ -835,7 +912,7 @@ Build one complete loop for one country before anything else: write policy, run 
 ```mermaid
 flowchart TB
   M0["M0 First slice: one country, one loop<br/>Policy boxes, compiler, clock and resolution; budget, approval, unrest, control; control map; chronicle, policy ledger, saves, two adapters<br/>GATE: a one-year term plays end to end on a local model"]
-  M1["M1 People: talk, appoint, delegate<br/>Conversations, advisors, ask someone; personas, pressure and resistance, commitments; inbound events, hiring and firing, mandates<br/>GATE: no concessions below the threshold in 200 attempts"]
+  M1["M1 People: react, talk, appoint, delegate<br/>The cast and a response to every order, later beats; conversations, advisors, ask someone; personas, pressure and resistance, commitments; inbound events, hiring and firing, mandates<br/>GATE: no concessions below the threshold in 200 attempts"]
   M2["M2 The world: 25 countries in depth<br/>Full dossiers and government structures; media, elections, trade, international bodies; intelligence, widget kit, memory at scale<br/>GATE: 2015 to 2020 backtest looks like history"]
   M3["M3 Conflict: force and intrigue<br/>Units and fronts on the map, escalation ladder; campaigns, covert action, plots and betrayal; the authoritarian path, content levels<br/>GATE: story and map agree in every replayed turn"]
   M4["M4 Breadth: more ways to play<br/>Lower starting positions, 1962 and 2001 packs; self-improvement loops, community scorecards; desktop app<br/>GATE: a new country pack ships without code changes"]
@@ -843,6 +920,7 @@ flowchart TB
 ```
 
 - **M0 is deliberately small.** One country (Pakistan), one position (head of government), no conversations yet. It exists to prove the loop and to give the tests something real to run against.
+- **M1 starts with reactions, not conversations.** A world that answers your orders matters more than being able to chat with it, and conversations are built on the same cast. A few foreign actors come forward from M2 as reactors only.
 - **Each gate is a test in the model test suite,** so the suite grows with the game.
 - **Rules are expected to change.** Pressure, resistance and memory are untested until M0 and M1 run, and their numbers will be retuned then.
 
@@ -857,7 +935,7 @@ Decisions on the open questions:
 | Question | Decision |
 | --- | --- |
 | Name | StateCraft for now; GitHub and npm handles still to check |
-| Turn length | Event-driven clock, with manual jumps of up to 6 months (see the Player and world tab) |
+| Turn length | Event-driven clock, with moves from one hour to one year (see "The time control") |
 | Players | Single-player only |
 | Reference eval models | One local open-weights instruct model of 8 to 14B parameters on Ollama, pinned to an exact tag, and one hosted frontier model. The local model is the floor the game must stay playable on; the hosted one sets the quality ceiling. Re-pick both each release. |
 | License | Apache-2.0 |

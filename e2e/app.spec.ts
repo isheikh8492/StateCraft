@@ -35,15 +35,13 @@ test('a campaign starts: you take office and the map shows the country', async (
   await expect(win(page, 'Briefing').getByText('Inflation')).toBeVisible();
 });
 
-test('a policy box is read back, survives a reload, and can be deleted', async ({ page }) => {
+test('a policy box keeps your words, survives a reload, and can be edited, moved and deleted', async ({
+  page,
+}) => {
   await page.goto('/');
   await addBox(page, 'Cut the fuel subsidy sharply');
   await expect(boxes(page)).toHaveCount(1);
   await expect(page.getByLabel(composer)).toHaveValue('');
-  // The game's reading arrives on its own, under the player's untouched words.
-  await expect(boxes(page).first().getByTestId('reading')).toContainText(
-    'Cut fuel or power subsidies',
-  );
   await expect(boxes(page).first()).toContainText('Cut the fuel subsidy sharply');
 
   // Enter adds a box; Shift+Enter makes a new line inside one.
@@ -56,15 +54,12 @@ test('a policy box is read back, survives a reload, and can be deleted', async (
   await page.reload();
   await expect(boxes(page)).toHaveCount(2);
 
-  // Boxes can be reordered and edited in place; the reading follows the new wording.
+  // Boxes can be reordered and edited in place.
   await boxes(page).nth(1).getByRole('button', { name: 'Move policy box up' }).click();
   await expect(boxes(page).first()).toContainText('port union');
   await boxes(page).first().getByRole('button', { name: 'Edit policy box' }).click();
   await page.getByRole('textbox', { name: 'Edit policy box' }).fill('Raise the sales tax slightly');
   await boxes(page).first().getByRole('button', { name: 'Save' }).click();
-  await expect(boxes(page).first().getByTestId('reading')).toContainText(
-    'Raise sales or consumption tax',
-  );
   await boxes(page).first().getByRole('button', { name: 'Move policy box down' }).click();
   await expect(boxes(page).nth(1)).toContainText('Raise the sales tax slightly');
 

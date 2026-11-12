@@ -56,9 +56,18 @@ These are in `docs/requirements.md` for M0 and are not built, or are built in a 
 - The cost of a slate that is not paid for is borrowed automatically and stated on the policy page.
 - With no model, the world's own events come from a small fixed deck (strikes, outages, rallies, attacks, floods) chosen by dice and tilted by the state of the country. A model writes richer and more specific ones.
 - Vote and court odds are placeholders: allies peel away from unpopular measures, and the courts stay a small share of executive orders.
-- The "Read as" line under a box comes from built-in keyword rules and never calls a model (a departure from REQ-POL-03 and the `policy.read` job, taken to avoid spending model calls on a hint). An order the rules do not recognise gets no reading; the model forms its own understanding once, at Execute.
+- There is no "Read as" line and no follow-up question (a departure from REQ-POL-03 and REQ-JOB-06). Boxes go out as written. An order too vague to act on is answered in the world: the chronicle reports that ministries could not act on it, and its policy page says why.
 - A pinned box stays on the desk after it is executed and is not sent again until its wording changes.
+
+## Agreed in the spec, not built yet
+
+Decided in play-testing on 12 November 2026 and written into the spec and requirements. The code still has the dropdown, the six-month limit, single-call narration and commit-after-writing.
+
+- The time control: a date pill, a forward panel (to next major event, one hour to one year, a specific time) and a back arrow to history.
+- History by turn (your move, world response), by time and by story; read-only viewing; export.
+- Chronicle entries whose length follows weight, with quotes from the cast and declared detail figures.
+- Speed: commit results before prose, stream writing, run independent calls at once, no model for short moves or routine notices.
 
 ## M1 to M4
 
-Not started. See the roadmap in the README.
+Not started. M1 begins with the cast and a response to every order (spec: "Every order gets an answer", REQ-ACT-18 to 24), before conversations. See the roadmap in the README.

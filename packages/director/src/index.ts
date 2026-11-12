@@ -37,7 +37,6 @@ import {
   INSTRUMENT_REFS,
   memoryDigest,
   policyCompile,
-  policyRead,
   policyReport,
   type Size,
   turnAdjudicate,
@@ -103,6 +102,8 @@ interface PolicyRecord {
   announcedDay: number;
   enactDay: number;
   blockedReason?: string;
+  /** The order was too unclear for anyone to act on. */
+  vague?: boolean;
 }
 interface CompileData {
   policies: PolicyRecord[];
@@ -491,14 +492,31 @@ export function createDirector(options: DirectorOptions): Director {
             }),
       });
     }
-    const held = new Set([
-      ...conflicts.flatMap((c) => c.cards),
-      ...output.needsDetail.map((n) => n.card),
-    ]);
+    // A vague order is not sent back with a question. It goes out as written, and the
+    // world answers it: the ministries cannot act on it, and that is reported.
+    for (const [i, unclear] of output.needsDetail.entries()) {
+      const order = text.get(unclear.card) ?? '';
+      policies.push({
+        id: `${r.id}-v${i + 1}`,
+        title: order.length > 80 ? `${order.slice(0, 79).trimEnd()}…` : order,
+        summary: order,
+        instrument: 'novel',
+        scale: 'small',
+        funding: 'unspecified',
+        fromCards: [unclear.card],
+        orders: [order],
+        announcedDay: r.fromDay,
+        enactDay: r.fromDay,
+        vague: true,
+        blockedReason:
+          'Too vague to act on. Officials could not tell what was wanted, and nothing was done.',
+      });
+    }
+    const held = new Set(conflicts.flatMap((c) => c.cards));
     return {
       policies,
       conflicts,
-      needsDetail: output.needsDetail,
+      needsDetail: [],
       consumed: cards.map((c) => c.id).filter((id) => !held.has(id)),
     };
   }
@@ -698,6 +716,16 @@ export function createDirector(options: DirectorOptions): Director {
     const pendingEnact: PolicyRecord[] = [];
     const stopped: Record<string, string> = {};
     for (const policy of compile.policies) {
+      if (policy.vague) {
+        emit(
+          r.fromDay,
+          'policy.unclear',
+          'minor',
+          `Ministries were left unsure how to act on an instruction from the ${scenario.office.title}: "${policy.title}" Officials waited for clarity and nothing was done.`,
+          [policy.id],
+        );
+        continue;
+      }
       if (policy.blockedReason) {
         emit(
           r.fromDay,
@@ -1103,10 +1131,7 @@ export function createDirector(options: DirectorOptions): Director {
       if (step === 'compile') {
         const data = await compileStep(r, world, scenario, projection);
         saveStep(id, step, data);
-        if (
-          data.conflicts.length > 0 ||
-          (data.policies.length === 0 && data.needsDetail.length > 0 && r.kind === 'execute')
-        ) {
+        if (data.conflicts.length > 0) {
           ledger.append({
             type: 'resolution.blocked',
             id,
@@ -1295,32 +1320,6 @@ export function createDirector(options: DirectorOptions): Director {
     };
   }
 
-  // A box's reading comes from the built-in rules, at once and for free. No model is called:
-  // the model's own understanding is formed once, when the boxes are executed.
-  const readNow = (cardId: string) => {
-    const { projection, world, scenario } = state();
-    const card = projection.cards.get(cardId);
-    if (!world || !scenario || !card) return;
-    const output = policyRead.fallback({
-      card: { id: cardId, text: card.text },
-      office: scenario.office,
-      standing: [],
-      instruments: INSTRUMENT_REFS.map((i) => ({ id: i.id, label: i.label })),
-      regions: regionRefs(world),
-    });
-    // Say nothing rather than guess: an order the rules do not recognise gets no reading.
-    if (output.instrument === 'novel') return;
-    ledger.append({
-      type: 'card.read',
-      cardId,
-      reading: {
-        reading: output.reading,
-        instrument: output.instrument,
-        ...(output.question ? { question: output.question } : {}),
-      },
-    });
-  };
-
   let viewCache: { version: number; view: View } | undefined;
 
   return {
@@ -1351,7 +1350,6 @@ export function createDirector(options: DirectorOptions): Director {
     },
     addCard(card) {
       ledger.append({ type: 'card.created', card });
-      readNow(card.id);
     },
     patchCard(id, patch) {
       const card = state().projection.cards.get(id);
@@ -1359,7 +1357,6 @@ export function createDirector(options: DirectorOptions): Director {
       requireQuiet();
       if (patch.text !== undefined && patch.text !== card.text) {
         ledger.append({ type: 'card.edited', cardId: id, text: patch.text });
-        readNow(id);
       }
       if (patch.pinned !== undefined && patch.pinned !== (card.pinned ?? false)) {
         ledger.append({ type: 'card.pinned', cardId: id, pinned: patch.pinned });

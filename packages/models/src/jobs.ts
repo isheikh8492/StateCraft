@@ -72,10 +72,7 @@ const ReadOut = z.object({
 });
 export type ReadOut = z.infer<typeof ReadOut>;
 
-/**
- * Not sent to a model in play: the director uses this job's built-in rules directly, so that
- * adding a box costs nothing. The job stays defined for the model check.
- */
+/** Not used in play: boxes are no longer read back to the player. Kept for the model check. */
 export const policyRead: Job<ReadIn, ReadOut> = {
   name: 'policy.read',
   version: 1,

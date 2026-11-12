@@ -115,10 +115,10 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------- | ------------- |
 | REQ-JOB-01 | Every job must return one JSON object that starts with a `why` field and refers to actors, regions, policies and events by id only.                                                | M0  | J Conventions                   | CHECK         |
 | REQ-JOB-02 | An output containing an unknown id must fail validation.                                                                                                                           | M0  | J Conventions                   | CHECK         |
-| REQ-JOB-03 | Any figure in model-written text must appear in that job's input.                                                                                                                  | M0  | J Conventions                   | CHECK         |
+| REQ-JOB-03 | Any figure in model-written text must appear in that job's input, or, for the chronicle only, be declared as a detail figure (REQ-JOB-24). | M0  | J Conventions                   | CHECK         |
 | REQ-JOB-04 | Every job must define a fallback that needs no model, and the game must be playable end to end on fallbacks alone.                                                                 | M0  | J Conventions; J How to build   | E2E           |
 | REQ-JOB-05 | Every job output must accept an optional `extensions` object, which must be logged and never applied.                                                                              | M0  | E Open by design; J Conventions | CHECK         |
-| REQ-JOB-06 | `policy.read` must return a reading of at most 140 characters for one box, and a question only when the box is too vague.                                                          | M0  | J policy.read                   | CHECK, E2E    |
+| REQ-JOB-06 | **Withdrawn.** Boxes are not read back and the game asks no follow-up questions. | M0  | J policy.read                   | CHECK, E2E    |
 | REQ-JOB-07 | `policy.compile` must account for every input box exactly once across policies, duplicates, conflicts and needs-detail.                                                            | M0  | J policy.compile; O Policy desk | CHECK         |
 | REQ-JOB-08 | `policy.compile` must merge fragments, fold duplicates, split boxes with several ideas, flag conflicts, and flag boxes that break one of the player's commitments.                 | M0  | O Policy desk                   | BENCH, E2E    |
 | REQ-JOB-09 | `turn.adjudicate` must receive every actor's actions in one list with one shape, as summaries, with nothing identifying the human player.                                          | M0  | J turn.adjudicate; R 5          | REVIEW, BENCH |
@@ -136,6 +136,9 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-JOB-21 | `persona.write` must not produce a name that matches a real, known person.                                                                                                         | M1  | J Smaller jobs                  | CHECK         |
 | REQ-JOB-22 | `intel.report` must contain no fact beyond the items the engine supplied; errors in a report are decided by the engine.                                                            | M2  | J Later jobs                    | CHECK         |
 | REQ-JOB-23 | `scene.write` must never be called when the victim is a real, living person.                                                                                                       | M3  | J Later jobs; P Lethal          | CHECK         |
+| REQ-JOB-24 | A chronicle entry may introduce figures the engine does not hold only by declaring each as a detail; details must be stored, reused on the same thread, and must never restate or contradict an engine-owned quantity. | M1 | J chronicle.write | CHECK |
+| REQ-JOB-25 | A chronicle entry's length must follow its event's weight: one built-in line for routine notices, and about 50, 150 and 400 words for minor, significant and major events. | M1 | J chronicle.write | CHECK |
+| REQ-JOB-26 | A quote in the chronicle must belong to an actor listed as a speaker for that event, must be stored as that actor's utterance, and must be shown set apart and marked simulated. | M1 | J chronicle.write | CHECK, E2E |
 
 ## 7. Policy desk (POL)
 
@@ -143,7 +146,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------- | ----------- |
 | REQ-POL-01 | The player must be able to type any intended action in plain words and turn it into a policy box with a + control.                                                                        | M0  | O Policy desk                   | E2E         |
 | REQ-POL-02 | Boxes must be editable, deletable, reorderable, and pinnable as standing policy.                                                                                                          | M0  | O Policy desk                   | E2E         |
-| REQ-POL-03 | The game's reading of a box must appear under it within the responsiveness target.                                                                                                        | M0  | O Policy desk; O Responsiveness | E2E         |
+| REQ-POL-03 | **Withdrawn.** No reading is shown under a box. An unclear order is sent as written and answered in the world (REQ-POL-11). | M0  | O Policy desk; O Responsiveness | E2E         |
 | REQ-POL-04 | The player's own wording in a box must never be rewritten.                                                                                                                                | M0  | O Policy desk                   | E2E         |
 | REQ-POL-05 | A conflict between boxes must block execution until the player keeps one, edits, or chooses to send mixed signals.                                                                        | M0  | O Policy desk                   | E2E         |
 | REQ-POL-06 | A blocked or infeasible policy must be returned with the reason.                                                                                                                          | M0  | O Gameplay                      | E2E         |
@@ -151,13 +154,14 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-POL-08 | Every message in any conversation, and every event and intelligence item, must offer a + that creates a box linked to its source; selecting part of a message must box only that passage. | M1  | O Policy desk                   | E2E         |
 | REQ-POL-09 | Before execution, each affected advisor must be able to attach notes on cost, legality, likely reaction and time to a box.                                                                | M1  | O Policy desk                   | E2E         |
 | REQ-POL-10 | A policy with no catalogue entry must be resolved by analogy to named known policies and must not be penalised for being new.                                                             | M2  | E Open by design                | BENCH       |
+| REQ-POL-11 | An order too vague to act on must be sent as written and answered by an event in the world; the game must not stop to ask the player a question. | M0 | O Policy compiler | E2E |
 
 ## 8. Clock (CLK)
 
 | ID         | Requirement                                                                                                                                                             | MS  | Source              | Verified by |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------- | ----------- |
-| REQ-CLK-01 | The player must be able to advance time by any amount up to six months, or to a chosen date.                                                                            | M0  | O Gameplay; P Clock | E2E         |
-| REQ-CLK-02 | Executing policies must advance the clock to the first result worth the player's attention.                                                                             | M0  | P Clock             | E2E         |
+| REQ-CLK-01 | The player must be able to move time forward by one hour, one day, one week, one month, three months, six months or one year, or to a chosen date and hour up to one year ahead. | M0  | O Gameplay; P Clock | E2E         |
+| REQ-CLK-02 | Moving time forward must first send any boxes on the desk; there must be no separate execute control. A move must still stop early for anything urgent. | M0  | P Clock             | E2E         |
 | REQ-CLK-03 | An advance must stop early for anything urgent.                                                                                                                         | M0  | P Clock             | E2E         |
 | REQ-CLK-04 | The engine must keep one queue of dated events and advance by applying daily rules up to the next event.                                                                | M1  | P Clock             | INV         |
 | REQ-CLK-05 | Asking for a deliverable, or waiting on a reply or meeting, must advance the clock until it arrives or something more urgent interrupts.                                | M1  | P Clock             | E2E         |
@@ -166,6 +170,9 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-CLK-08 | The game must tell the player what is coming next when nothing is waiting on them, and offer to move to it.                                                             | M1  | P Clock             | E2E         |
 | REQ-CLK-09 | The game must choose a tempo (crisis, active, routine, long view) from the situation, announce changes, and let the player override it.                                 | M2  | P Clock             | E2E         |
 | REQ-CLK-10 | Long jumps are lower resolution by design; the same period sliced differently must land within a wide band, not on the same state.                                      | M0  | O Gameplay; R 4     | BENCH       |
+| REQ-CLK-11 | A "to next major event" move must run day by day and stop at the first major event, crisis line or message addressed to the player, within one year, chosen by the engine without a model call. | M0 | O The time control | INV, E2E |
+| REQ-CLK-12 | The clock must carry a time of day; a move of less than a day must deliver reactions, messages and events without stepping the engine's daily systems. | M1 | O The time control | INV |
+| REQ-CLK-13 | Time must be controlled from a date pill with a forward panel listing each option with the date it lands on, and a back control that opens history. | M0 | O The time control | E2E |
 
 ## 9. Knowing what happened (READ)
 
@@ -184,6 +191,9 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-READ-11 | The "what if you had not" analysis must be presented as an estimate with a range from several replays, never as an exact figure.                                                 | M2  | O Knowing; R 3     | REVIEW      |
 | REQ-READ-12 | The player must never be shown pressure or threshold as numbers outside the Open assist setting and the developer view.                                                          | M1  | E Reading pressure | E2E         |
 | REQ-READ-13 | The game must offer the assist settings Realistic, Guided and Open; under Guided the chief of staff must dependably report which levers mattered after a stance holds or breaks. | M1  | E Learning why     | E2E         |
+| REQ-READ-14 | History must be viewable by turn (the player's move followed by the world's response), by time, and by story thread. | M1 | O History | E2E |
+| REQ-READ-15 | While the player views a past turn, the map and figures must show that moment, the desk must be disabled, and one control must return to the present; viewing must not create a branch. | M1 | O History | E2E |
+| REQ-READ-16 | The chronicle must be exportable to a file. | M1 | O History | E2E |
 
 ## 10. User interface (UI)
 
@@ -205,7 +215,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------- | ----------- |
 | REQ-PERF-01 | Any click, typing, window action or map movement must respond in under 100 ms and must never wait on a model.                                                                     | M0  | O Responsiveness    | E2E         |
 | REQ-PERF-02 | Model work must run in a prioritised job queue in which anything the player is waiting on runs before background work.                                                            | M0  | O Responsiveness    | REVIEW      |
-| REQ-PERF-03 | Results of a resolution must appear as they commit: numbers and map first, then policy outcomes, then the chronicle, then widgets.                                                | M0  | O Responsiveness    | E2E         |
+| REQ-PERF-03 | A turn must commit and show its date, figures, map and order outcomes as soon as the engine has applied the judged period; written entries and reports must arrive afterwards and must never delay the commit. | M0  | O Responsiveness    | E2E         |
 | REQ-PERF-04 | Every window must remain usable while a resolution runs.                                                                                                                          | M0  | O Responsiveness    | E2E         |
 | REQ-PERF-05 | Each step of a resolution must be saved before the next begins; after a stop at any point the resolution must resume from the last finished step without applying anything twice. | M0  | O Responsiveness    | E2E         |
 | REQ-PERF-06 | State changes from one step must be committed together or not at all.                                                                                                             | M0  | O Responsiveness    | INV         |
@@ -217,6 +227,12 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-PERF-12 | The first words of a character's reply should appear within 2 s hosted, 5 s local (target).                                                                                       | M1  | O Responsiveness    | MANUAL      |
 | REQ-PERF-13 | M0 must include a resolution inspector showing every model call with its input, output, checks and cost, and a cost meter totalling tokens per resolution.                        | M0  | O Roadmap; R 13, 20 | E2E         |
 | REQ-PERF-14 | The Director must fit each resolution inside a token budget, activating fewer actors when needed.                                                                                 | M2  | R 13                | INV         |
+| REQ-PERF-15 | Independent model work in a turn (one call per notable event, reactions from different actors, reports) must be issued concurrently. | M1 | O Speed | REVIEW |
+| REQ-PERF-16 | Long written entries must stream to the screen as they are produced. | M1 | O Speed | E2E |
+| REQ-PERF-17 | A move of a day or less with nothing ordered must be resolved without any model call. | M0 | O Speed | INV |
+| REQ-PERF-18 | Adding or editing a box, routine notices and monthly summaries must make no model call. | M0 | O Speed | INV |
+| REQ-PERF-19 | Prompts must carry a compact description of the output rather than a full schema, and the world brief only where the job needs it. | M0 | O Speed | REVIEW |
+| REQ-PERF-20 | The Inspector must show, per turn, the time to first result and the time to the last written word. | M1 | O Speed | E2E |
 
 ## 12. Live map (MAP)
 
@@ -272,6 +288,13 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-ACT-15 | A character holding a stance below its threshold must not concede under any wording, in at least 200 scripted attempts.                                                                                                                     | M1  | O Roadmap; E Calibration | BENCH       |
 | REQ-ACT-16 | An actor must run its own model call in a resolution only when salient; other actors must move by rules and one batched digest.                                                                                                             | M2  | O Actors                 | INV         |
 | REQ-ACT-17 | The same actor must behave consistently with its traits across 20 varied situations, and two actors must be distinguishable from unlabelled transcripts.                                                                                    | M1  | E Actors                 | BENCH       |
+| REQ-ACT-18 | Each scenario must list a cast of stakeholders with, for each, its interests, its stance toward the player and the actions within its power. | M1 | O Every order gets an answer | REVIEW |
+| REQ-ACT-19 | Every order that takes effect must draw at least one visible response in the same resolution from an actor it touches; silence must be stated, never implied by absence. | M1 | O Every order gets an answer | INV, E2E |
+| REQ-ACT-20 | Which actors an order touches must be decided by engine rules from the cast's interests, not by a model. | M1 | O Every order gets an answer | INV |
+| REQ-ACT-21 | A response must be a statement, an action from that actor's allowed list with bounded effects, or stated silence, and must be written against the player's own wording. | M1 | O Every order gets an answer; J policy.react | CHECK |
+| REQ-ACT-22 | A response may schedule a later beat decided by dice; each beat must be its own event citing the order as its cause. | M1 | O Every order gets an answer | INV |
+| REQ-ACT-23 | Responses must appear in the chronicle beside the order, on the policy's page, and in the inbox when addressed to the player. | M1 | O Every order gets an answer | E2E |
+| REQ-ACT-24 | Until other countries are modelled, foreign actors must be able to appear in the cast as reactors that speak and take positions only. | M1 | O Every order gets an answer | REVIEW |
 
 ## 15. Inbound events and intrigue (EVT)
 
@@ -426,15 +449,15 @@ These are named in the spec but not specified well enough to test:
 | DATA      | 11           |
 | ENG       | 25           |
 | HARN      | 11           |
-| JOB       | 23           |
-| POL       | 10           |
-| CLK       | 10           |
-| READ      | 13           |
+| JOB       | 26           |
+| POL       | 11           |
+| CLK       | 13           |
+| READ      | 16           |
 | UI        | 9            |
-| PERF      | 14           |
+| PERF      | 20           |
 | MAP       | 13           |
 | WORLD     | 10           |
-| ACT       | 17           |
+| ACT       | 24           |
 | EVT       | 12           |
 | PLY       | 17           |
 | CONF      | 13           |
@@ -443,4 +466,6 @@ These are named in the spec but not specified well enough to test:
 | TEST      | 14           |
 | MEM       | 8            |
 | OPEN      | 8            |
-| **Total** | **278**      |
+| **Total** | **301**      |
+
+The total includes two withdrawn requirements (REQ-JOB-06 and REQ-POL-03), which keep their ids.

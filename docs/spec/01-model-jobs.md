@@ -49,7 +49,8 @@ type Size = "colour" | "minor" | "significant" | "major";
 
 | Job | Role | Runs when | First needed |
 | --- | --- | --- | --- |
-| `policy.read` | Extractor | You add a policy box | M0 |
+| `policy.read` | Extractor | Retired: boxes are not read back to the player | none |
+| `policy.react` | Actor | An order takes effect, once per touched actor (batched for the lightly touched) | M1 |
 | `policy.compile` | Extractor | You execute your boxes | M0 |
 | `turn.adjudicate` | Adjudicator | Each world resolution | M0 |
 | `turn.review` | Adjudicator | A major event or novel policy was proposed | M0 |
@@ -75,6 +76,8 @@ Roles map to models in settings. One model can hold all four roles.
 ## M0 jobs
 
 ### `policy.read`
+
+**Retired.** The game no longer shows a reading under a box or asks a follow-up question (see "The policy compiler" in the overview). The definition stays in code only as one of the short jobs the in-app model check runs.
 
 Shows you how the game understands one box, seconds after you add it. Nothing it returns is binding.
 
@@ -212,6 +215,15 @@ interface Out {
 
 ### `chronicle.write`
 
+**Changed after play-testing** (see "The chronicle" and "Speed" in the overview). The points below override the shapes and limits further down where they differ:
+
+- **One call per notable event or thread,** run side by side, instead of one call for the whole period. Routine notices are never sent.
+- **Length follows weight.** The input carries `weight: "minor" | "significant" | "major"`, and the limits are about 50, 150 and 400 words. A significant or major entry opens with a dateline (place, date, hour).
+- **Quotes.** The input lists the actors who may speak: `speakers: { id, name, role, stance, voice }[]`. The output may include `quotes: { speaker: Id; text: string }[]`, each also appearing in the body. A quote from anyone not in `speakers` fails the check. Each quote is stored as an utterance by that actor.
+- **Detail figures.** The output carries `details: { label: string; value: string }[]` for every figure in the text that is not in the input. A figure that appears in the text and in neither the input nor `details` fails the check, and so does a detail that restates a quantity the engine owns. The input carries earlier `details` on the same thread, which must be reused, not changed.
+- **Streaming.** The body is streamed to the screen as it is written; the checks run when it is complete, and an entry that fails is replaced by its repair or by built-in wording.
+- **Never blocks the turn.** It runs after the turn has committed.
+
 Writes the story of a resolved period from committed events. It adds nothing that is not in its input.
 
 ```ts
@@ -304,6 +316,32 @@ interface Out {
 - **Fallback:** the digest is the list of `significant` and `major` headlines.
 
 ## M1 jobs
+
+### `policy.react`
+
+Writes how one actor answers an order that touches it. The engine has already decided that this actor is touched and what it is able to do; the model chooses among those options and writes the words.
+
+```ts
+interface In {
+  order: { id: Id; text: string; summary: string; by: Ref };     // the player's own wording, and the compiled summary
+  actor: { id: Id; name: string; kind: string; cares: string[]; stance: "hostile" | "wary" | "neutral" | "friendly"; voice: string };
+  options: { id: Id; label: string; effects: { on: VarPath; range: [number, number] }[] }[];   // actions within this actor's power
+  state: Record<VarPath, number | string>;
+  recent: { id: Id; when: string; summary: string }[];
+}
+interface Out {
+  why: string;
+  kind: "statement" | "action" | "silence";
+  public: boolean;
+  text: string;                       // at most 60 words, in the actor's voice; for silence, one plain sentence saying so
+  action?: { option: Id; effects: Effect[] };
+  later?: { inDays: number; question: string; ifYes: string; ifNo: string };   // a beat the engine will roll
+}
+```
+
+- **Checks:** `action.option` is in `options` and every effect is inside its range; `action` is present if and only if `kind` is `"action"`; no figure in `text` that is not in the input; `later.inDays` is within 90 days.
+- **Fallback:** a template statement for the actor's kind and stance, no action, no later beat.
+- **Blindness does not apply here.** This job voices one named actor answering a named order, so it knows who gave the order. Judging the period stays blind.
 
 ### `actor.reply`
 
@@ -457,7 +495,7 @@ These are design targets, set so the smallest supported local model (an 8,000-to
 
 A model with a larger context window gets more history and more memories in the same layout.
 
-**Calls per resolution.** In M0 a typical resolution is four calls: `policy.compile`, `turn.adjudicate`, `chronicle.write` and `policy.report`, plus `turn.review` when something major happens and `memory.digest` at a month boundary. `policy.read` runs once per box as you type. From M1, each activated actor adds one `actor.decide`, and each line of conversation is one `actor.reply` plus one `talk.extract`.
+**Calls per resolution.** In M0 a typical resolution is four calls (adding a box makes none): `policy.compile`, `turn.adjudicate`, `chronicle.write` and `policy.report`, plus `turn.review` when something major happens and `memory.digest` at a month boundary. `policy.read` runs once per box as you type. From M1, each activated actor adds one `actor.decide`, and each line of conversation is one `actor.reply` plus one `talk.extract`.
 
 ## How to build from this tab
 

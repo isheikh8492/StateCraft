@@ -74,8 +74,6 @@ describe('director', () => {
     add('Reduce subsidies on petrol.');
     add('Order the State Bank to lower the interest rate.');
     add('Open talks with tribal elders in Khyber Pakhtunkhwa.');
-    await director.idle();
-    expect(director.view().cards.every((c) => c.reading)).toBe(true);
 
     director.execute(false);
     await director.idle();
@@ -216,10 +214,7 @@ describe('desk and time', () => {
     await director.idle();
     const cards = director.view().cards;
     expect(cards.map((c) => c.id)).toEqual([b, a]);
-    expect(cards[1]).toMatchObject({
-      text: 'Raise the sales tax slightly.',
-      reading: { instrument: 'sales_tax_rise' },
-    });
+    expect(cards[1]).toMatchObject({ text: 'Raise the sales tax slightly.' });
 
     director.execute(false);
     await director.idle();
@@ -263,6 +258,26 @@ describe('desk and time', () => {
     expect(view.events.map((e) => e.id)).toEqual(eventsThen);
     expect(view.policies).toHaveLength(1);
     expect(() => long.director.rewindToDate('2030-01-01')).toThrow(/past/);
+  });
+
+  it('answers a vague order in the world instead of asking the player a question', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    add('Fix it');
+    add('Expand cash transfers to poor households.');
+    director.execute(false, 7);
+    await director.idle();
+    const view = director.view();
+    expect(view.blocked).toBeNull();
+    expect(view.cards).toEqual([]);
+    expect(view.cards.every((c) => c.reading === undefined)).toBe(true);
+    expect(view.events.find((e) => e.kind === 'policy.unclear')?.summary).toMatch(
+      /unsure how to act.*"Fix it"/,
+    );
+    expect(view.policies.find((p) => p.orders[0] === 'Fix it')).toMatchObject({
+      status: 'blocked',
+    });
+    expect(view.policies.filter((p) => p.status === 'active')).toHaveLength(1);
   });
 
   it('fills a quiet world with its own events when no model writes any', async () => {
