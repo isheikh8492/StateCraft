@@ -40,7 +40,7 @@ A pure browser app was rejected: it cannot reach most local servers, it exposes 
 | Layer | Choice | Why |
 | --- | --- | --- |
 | Language | TypeScript (strict), Node.js LTS | Shared types from schema to UI |
-| Repo | pnpm workspaces monorepo | Packages version together; plugins import the SDK |
+| Repo | npm workspaces monorepo (see docs/decisions/0001) | Packages version together; plugins import the SDK |
 | Schemas | Zod, exported as JSON Schema | One definition validates model output, API input and save files |
 | Server | Fastify + WebSocket event stream | Typed routes; live turn progress pushed to the UI |
 | Storage | SQLite (Node's built-in module if it proves stable, else better-sqlite3) | One file per campaign; transactional; easy to share |

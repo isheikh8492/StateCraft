@@ -1,0 +1,126 @@
+/*
+ * StateCraft design tokens. This file is the only place a raw colour, size or font may appear.
+ * Components use the utilities these tokens generate (bg-surface, text-fg-muted, rounded-control).
+ * Dark is the only theme for now; a light theme would redefine these same tokens.
+ */
+@import "tailwindcss";
+
+@theme {
+  /* Type: one face for the interface, one for long reading, one for figures. */
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.35;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.4;
+  --text-ui: 13px;
+  --text-ui--line-height: 1.45;
+  --text-read: 15px;
+  --text-read--line-height: 1.65;
+  --text-lg: 17px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 22px;
+  --text-xl--line-height: 1.25;
+
+  /* Colour: neutral blue-grey surfaces, one amber accent, three status colours. */
+  --color-*: initial;
+  --color-bg: #0a0f13;
+  --color-surface: #111920;
+  --color-surface-2: #17212a;
+  --color-raised: #1d2a35;
+  --color-border: #263440;
+  --color-border-strong: #3b4d5c;
+  --color-fg: #e4eaef;
+  --color-fg-muted: #9dabb7;
+  --color-fg-subtle: #74838f;
+  --color-accent: #e9b44c;
+  --color-accent-hover: #f2c366;
+  --color-accent-fg: #1b1304;
+  --color-accent-soft: #2e2613;
+  --color-good: #4fbf8b;
+  --color-good-soft: #12291f;
+  --color-warn: #e07b39;
+  --color-warn-soft: #2e1c10;
+  --color-bad: #e5594f;
+  --color-bad-soft: #301715;
+  --color-map-water: #0c141a;
+  --color-map-line: #16222b;
+
+  /* Shape and depth. */
+  --radius-*: initial;
+  --radius-control: 6px;
+  --radius-window: 8px;
+  --radius-full: 999px;
+  --shadow-*: initial;
+  --shadow-window: 0 14px 36px rgb(0 0 0 / 0.5);
+
+  /* Motion: short and functional. */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    font-feature-settings: "cv11", "ss03";
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+@utility label-caps {
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@utility tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Long-form reading: chronicle entries, scenes, letters. Capped near 70 characters. */
+@utility prose-read {
+  font-family: var(--font-serif);
+  font-size: var(--text-read);
+  line-height: var(--text-read--line-height);
+  max-width: 70ch;
+}
