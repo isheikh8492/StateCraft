@@ -40,6 +40,10 @@ Figures were looked up on 11 November 2026.
 | --- | --- | --- |
 | Head of government | Sourced | Shehbaz Sharif is Prime Minister, [Express Tribune](https://tribune.com.pk/story/2639290/pm-shehbaz-briefs-nawaz-sharif-on-k-p-security-economic-challenges). |
 | Region populations (millions) | Sourced | 2023 census for Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan and Islamabad; 2017 census for Azad Jammu and Kashmir and Gilgit-Baltistan, which the 2023 count left out. Not re-checked against the census tables for this pack. |
+| National Assembly seats by party | Sourced | 336 seats, 169 for a majority; party strengths as listed on [Wikipedia, National Assembly of Pakistan](https://en.wikipedia.org/wiki/National_Assembly_of_Pakistan), read on 12 November 2026. The page accounts for 332 of the 336 seats. Which parties count as allies rather than government is authored. |
+| Court independence (0.4) | Authored | How often the superior courts stay an executive order. |
+| Region aliases | Authored | City and common names the built-in reader recognises. |
+| Region outlines | Sourced | Natural Earth 1:10m subdivisions (public domain), built by `npm run outlines`. Disputed borders follow Natural Earth's de facto view. |
 | Approval groups, their approval, floors, ceilings and sensitivities | Authored | No poll divides Pakistan this way. The groups are the blocs that shape its politics; the numbers are starting judgements. |
 | Group mix by region | Authored | Guided by the census urban share and where the Pashtun and Baloch populations live. |
 | Unrest levels | Authored | Khyber Pakhtunkhwa and Balochistan start as insurgencies; Balochistan starts contested. Sindh, Azad Kashmir and Gilgit-Baltistan start at protest level. |

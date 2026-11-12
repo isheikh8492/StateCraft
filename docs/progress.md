@@ -18,8 +18,8 @@ Scope: one country (Pakistan), one position (head of government), policy only. G
 | 2. Engine: budget, approval, unrest, control | Done | Pakistan scenario pack with sources. Golden 12-month run. Decision record 0005. |
 | 3. Model harness and the seven M0 jobs | Done | Package `models`: OpenAI-compatible, Anthropic and Gemini adapters; parse, check, repair twice, fall back; refusal handling; call log; scripted stand-in model; in-app model check. |
 | 4. Clock and resolution | Done | Package `director`: compile, adjudicate, apply, narrate, report, each saved before the next; resume after a stop; cancel; conflicts held for a choice; blocked orders returned with the reason; advance up to six months; early stop on a crisis. |
-| 5. Reading the world | Done in part | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, region map. See gaps. |
-| 6. Saves and branches | Done | Snapshot at every commit, rewind to any saved point onto a new branch, old line kept. Decision record 0006. |
+| 5. Reading the world | Done in part | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, MapLibre map of regions with no tile service. See gaps. |
+| 6. Saves and branches | Done | Snapshot at every commit, rewind to any saved point or any date onto a new branch, old line kept. Decision record 0006. |
 | 7. Developer tools | Done | Inspector with every model call and a cost meter; true numbers behind a developer switch. |
 | 8. Gate | **Not passed** | A one-year term plays end to end on the scripted stand-in and on no model at all (tested). It has not been run on a real model: no local or hosted model was available where this was built. |
 
@@ -35,17 +35,13 @@ These are in `docs/requirements.md` for M0 and are not built, or are built in a 
 
 | Requirement | State |
 | --- | --- |
-| REQ-MAP-02, 05: MapLibre map from typed map operations, offline tiles | Reduced. The map is an SVG of province outlines (Natural Earth) drawn from engine state. No tiles, no map operations in the ledger. Decision record 0006. |
+| REQ-MAP-02: everything on the map from typed map operations in the ledger | Reduced. The map (MapLibre, offline, no tiles or key) is drawn from engine state each time. There are no stored map operations yet; they arrive with units and fronts in M3. |
 | REQ-MAP-04: chronicle and map cross-checked | Not needed yet: control changes come only from the engine, never from model text. |
-| REQ-WORLD-04 to 06: full government structure and dossier | Reduced to the office's powers, its limits, and a written brief. No legislature, courts or informal power holders yet; those arrive with actors in M1. |
-| REQ-ENG-13, 14: procedures | Reduced. Each kind of order has a fixed delay before it takes effect; there is no vote or veto to pass. |
+| REQ-WORLD-04 to 06: full government structure and dossier | Reduced. The office's powers and limits, a legislature with real seat counts that votes on budget measures, and courts that can stay executive orders. No cabinet, provinces as actors, or informal power holders yet; those arrive with actors in M1. |
 | REQ-HARN-03: capability probe | Reduced. The harness learns what a server rejects and adapts; context size and safe concurrency are not measured. |
-| REQ-HARN-08: a model per role | Not built. One model serves every role. |
-| REQ-POL-02: edit, reorder, pin boxes | Not built. Boxes can be added and deleted. Standing policies do keep acting until repealed. |
-| REQ-CLK-01: advance to a chosen date | Not built. Fixed jumps from one week to six months. |
-| REQ-READ-05, 06: filters, "since you last looked", timeline scrubbing | Not built. The timeline lists saved points and rewinds to them. |
-| REQ-DATA-04, 05: daily snapshots, rewind to any date | Reduced. Snapshots are taken at every resolution; you can rewind to any of those points. |
-| REQ-DATA-07: replay from recorded replies | Not built. Step results are stored, so nothing needs replaying to load a save. |
+| REQ-READ-05, 06: filters, "since you last looked", timeline scrubbing | Not built. The timeline lists saved points and rewinds to them or to any date. |
+| REQ-DATA-04: daily snapshots | Replaced. Snapshots are taken at every resolution; a date inside a resolution is reached by running that resolution again from its saved inputs up to that day, which gives the same world (tested). |
+| REQ-DATA-07: replay from recorded replies | Not built as a general tool. Step results are stored, so nothing needs replaying to load a save. |
 | REQ-PERF-03: results appear as they commit | Reduced. The progress panel names each step; results appear together when the resolution commits, so that cancel can return the world untouched. |
 | REQ-CONT-03, 07: content levels, real names switch | Not built. Narration runs at the standard level; real names are on. |
 | REQ-UI-05: full keyboard operation | Partly. Everything is reachable by keyboard except dragging and resizing windows. |
@@ -58,8 +54,9 @@ These are in `docs/requirements.md` for M0 and are not built, or are built in a 
 
 - Every speed, threshold and catalogue range is a placeholder until calibration.
 - The cost of a slate that is not paid for is borrowed automatically and stated on the policy page.
-- With no model, or a weak one, the world only produces engine events (figures, unrest, crisis lines). Scandals, statements and accidents need a model.
-- The keyword reader that stands in for a model knows Pakistan's place names only.
+- With no model, the world's own events come from a small fixed deck (strikes, outages, rallies, attacks, floods) chosen by dice and tilted by the state of the country. A model writes richer and more specific ones.
+- Vote and court odds are placeholders: allies peel away from unpopular measures, and the courts stay a small share of executive orders.
+- A pinned box stays on the desk after it is executed and is not sent again until its wording changes.
 
 ## M1 to M4
 

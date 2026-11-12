@@ -14,6 +14,61 @@
       "monetary": "The State Bank of Pakistan sets the policy rate independently. The Prime Minister cannot order a rate change."
     }
   },
+  "government": {
+    "legislature": {
+      "name": "National Assembly",
+      "seats": 336,
+      "majority": 169,
+      "blocs": [
+        {
+          "id": "pmln",
+          "name": "PML-N",
+          "seats": 131,
+          "stance": "government"
+        },
+        {
+          "id": "ppp",
+          "name": "PPP",
+          "seats": 74,
+          "stance": "ally"
+        },
+        {
+          "id": "mqm",
+          "name": "MQM-P",
+          "seats": 22,
+          "stance": "ally"
+        },
+        {
+          "id": "allies",
+          "name": "Smaller government allies",
+          "seats": 16,
+          "stance": "ally"
+        },
+        {
+          "id": "pti",
+          "name": "PTI-backed independents and SIC",
+          "seats": 76,
+          "stance": "opposition"
+        },
+        {
+          "id": "juif",
+          "name": "JUI-F",
+          "seats": 10,
+          "stance": "opposition"
+        },
+        {
+          "id": "others",
+          "name": "Other opposition",
+          "seats": 3,
+          "stance": "opposition"
+        }
+      ]
+    },
+    "court": {
+      "name": "the superior courts",
+      "independence": 0.4
+    }
+  },
   "brief": "Pakistan, 1 November 2026. A federal parliamentary republic of about 247 million people with four provinces (Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan), the Islamabad Capital Territory, and the administered territories of Azad Jammu and Kashmir and Gilgit-Baltistan. Shehbaz Sharif is Prime Minister. The army is the most powerful institution outside the elected government. The economy is about 452 billion US dollars and grew 3.7% in the last fiscal year. Inflation is 10.3%, pushed up by oil above 100 dollars a barrel during the conflict between the United States, Israel and Iran, and by wheat prices. The State Bank raised its policy rate to 12% on 27 October 2026; its inflation target is 5 to 7%. Foreign reserves are about 21.5 billion dollars, three months of imports. Public debt is about 68.5% of GDP and interest takes more than a third of revenue. The government is in an IMF programme and ran a budget deficit of 2.6% of GDP last year. Unemployment is 7.1% and about 29% of people live in poverty. Khyber Pakhtunkhwa and Balochistan have active insurgencies; in parts of Balochistan the state's control is contested.",
   "economy": {
     "gdpUsdBn": 452,
@@ -156,7 +211,9 @@
       "unrest": 20,
       "mobilization": 1.0,
       "capacity": 1.2,
-      "status": "held"
+      "status": "held",
+      "aliases": ["lahore", "rawalpindi", "faisalabad", "multan"],
+      "shapes": ["PK-PB"]
     },
     {
       "id": "sindh",
@@ -174,7 +231,9 @@
       "unrest": 31,
       "mobilization": 1.0,
       "capacity": 1.0,
-      "status": "held"
+      "status": "held",
+      "aliases": ["karachi", "hyderabad", "sukkur"],
+      "shapes": ["PK-SD"]
     },
     {
       "id": "kp",
@@ -193,7 +252,9 @@
       "unrest": 80,
       "mobilization": 1.2,
       "capacity": 0.8,
-      "status": "held"
+      "status": "held",
+      "aliases": ["kp", "kpk", "khyber", "pakhtunkhwa", "peshawar", "waziristan", "swat", "tribal"],
+      "shapes": ["PK-NW", "PK-TA"]
     },
     {
       "id": "balochistan",
@@ -212,7 +273,9 @@
       "unrest": 82,
       "mobilization": 1.2,
       "capacity": 0.6,
-      "status": "contested"
+      "status": "contested",
+      "aliases": ["baloch", "quetta", "gwadar"],
+      "shapes": ["PK-BA"]
     },
     {
       "id": "islamabad",
@@ -230,7 +293,9 @@
       "unrest": 18,
       "mobilization": 1.0,
       "capacity": 1.5,
-      "status": "held"
+      "status": "held",
+      "aliases": ["islamabad", "the capital"],
+      "shapes": ["PK-IS"]
     },
     {
       "id": "ajk",
@@ -248,7 +313,9 @@
       "unrest": 36,
       "mobilization": 1.1,
       "capacity": 1.0,
-      "status": "held"
+      "status": "held",
+      "aliases": ["ajk", "azad kashmir", "kashmir", "muzaffarabad"],
+      "shapes": ["PK-JK"]
     },
     {
       "id": "gb",
@@ -267,7 +334,9 @@
       "unrest": 31,
       "mobilization": 0.9,
       "capacity": 0.9,
-      "status": "held"
+      "status": "held",
+      "aliases": ["gilgit", "baltistan", "skardu"],
+      "shapes": ["PK-NA"]
     }
   ]
 }

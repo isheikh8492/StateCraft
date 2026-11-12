@@ -9,13 +9,16 @@ import {
   addEffects,
   CATALOGUE,
   checkFunding,
+  courtStays,
   createWorld,
   type Effect,
   type EngineEvent,
   fiscalCost,
   type Instrument,
+  legislatureVote,
   NOVEL_LIMITS,
   narrow,
+  nationalApproval,
   PROCEDURE_DAYS,
   removeEffects,
   resolveInstrument,
@@ -55,7 +58,14 @@ import {
   type View,
   type WorldEventView,
 } from '@statecraft/protocol';
-import { loadScenario, SCENARIO_IDS, type ScenarioId } from '@statecraft/scenarios';
+import {
+  loadOutlines,
+  loadScenario,
+  loadWorldOutlines,
+  SCENARIO_IDS,
+  type ScenarioId,
+} from '@statecraft/scenarios';
+import { ambientEvent } from './ambient.ts';
 import {
   dateOf,
   dayOf,
@@ -101,6 +111,8 @@ interface CompileData {
   consumed: string[];
 }
 interface AdjudicateData {
+  /** No model wrote events for this period, so the world's own noise fills in. */
+  quiet?: boolean;
   outcomes: { policy: string; result: string; note: string; picks: Record<string, number> }[];
   events: {
     kind: string;
@@ -113,6 +125,8 @@ interface AdjudicateData {
   }[];
 }
 interface ApplyData {
+  /** Policies that did not survive a vote or a court, with the reason. */
+  stopped?: Record<string, string>;
   world: World;
   toDay: number;
   events: WorldEventView[];
@@ -141,6 +155,7 @@ interface Resolution {
   report?: ReportData;
   blocked?: Pick<CompileData, 'conflicts' | 'needsDetail'>;
   commitSeq?: number;
+  startSeq?: number;
 }
 
 /** Everything the ledger says about the current branch, folded into one object. */
@@ -174,6 +189,34 @@ function project(events: readonly StoredEvent[]): Projection {
       case 'card.deleted':
         p.cards.delete(event.cardId);
         break;
+      case 'card.edited': {
+        const card = p.cards.get(event.cardId);
+        if (card) {
+          card.text = event.text;
+          delete card.reading;
+          delete card.sent;
+        }
+        break;
+      }
+      case 'card.pinned': {
+        const card = p.cards.get(event.cardId);
+        if (card) {
+          if (event.pinned) card.pinned = true;
+          else if (card.sent) p.cards.delete(event.cardId);
+          else delete card.pinned;
+        }
+        break;
+      }
+      case 'card.moved': {
+        const moving = p.cards.get(event.cardId);
+        if (moving) {
+          const rest = [...p.cards.values()].filter((c) => c.id !== moving.id);
+          const at = event.beforeId === null ? -1 : rest.findIndex((c) => c.id === event.beforeId);
+          rest.splice(at < 0 ? rest.length : at, 0, moving);
+          p.cards = new Map(rest.map((c) => [c.id, c]));
+        }
+        break;
+      }
       case 'card.read': {
         const card = p.cards.get(event.cardId);
         if (card)
@@ -193,6 +236,7 @@ function project(events: readonly StoredEvent[]): Projection {
           cardIds: event.cardIds,
           mixedSignals: event.mixedSignals,
           status: 'running',
+          startSeq: seq,
         };
         byId.set(r.id, r);
         p.resolutions.push(r);
@@ -222,7 +266,12 @@ function project(events: readonly StoredEvent[]): Projection {
         if (r) {
           r.status = 'committed';
           r.commitSeq = seq;
-          for (const id of r.compile?.consumed ?? []) p.cards.delete(id);
+          for (const id of r.compile?.consumed ?? []) {
+            const card = p.cards.get(id);
+            // A pinned box stays on the desk as a standing instruction.
+            if (card?.pinned) card.sent = true;
+            else p.cards.delete(id);
+          }
         }
         break;
       }
@@ -236,6 +285,10 @@ function project(events: readonly StoredEvent[]): Projection {
   }
   return p;
 }
+
+/** Why a policy never took effect, if it did not: outside the office's powers, voted down, or stayed. */
+const refusalOf = (policy: PolicyRecord, origin: Resolution): string | undefined =>
+  policy.blockedReason ?? origin.apply?.stopped?.[policy.id];
 
 const ENGINE_EVENT_SIZE = (event: EngineEvent): Size => {
   if (event.type === 'unrest.stage') {
@@ -273,12 +326,25 @@ export interface Director {
   start(scenarioId: string): void;
   addCard(card: PolicyCard): void;
   deleteCard(id: string): void;
+  /** Change a box's wording, pin it as a standing instruction, or move it. */
+  patchCard(
+    id: string,
+    patch: {
+      text?: string | undefined;
+      pinned?: boolean | undefined;
+      beforeId?: string | null | undefined;
+    },
+  ): void;
   execute(mixedSignals: boolean): void;
   advance(days: number): void;
   cancel(): void;
   repeal(policyId: string): void;
   rewind(seq: number): void;
+  /** Go back to any past date, including one in the middle of a resolution. */
+  rewindToDate(date: string): void;
   calls(resolution?: string): CallView[];
+  /** Outlines for the map: the scenario's regions and the world behind them. */
+  mapData(): { regions: unknown; world: unknown } | null;
   /** The true numbers, for the developer inspector only. */
   debugWorld(): World | null;
   /** Resolves when no background work is left. */
@@ -333,7 +399,13 @@ export function createDirector(options: DirectorOptions): Director {
   const requireQuiet = () => {
     if (running()) throw new DirectorError('busy', 'A resolution is still running.');
   };
-  const regionRefs = (world: World) => world.regions.map((r) => ({ id: r.id, label: r.name }));
+  const regionRefs = (world: World) => {
+    const listed = state().scenario?.regions ?? [];
+    return world.regions.map((r) => {
+      const aliases = listed.find((x) => x.id === r.id)?.aliases ?? [];
+      return { id: r.id, label: r.name, ...(aliases.length > 0 ? { aliases } : {}) };
+    });
+  };
   const actorId = (world: World) => `gov-${world.country.toLowerCase()}`;
 
   const committedPolicies = (p: Projection): { policy: PolicyRecord; resolution: Resolution }[] =>
@@ -361,7 +433,9 @@ export function createDirector(options: DirectorOptions): Director {
       .filter((c): c is CardView => c !== undefined);
     if (cards.length === 0) return { policies: [], conflicts: [], needsDetail: [], consumed: [] };
     const standing = committedPolicies(p)
-      .filter(({ policy }) => !policy.blockedReason && !p.repealed.has(policy.id))
+      .filter(
+        ({ policy, resolution }) => !refusalOf(policy, resolution) && !p.repealed.has(policy.id),
+      )
       .map(({ policy }) => ({ id: policy.id, title: policy.title, instrument: policy.instrument }));
     const { output } = await harness.run(
       policyCompile,
@@ -522,11 +596,12 @@ export function createDirector(options: DirectorOptions): Director {
       surpriseBudget: { major: days >= 30 ? 1 : 0, significant: 1 + Math.floor(days / 45) },
     };
     const context = { resolution: r.id, brief: scenario.brief };
-    const { output } = await harness.run(turnAdjudicate, input, context);
+    const { output, via } = await harness.run(turnAdjudicate, input, context);
 
     const toPicks = (effects: { on: string; value: number }[]) =>
       Object.fromEntries(effects.filter((e) => e.value !== 0).map((e) => [e.on, e.value]));
     const data: AdjudicateData = {
+      ...(via === 'fallback' ? { quiet: true } : {}),
       outcomes: output.outcomes.map((o) => ({
         policy: o.action,
         result: o.result,
@@ -620,6 +695,7 @@ export function createDirector(options: DirectorOptions): Director {
     const effects: ApplyData['effects'] = {};
     const baseline: ApplyData['baseline'] = {};
     const pendingEnact: PolicyRecord[] = [];
+    const stopped: Record<string, string> = {};
     for (const policy of compile.policies) {
       if (policy.blockedReason) {
         emit(
@@ -633,6 +709,57 @@ export function createDirector(options: DirectorOptions): Director {
       }
       const outcome = judged.outcomes.find((o) => o.policy === policy.id);
       const instrument: Instrument | undefined = CATALOGUE.find((c) => c.id === policy.instrument);
+      const where = policy.region ? { place: policy.region } : {};
+
+      // Veto players. A budget measure needs the legislature; an order made on the office's
+      // own authority can be stayed by the courts. Dice decide both.
+      const government = scenario.government;
+      const authority: Authority = instrument?.authority ?? 'executive';
+      if (government && authority === 'budget') {
+        const popularity = Object.entries(outcome?.picks ?? {})
+          .filter(([on]) => on.startsWith('approval.'))
+          .reduce((sum, [, value]) => sum + value, 0);
+        const vote = legislatureVote(world.seed, `vote:${policy.id}`, government.legislature, {
+          popularity,
+          nationalApproval: nationalApproval(world),
+        });
+        const tally = `${vote.yes} votes to ${vote.no}`;
+        if (!vote.passed) {
+          stopped[policy.id] = `The ${government.legislature.name} voted it down, ${tally}.`;
+          emit(
+            r.fromDay,
+            'legislature.vote',
+            'significant',
+            `The ${government.legislature.name} voted down a government measure, ${tally}: ${policy.title}.`,
+            [policy.id],
+            where,
+          );
+          continue;
+        }
+        emit(
+          r.fromDay,
+          'legislature.vote',
+          'minor',
+          `The ${government.legislature.name} passed a government measure, ${tally}: ${policy.title}.`,
+          [policy.id],
+          where,
+        );
+      } else if (
+        government &&
+        courtStays(world.seed, `court:${policy.id}`, government.court, policy.scale)
+      ) {
+        const court = government.court.name;
+        stopped[policy.id] = `${court[0]?.toUpperCase()}${court.slice(1)} stayed the order.`;
+        emit(
+          r.fromDay,
+          'court.stay',
+          'significant',
+          `A petition succeeded: ${court} stayed a government order: ${policy.title}.`,
+          [policy.id],
+          where,
+        );
+        continue;
+      }
       const resolution = {
         day: policy.enactDay,
         causes: [policy.id],
@@ -670,10 +797,12 @@ export function createDirector(options: DirectorOptions): Director {
     }
 
     const planned = judged.events
-      .map((e) => ({ ...e, day: r.fromDay + Math.min(e.inDays, days) }))
+      .filter((e) => e.inDays <= days)
+      .map((e) => ({ ...e, day: r.fromDay + e.inDays }))
       .sort((a, b) => a.day - b.day);
     let monthStart = { month: monthOf(dateOf(world.startDate, world.day)), world };
     let stoppedEarly: string | undefined;
+    let ambientSignificant = 1 + Math.floor(days / 45);
 
     for (let i = 0; i < days && !stoppedEarly; i++) {
       for (const policy of pendingEnact.filter(
@@ -687,6 +816,31 @@ export function createDirector(options: DirectorOptions): Director {
           [policy.id],
           policy.region ? { place: policy.region } : {},
         );
+      }
+      if (judged.quiet) {
+        const today = dateOf(world.startDate, world.day);
+        const ambient = ambientEvent(world, today, ambientSignificant > 0);
+        if (ambient) {
+          if (ambient.size === 'significant') ambientSignificant--;
+          const event = emit(
+            world.day,
+            ambient.kind,
+            ambient.size,
+            ambient.summary,
+            ['trend'],
+            ambient.place ? { place: ambient.place } : {},
+          );
+          if (Object.keys(ambient.picks).length > 0) {
+            world = addEffects(
+              world,
+              resolveNovel(world, ambient.picks, {
+                day: world.day,
+                causes: [event.id],
+                idPrefix: event.id,
+              }),
+            );
+          }
+        }
       }
       for (const e of planned.filter((x) => x.day === world.day)) {
         const event = emit(
@@ -763,6 +917,7 @@ export function createDirector(options: DirectorOptions): Director {
       }
     }
     return {
+      ...(Object.keys(stopped).length > 0 ? { stopped } : {}),
       world,
       toDay: world.day,
       events,
@@ -844,7 +999,9 @@ export function createDirector(options: DirectorOptions): Director {
     if (!world) return { reports: {} };
     const mine = (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r }));
     const moving = [...committedPolicies(p), ...mine]
-      .filter(({ policy }) => !policy.blockedReason && !p.repealed.has(policy.id))
+      .filter(
+        ({ policy, resolution }) => !refusalOf(policy, resolution) && !p.repealed.has(policy.id),
+      )
       .slice(-6);
     if (moving.length === 0) return { reports: {} };
     const events = [...allEvents(p), ...(r.apply?.events ?? [])];
@@ -1018,6 +1175,7 @@ export function createDirector(options: DirectorOptions): Director {
           const report = [...committed].reverse().find((r) => r.report?.reports[policy.id])?.report
             ?.reports[policy.id];
           const repealed = p.repealed.has(policy.id);
+          const refusal = refusalOf(policy, resolution);
           return {
             id: policy.id,
             title: policy.title,
@@ -1026,8 +1184,8 @@ export function createDirector(options: DirectorOptions): Director {
             instrumentTitle:
               CATALOGUE.find((c) => c.id === policy.instrument)?.title ?? 'Outside the catalogue',
             ...(policy.region ? { region: policy.region } : {}),
-            status: policy.blockedReason ? 'blocked' : repealed ? 'repealed' : 'active',
-            ...(policy.blockedReason ? { blockedReason: policy.blockedReason } : {}),
+            status: refusal ? 'blocked' : repealed ? 'repealed' : 'active',
+            ...(refusal ? { blockedReason: refusal } : {}),
             stage: stageOf(policy, effects, world.day),
             announcedDate: dateOf(world.startDate, policy.announcedDay),
             enactDate: dateOf(world.startDate, policy.enactDay),
@@ -1136,6 +1294,37 @@ export function createDirector(options: DirectorOptions): Director {
     };
   }
 
+  // The reading arrives later; adding or editing a box never waits on a model (REQ-PERF-01).
+  const readLater = (cardId: string) =>
+    enqueue(1, async () => {
+      const { projection, world, scenario } = state();
+      const card = projection.cards.get(cardId);
+      if (!world || !scenario || !card) return;
+      const text = card.text;
+      const { output } = await harness.run(
+        policyRead,
+        {
+          card: { id: cardId, text },
+          office: scenario.office,
+          standing: [],
+          instruments: INSTRUMENT_REFS.map((i) => ({ id: i.id, label: i.label })),
+          regions: regionRefs(world),
+        },
+        { resolution: 'readings', brief: scenario.brief },
+      );
+      // Skip a reading of wording that has since been edited or deleted.
+      if (state().projection.cards.get(cardId)?.text !== text) return;
+      ledger.append({
+        type: 'card.read',
+        cardId,
+        reading: {
+          reading: output.reading,
+          instrument: output.instrument,
+          ...(output.question ? { question: output.question } : {}),
+        },
+      });
+    });
+
   let viewCache: { version: number; view: View } | undefined;
 
   return {
@@ -1166,32 +1355,22 @@ export function createDirector(options: DirectorOptions): Director {
     },
     addCard(card) {
       ledger.append({ type: 'card.created', card });
-      // The reading arrives later; adding a box never waits on a model (REQ-PERF-01).
-      enqueue(1, async () => {
-        const { projection, world, scenario } = state();
-        if (!world || !scenario || !projection.cards.has(card.id)) return;
-        const { output } = await harness.run(
-          policyRead,
-          {
-            card: { id: card.id, text: card.text },
-            office: scenario.office,
-            standing: [],
-            instruments: INSTRUMENT_REFS.map((i) => ({ id: i.id, label: i.label })),
-            regions: regionRefs(world),
-          },
-          { resolution: 'readings', brief: scenario.brief },
-        );
-        if (!state().projection.cards.has(card.id)) return;
-        ledger.append({
-          type: 'card.read',
-          cardId: card.id,
-          reading: {
-            reading: output.reading,
-            instrument: output.instrument,
-            ...(output.question ? { question: output.question } : {}),
-          },
-        });
-      });
+      readLater(card.id);
+    },
+    patchCard(id, patch) {
+      const card = state().projection.cards.get(id);
+      if (!card) throw new DirectorError('not_found', 'No such policy box.');
+      requireQuiet();
+      if (patch.text !== undefined && patch.text !== card.text) {
+        ledger.append({ type: 'card.edited', cardId: id, text: patch.text });
+        readLater(id);
+      }
+      if (patch.pinned !== undefined && patch.pinned !== (card.pinned ?? false)) {
+        ledger.append({ type: 'card.pinned', cardId: id, pinned: patch.pinned });
+      }
+      if (patch.beforeId !== undefined && patch.beforeId !== id) {
+        ledger.append({ type: 'card.moved', cardId: id, beforeId: patch.beforeId });
+      }
     },
     deleteCard(id) {
       if (!state().projection.cards.has(id))
@@ -1200,9 +1379,10 @@ export function createDirector(options: DirectorOptions): Director {
     },
     execute(mixedSignals) {
       const { projection } = requireCampaign();
-      if (projection.cards.size === 0)
+      const fresh = [...projection.cards.values()].filter((c) => !c.sent).map((c) => c.id);
+      if (fresh.length === 0)
         throw new DirectorError('nothing_to_do', 'Add at least one policy box first.');
-      begin('execute', null, [...projection.cards.keys()], mixedSignals);
+      begin('execute', null, fresh, mixedSignals);
     },
     advance(days) {
       begin('advance', days, [], false);
@@ -1216,7 +1396,7 @@ export function createDirector(options: DirectorOptions): Director {
       const { projection, world } = requireCampaign();
       requireQuiet();
       const found = committedPolicies(projection).find(({ policy }) => policy.id === policyId);
-      if (!found || found.policy.blockedReason || projection.repealed.has(policyId))
+      if (!found || refusalOf(found.policy, found.resolution) || projection.repealed.has(policyId))
         throw new DirectorError('not_found', 'No such policy in force.');
       ledger.appendWithSnapshot(
         { type: 'policy.repealed', policyId, day: world.day },
@@ -1232,7 +1412,65 @@ export function createDirector(options: DirectorOptions): Director {
         throw new DirectorError('not_found', 'That point is not on this timeline.');
       ledger.fork(seq, `From ${dateOf(world.startDate, snapshot.day)}`);
     },
+    rewindToDate(date) {
+      const { world, scenario, projection } = requireCampaign();
+      requireQuiet();
+      const day = dayOf(world.startDate, date);
+      if (day < 0 || day >= world.day)
+        throw new DirectorError('bad_request', 'Choose a date in the past of this campaign.');
+      const committed = projection.resolutions.filter((r) => r.status === 'committed');
+      const boundary =
+        day === 0
+          ? projection.startSeq
+          : [...committed].reverse().find((r) => r.apply?.toDay === day)?.commitSeq;
+      if (boundary) {
+        ledger.fork(boundary, `From ${date}`);
+        return;
+      }
+      // The date falls inside a resolution. Fork just before it and run it again up to that
+      // day from its saved inputs: same picks, same dice, so the same world, with no model.
+      const inside = committed.find((r) => r.fromDay < day && day < (r.apply?.toDay ?? 0));
+      if (!inside?.startSeq)
+        throw new DirectorError('not_found', 'That date is not on this timeline.');
+      ledger.fork(inside.startSeq - 1, `From ${date}`);
+      const before = state().world;
+      if (!before) throw new DirectorError('not_found', 'That date is not on this timeline.');
+      const again: Resolution = { ...inside, days: day - inside.fromDay, status: 'running' };
+      ledger.append({
+        type: 'resolution.started',
+        id: again.id,
+        kind: again.kind,
+        fromDay: again.fromDay,
+        days: again.days,
+        cardIds: again.cardIds,
+        mixedSignals: again.mixedSignals,
+      });
+      saveStep(
+        again.id,
+        'compile',
+        again.compile ?? { policies: [], conflicts: [], needsDetail: [], consumed: [] },
+      );
+      saveStep(again.id, 'adjudicate', again.adjudicate ?? { outcomes: [], events: [] });
+      const apply = applyStep(again, before, scenario);
+      saveStep(again.id, 'apply', apply);
+      const kept = new Set(apply.events.map((e) => e.id));
+      saveStep(again.id, 'narrate', {
+        entries: (inside.narrate?.entries ?? []).filter(
+          (e) => e.day <= day && e.cites.every((id) => kept.has(id)),
+        ),
+      });
+      saveStep(again.id, 'report', inside.report ?? { reports: {} });
+      ledger.appendWithSnapshot(
+        { type: 'resolution.committed', id: again.id, toDay: apply.toDay },
+        apply.toDay,
+        apply.world,
+      );
+    },
     calls: (resolution) => ledger.calls(resolution) as CallView[],
+    mapData() {
+      const id = state().projection.scenarioId;
+      return id ? { regions: loadOutlines(id as ScenarioId), world: loadWorldOutlines() } : null;
+    },
     debugWorld: () => state().world,
     async idle() {
       while (working || queue.length > 0) await (working ?? Promise.resolve());

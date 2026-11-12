@@ -14,3 +14,17 @@ export function loadScenario(id: ScenarioId): Scenario {
 export function newWorld(id: ScenarioId, seed: string): World {
   return createWorld(loadScenario(id), seed);
 }
+
+/** Region outlines for the map, built by `npm run outlines`. */
+export function loadOutlines(id: ScenarioId): unknown {
+  return JSON.parse(
+    readFileSync(fileURLToPath(new URL(`../${id}/regions.geojson`, import.meta.url)), 'utf8'),
+  );
+}
+
+/** Country outlines of the whole world, drawn behind the scenario's regions. */
+export function loadWorldOutlines(): unknown {
+  return JSON.parse(
+    readFileSync(fileURLToPath(new URL('../shared/world-110m.geojson', import.meta.url)), 'utf8'),
+  );
+}

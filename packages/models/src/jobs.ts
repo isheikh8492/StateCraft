@@ -584,7 +584,9 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
           body:
             e.numbers.length > 0
               ? e.numbers.map((n) => `${n.label}: ${n.before} to ${n.after} ${n.unit}.`).join(' ')
-              : '',
+              : e.summary.length > 90
+                ? e.summary
+                : '',
           cites: [e.id],
           ...(e.place ? { place: e.place.id } : {}),
         })),

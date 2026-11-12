@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { CallView, ModelSettings } from '@statecraft/protocol';
+import type { CallView, ModelRole, ModelSettings } from '@statecraft/protocol';
 import { z } from 'zod';
 import { type Adapter, adapterFor, type ChatRequest, ModelFailure } from './adapters.ts';
 import type { Job } from './jobs.ts';
@@ -24,7 +24,8 @@ export interface Harness {
 }
 
 export interface HarnessOptions {
-  settings: () => ModelSettings;
+  /** The model that serves a role. One model may serve them all. */
+  settings: (role: ModelRole) => ModelSettings;
   env?: Readonly<Record<string, string | undefined>>;
   onCall?: (record: CallView) => void;
   timeoutMs?: number;
@@ -63,7 +64,7 @@ export function createHarness(options: HarnessOptions): Harness {
 
   return {
     async run<I, O>(job: Job<I, O>, input: I, context: { resolution: string; brief: string }) {
-      const settings = options.settings();
+      const settings = options.settings(job.role);
       const adapter = options.adapter ?? adapterFor(settings, env);
       const system = systemPrompt(job as Job<unknown, unknown>, context.brief);
       const inputText = JSON.stringify(input);

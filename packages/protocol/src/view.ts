@@ -5,6 +5,10 @@ export interface CardView {
   text: string;
   createdAt: string;
   reading?: { reading: string; instrument: string; question?: string };
+  /** A standing instruction: it stays on the desk after it is executed. */
+  pinned?: boolean;
+  /** Already executed in its current wording; it will not be sent again until edited. */
+  sent?: boolean;
 }
 
 /** A figure before and since. Moods and unrest are given in words, never as numbers. */

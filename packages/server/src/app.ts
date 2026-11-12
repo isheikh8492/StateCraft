@@ -6,9 +6,12 @@ import { ENGINE_VERSION } from '@statecraft/engine';
 import { checkModel } from '@statecraft/models';
 import {
   AdvanceRequest,
+  CardPatch,
+  CheckRequest,
   ExecuteRequest,
   type Health,
-  ModelSettings,
+  MODEL_ROLES,
+  ModelConfig,
   NewPolicyCard,
   type PolicyCard,
   RewindRequest,
@@ -122,6 +125,18 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     return reply.code(204).send();
   });
 
+  app.patch<{ Params: { id: string } }>('/api/cards/:id', async (request, reply) => {
+    const data = body(
+      CardPatch,
+      request.body,
+      reply,
+      'A policy box needs between 1 and 2,000 characters of text.',
+    );
+    if (!data) return reply;
+    game.director().patchCard(request.params.id, data);
+    return view();
+  });
+
   app.post('/api/execute', async (request, reply) => {
     const data = body(ExecuteRequest, request.body, reply, 'Bad request.');
     if (!data) return reply;
@@ -150,19 +165,33 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.post('/api/rewind', async (request, reply) => {
     const data = body(RewindRequest, request.body, reply, 'Choose a point on the timeline.');
     if (!data) return reply;
-    game.director().rewind(data.seq);
+    if ('seq' in data) game.director().rewind(data.seq);
+    else game.director().rewindToDate(data.date);
     return view();
   });
 
-  const modelInfo = () => ({ settings: game.settings(), keyPresent: game.hasKey() });
+  const modelInfo = () => ({
+    config: game.config(),
+    keys: Object.fromEntries(
+      [undefined, ...MODEL_ROLES].map((role) => [
+        role ?? 'main',
+        game.hasKey(game.settingsFor(role)),
+      ]),
+    ),
+  });
   app.get('/api/model', async () => modelInfo());
   app.put('/api/model', async (request, reply) => {
-    const data = body(ModelSettings, request.body, reply, 'Those model settings are not valid.');
+    const data = body(ModelConfig, request.body, reply, 'Those model settings are not valid.');
     if (!data) return reply;
-    game.saveSettings(data);
+    game.saveConfig(data);
     return modelInfo();
   });
-  app.post('/api/model/check', async () => checkModel(game.settings()));
+  app.post('/api/model/check', async (request, reply) => {
+    const data = body(CheckRequest, request.body, reply, 'Bad request.');
+    if (!data) return reply;
+    return checkModel(game.settingsFor(data.role));
+  });
+  app.get('/api/map', async () => game.director().mapData());
 
   app.get<{ Querystring: { resolution?: string } }>('/api/calls', async (request) =>
     game.director().calls(request.query.resolution),

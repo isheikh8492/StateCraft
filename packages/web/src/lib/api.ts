@@ -4,7 +4,8 @@ import {
   type CallView,
   Health,
   type ModelCheck,
-  type ModelSettings,
+  type ModelConfig,
+  type ModelRole,
   type ScenarioInfo,
   Session,
   type View,
@@ -68,8 +69,9 @@ async function post<T>(path: string, body: unknown = {}, method = 'POST'): Promi
 }
 
 export interface ModelInfo {
-  settings: ModelSettings;
-  keyPresent: boolean;
+  config: ModelConfig;
+  /** Whether a key was found for the main model and for each role. */
+  keys: Record<string, boolean>;
 }
 
 export const api = {
@@ -82,14 +84,18 @@ export const api = {
   deleteCard: async (id: string): Promise<void> => {
     await send(`/api/cards/${encodeURIComponent(id)}`, { method: 'DELETE' });
   },
+  patchCard: (id: string, patch: { text?: string; pinned?: boolean; beforeId?: string | null }) =>
+    post<View>(`/api/cards/${encodeURIComponent(id)}`, patch, 'PATCH'),
   execute: (mixedSignals: boolean) => post<View>('/api/execute', { mixedSignals }),
   advance: (days: number) => post<View>('/api/advance', { days }),
   cancel: () => post<View>('/api/cancel'),
   repeal: (id: string) => post<View>(`/api/policies/${encodeURIComponent(id)}/repeal`),
   rewind: (seq: number) => post<View>('/api/rewind', { seq }),
+  rewindToDate: (date: string) => post<View>('/api/rewind', { date }),
+  map: () => get<{ regions: unknown; world: unknown } | null>('/api/map'),
   model: () => get<ModelInfo>('/api/model'),
-  saveModel: (settings: ModelSettings) => post<ModelInfo>('/api/model', settings, 'PUT'),
-  checkModel: () => post<ModelCheck>('/api/model/check'),
+  saveModel: (config: ModelConfig) => post<ModelInfo>('/api/model', config, 'PUT'),
+  checkModel: (role?: ModelRole) => post<ModelCheck>('/api/model/check', role ? { role } : {}),
   calls: (resolution?: string) =>
     get<CallView[]>(
       `/api/calls${resolution ? `?resolution=${encodeURIComponent(resolution)}` : ''}`,

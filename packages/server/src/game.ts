@@ -4,7 +4,7 @@ import { createDirector, type Director } from '@statecraft/director';
 import { ENGINE_VERSION } from '@statecraft/engine';
 import { type Ledger, openLedger } from '@statecraft/ledger';
 import { createHarness } from '@statecraft/models';
-import { ModelSettings } from '@statecraft/protocol';
+import { ModelConfig, type ModelRole, ModelSettings } from '@statecraft/protocol';
 
 /**
  * Holds the open campaign and the model settings. One campaign is open at a time; starting
@@ -13,10 +13,12 @@ import { ModelSettings } from '@statecraft/protocol';
 export interface Game {
   director(): Director;
   ledger(): Ledger;
-  settings(): ModelSettings;
-  saveSettings(next: ModelSettings): void;
-  /** True when the environment variable the settings name holds a key. */
-  hasKey(): boolean;
+  config(): ModelConfig;
+  /** The model that serves a role: its own if one is set, otherwise the main model. */
+  settingsFor(role?: ModelRole): ModelSettings;
+  saveConfig(next: ModelConfig): void;
+  /** True when the environment variable a model's settings name holds a key. */
+  hasKey(settings: ModelSettings): boolean;
   newCampaign(): void;
   close(): void;
   readonly campaignFile: string;
@@ -34,11 +36,16 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
   const campaignFile = join(dataDir, 'campaign.statecraft');
   const settingsFile = join(dataDir, 'settings.json');
 
-  let settings: ModelSettings = initial ?? NO_MODEL;
+  let config: ModelConfig = { main: initial ?? NO_MODEL, roles: {} };
   if (!initial && existsSync(settingsFile)) {
-    const parsed = ModelSettings.safeParse(JSON.parse(readFileSync(settingsFile, 'utf8')));
-    if (parsed.success) settings = parsed.data;
+    const stored: unknown = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    const parsed = ModelConfig.safeParse(stored);
+    // Earlier versions stored one model's settings on their own.
+    const single = ModelSettings.safeParse(stored);
+    if (parsed.success) config = parsed.data;
+    else if (single.success) config = { main: single.data, roles: {} };
   }
+  const settingsFor = (role?: ModelRole) => (role ? config.roles[role] : undefined) ?? config.main;
 
   let ledger: Ledger;
   let director: Director;
@@ -46,7 +53,7 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
     ledger = openLedger(campaignFile, ENGINE_VERSION);
     const current = ledger;
     const harness = createHarness({
-      settings: () => settings,
+      settings: settingsFor,
       onCall: (record) => current.recordCall(record.id, record.resolution, record),
     });
     director = createDirector({ ledger, harness });
@@ -57,12 +64,13 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
     campaignFile,
     director: () => director,
     ledger: () => ledger,
-    settings: () => settings,
-    saveSettings(next) {
-      settings = next;
+    config: () => config,
+    settingsFor,
+    saveConfig(next) {
+      config = next;
       writeFileSync(settingsFile, `${JSON.stringify(next, null, 2)}\n`);
     },
-    hasKey: () => Boolean(process.env[settings.keyEnv || DEFAULT_KEY[settings.kind] || '']),
+    hasKey: (settings) => Boolean(process.env[settings.keyEnv || DEFAULT_KEY[settings.kind] || '']),
     newCampaign() {
       ledger.close();
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');

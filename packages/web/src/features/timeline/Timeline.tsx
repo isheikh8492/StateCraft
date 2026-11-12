@@ -5,11 +5,13 @@ import { formatDate, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
+import { Input } from '@/ui/input';
 
 /** Every saved point of the campaign. Going back starts a new line; the old one is kept. */
 export function Timeline() {
   const { view, act } = useGame();
   const [confirm, setConfirm] = useState<number | null>(null);
+  const [date, setDate] = useState('');
   const points = [...(view?.timeline ?? [])].reverse();
   if (points.length === 0) {
     return (
@@ -25,6 +27,28 @@ export function Timeline() {
         The game saves by itself. Going back to an earlier point starts a new line of history from
         there; nothing is deleted.
       </p>
+      <form
+        className="flex items-end gap-2 border-b border-border px-4 py-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (date !== '') void act(() => api.rewindToDate(date));
+        }}
+      >
+        <label htmlFor="rewind-date" className="flex flex-col gap-1">
+          <span className="text-xs text-fg-muted">Or go back to any date</span>
+          <Input
+            id="rewind-date"
+            type="date"
+            value={date}
+            min={view?.campaign?.startDate}
+            max={view?.campaign?.date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <Button type="submit" variant="danger" disabled={date === '' || view?.running != null}>
+          Go back to this date
+        </Button>
+      </form>
       <ol aria-label="Saved points">
         {points.map((point, i) => (
           <li key={point.seq} className="flex items-center gap-3 border-b border-border px-4 py-2">

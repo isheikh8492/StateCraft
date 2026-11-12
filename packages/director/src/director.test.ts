@@ -204,3 +204,76 @@ describe('director', () => {
     expect(resumed.director.view().campaign?.day).toBe(10);
   });
 });
+
+describe('desk and time', () => {
+  it('lets boxes be edited, reordered and pinned as standing instructions', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    const a = add('Do something about prices');
+    const b = add('Expand cash transfers to poor households.');
+    director.patchCard(a, { text: 'Raise the sales tax slightly.' });
+    director.patchCard(b, { beforeId: a, pinned: true });
+    await director.idle();
+    const cards = director.view().cards;
+    expect(cards.map((c) => c.id)).toEqual([b, a]);
+    expect(cards[1]).toMatchObject({
+      text: 'Raise the sales tax slightly.',
+      reading: { instrument: 'sales_tax_rise' },
+    });
+
+    director.execute(false);
+    await director.idle();
+    // The pinned box stays on the desk and is not sent a second time.
+    expect(director.view().cards).toMatchObject([{ id: b, pinned: true, sent: true }]);
+    expect(director.view().policies).toHaveLength(2);
+    expect(() => director.execute(false)).toThrow(/Add at least one/);
+    const votes = director.view().events.filter((e) => e.kind === 'legislature.vote');
+    expect(votes).toHaveLength(2);
+    expect(votes[0]?.summary).toMatch(
+      /National Assembly (passed|voted down) a government measure, \d+ votes to \d+/,
+    );
+  });
+
+  it('rewinds to any date, even inside a resolution, and lands on the same world as that day', async () => {
+    const straight = open(null);
+    straight.director.start('pakistan-2026');
+    straight.add('Raise the sales tax.');
+    straight.director.execute(false);
+    await straight.director.idle();
+    const firstStop = straight.director.view().campaign?.day ?? 0;
+    straight.director.advance(20);
+    await straight.director.idle();
+    const reference = straight.director.debugWorld();
+    const eventsThen = straight.director.view().events.map((e) => e.id);
+
+    n++;
+    const long = open(null);
+    long.director.start('pakistan-2026');
+    long.add('Raise the sales tax.');
+    long.director.execute(false);
+    await long.director.idle();
+    long.director.advance(60);
+    await long.director.idle();
+    const target = new Date(Date.UTC(2026, 10, 1 + firstStop + 20)).toISOString().slice(0, 10);
+    long.director.rewindToDate(target);
+
+    const view = long.director.view();
+    expect(view.campaign).toMatchObject({ day: firstStop + 20, date: target, branch: 2 });
+    expect(long.director.debugWorld()).toEqual(reference);
+    expect(view.events.map((e) => e.id)).toEqual(eventsThen);
+    expect(view.policies).toHaveLength(1);
+    expect(() => long.director.rewindToDate('2030-01-01')).toThrow(/past/);
+  });
+
+  it('fills a quiet world with its own events when no model writes any', async () => {
+    const { director } = open(null);
+    director.start('pakistan-2026');
+    director.advance(120);
+    await director.idle();
+    const kinds = new Set(director.view().events.map((e) => e.kind));
+    expect([...kinds].filter((k) => !k.includes('.')).length).toBeGreaterThanOrEqual(3);
+    expect(director.view().events.every((e) => e.size !== 'major' || e.kind.includes('.'))).toBe(
+      true,
+    );
+  });
+});

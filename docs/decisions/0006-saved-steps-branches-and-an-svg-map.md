@@ -19,3 +19,8 @@ A resolution makes several model calls and can take minutes on a local model. Th
 - Results reach the screen when the resolution commits, not step by step. The progress panel shows which step is running. This is a departure from REQ-PERF-03, taken so that cancel is clean.
 - Snapshots exist at resolution boundaries, so those are the points you can rewind to.
 - The view sent to the screen never contains approval or unrest as numbers; the developer inspector reads the true numbers through a separate route.
+
+## Amendment, 2026-11-12
+
+- The map is now MapLibre GL JS. It still needs no tile service or key: the style contains only GeoJSON outlines shipped with the game (the world at 1:110m and the scenario's regions at 1:10m, both Natural Earth). Region names and unrest dots are HTML markers, because MapLibre text needs a font server. A scenario lists the Natural Earth subdivisions each region is made of, and `npm run outlines -w @statecraft/scenarios` builds its outline file, so a new country needs data and no code.
+- Rewinding to a date inside a resolution forks just before it and runs that resolution again from its saved inputs up to that day. The engine is deterministic and time moves a day at a time, so this lands on exactly the world of that day without storing a snapshot per day.

@@ -8,9 +8,17 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "sim": "tsx src/sim.ts"
+    "sim": "tsx src/sim.ts",
+    "outlines": "node scripts/build-outlines.mjs"
   },
   "dependencies": {
     "@statecraft/engine": "^0.1.0"
+  },
+  "devDependencies": {
+    "geojson-places": "^1.0.8",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3",
+    "world-atlas": "^2.0.2"
   }
 }

@@ -55,6 +55,19 @@ test('a policy box is read back, survives a reload, and can be deleted', async (
 
   await page.reload();
   await expect(boxes(page)).toHaveCount(2);
+
+  // Boxes can be reordered and edited in place; the reading follows the new wording.
+  await boxes(page).nth(1).getByRole('button', { name: 'Move policy box up' }).click();
+  await expect(boxes(page).first()).toContainText('port union');
+  await boxes(page).first().getByRole('button', { name: 'Edit policy box' }).click();
+  await page.getByRole('textbox', { name: 'Edit policy box' }).fill('Raise the sales tax slightly');
+  await boxes(page).first().getByRole('button', { name: 'Save' }).click();
+  await expect(boxes(page).first().getByTestId('reading')).toContainText(
+    'Raise sales or consumption tax',
+  );
+  await boxes(page).first().getByRole('button', { name: 'Move policy box down' }).click();
+  await expect(boxes(page).nth(1)).toContainText('Raise the sales tax slightly');
+
   await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
   await expect(boxes(page)).toHaveCount(1);
   await page.reload();
@@ -124,6 +137,12 @@ test('time advances, the chronicle places events on the map, and the inspector s
   await page.getByLabel('How far to advance').selectOption('30');
   await page.getByRole('button', { name: 'Advance' }).click();
   await expect(date(page)).not.toHaveText(before ?? '');
+
+  // Or straight to a chosen date.
+  await page.getByLabel('How far to advance').selectOption('0');
+  await page.getByLabel('Advance to this date').fill('2027-03-01');
+  await page.getByRole('button', { name: 'Advance' }).click();
+  await expect(date(page)).toHaveText('1 March 2027');
   await expect(page.getByRole('list', { name: 'Chronicle' })).toContainText(
     'Official figures were published',
   );
@@ -158,6 +177,9 @@ test('the model can be checked before you rely on it', async ({ page }) => {
   );
   await panel.getByRole('button', { name: 'Check this model' }).click();
   await expect(panel.getByRole('region', { name: 'Model check result' })).toContainText('suitable');
+  // A role can be given its own model; by default it uses the main one.
+  await panel.getByRole('tab', { name: 'Narrator' }).click();
+  await expect(panel.getByLabel('Use the main model for this role')).toBeChecked();
   await page.getByRole('button', { name: 'Minimise Model' }).click();
 });
 
@@ -165,6 +187,12 @@ test('rewinding goes back to an earlier day on a new line of history', async ({ 
   await page.goto('/');
   await openWindow(page, 'Timeline');
   const timeline = win(page, 'Timeline');
+  // First to a date in the middle of a resolution: the game replays up to that day.
+  await timeline.getByLabel('Or go back to any date').fill('2027-01-15');
+  await timeline.getByRole('button', { name: 'Go back to this date' }).click();
+  await expect(date(page)).toHaveText('15 January 2027');
+  await expect(page.getByText('Line 2')).toBeVisible();
+
   const start = timeline
     .getByRole('list', { name: 'Saved points' })
     .getByRole('listitem')
@@ -173,12 +201,12 @@ test('rewinding goes back to an earlier day on a new line of history', async ({ 
   await start.getByRole('button', { name: 'Go back to here' }).click();
 
   await expect(date(page)).toHaveText('1 November 2026');
-  await expect(page.getByText('Line 2')).toBeVisible();
+  await expect(page.getByText('Line 3')).toBeVisible();
   await expect(page.getByText('Nothing has happened yet')).toBeVisible();
   await expect(timeline.getByText('Lines of history')).toBeVisible();
   await page.reload();
   await expect(date(page)).toHaveText('1 November 2026');
-  await expect(page.getByText('Line 2')).toBeVisible();
+  await expect(page.getByText('Line 3')).toBeVisible();
 });
 
 test('windows can be minimised and reopened, and the gallery opens', async ({ page }) => {

@@ -21,6 +21,13 @@ export {
   type Scale,
 } from './catalogue.ts';
 export { addEffects, isValidTarget, offsetsOn, removeEffects } from './effects.ts';
+export {
+  type Court,
+  courtStays,
+  type Legislature,
+  legislatureVote,
+  type VoteResult,
+} from './government.ts';
 export { DT, PARAMS } from './params.ts';
 export { roll, rollInt } from './rng.ts';
 export {
@@ -37,6 +44,7 @@ export {
   type Region,
   riskPremium,
   type Scenario,
+  type ScenarioInput,
   ScenarioSchema,
   SPENDING_CATEGORIES,
   type SpendingCategory,

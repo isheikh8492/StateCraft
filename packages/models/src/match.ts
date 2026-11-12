@@ -8,6 +8,8 @@ import { CATALOGUE, type Direction, type Scale } from '@statecraft/engine';
 export interface Ref {
   id: string;
   label: string;
+  /** Other names for the same thing, in lower case. Used only by the built-in reader. */
+  aliases?: readonly string[];
 }
 
 export interface Match {
@@ -43,22 +45,14 @@ const RULES: readonly [string, RegExp][] = [
   ],
 ];
 
-const REGION_WORDS: Readonly<Record<string, RegExp>> = {
-  kp: /\b(kp|kpk|khyber|pakhtunkhwa|peshawar|waziristan)\b/,
-  balochistan: /\b(baloch\w*|quetta|gwadar)\b/,
-  ajk: /\b(ajk|azad kashmir|kashmir|muzaffarabad)\b/,
-  gb: /\b(gilgit|baltistan)\b/,
-  sindh: /\b(sindh|karachi|hyderabad)\b/,
-  punjab: /\b(punjab|lahore)\b/,
-  islamabad: /\b(islamabad|capital)\b/,
-};
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** Finds a region by its name or by the other names its scenario lists for it. */
 export function findRegion(text: string, regions: readonly Ref[]): string | undefined {
   const lower = text.toLowerCase();
   for (const region of regions) {
-    if (lower.includes(region.label.toLowerCase()) || REGION_WORDS[region.id]?.test(lower)) {
-      return region.id;
-    }
+    const names = [region.label.toLowerCase(), region.id, ...(region.aliases ?? [])];
+    if (names.some((name) => new RegExp(`\\b${escapeRegExp(name)}`).test(lower))) return region.id;
   }
   return undefined;
 }

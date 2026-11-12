@@ -57,6 +57,17 @@ export const LedgerEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('card.deleted'), cardId: z.string().min(1) }),
   z.object({ type: z.literal('card.read'), cardId: z.string().min(1), reading: CardReading }),
   z.object({
+    type: z.literal('card.edited'),
+    cardId: z.string().min(1),
+    text: PolicyCard.shape.text,
+  }),
+  z.object({
+    type: z.literal('card.moved'),
+    cardId: z.string().min(1),
+    beforeId: z.string().nullable(),
+  }),
+  z.object({ type: z.literal('card.pinned'), cardId: z.string().min(1), pinned: z.boolean() }),
+  z.object({
     type: z.literal('resolution.started'),
     id: z.string(),
     kind: z.enum(['execute', 'advance']),
@@ -103,7 +114,17 @@ export type ApiError = z.infer<typeof ApiError>;
 
 export const ExecuteRequest = z.object({ mixedSignals: z.boolean().default(false) });
 export const AdvanceRequest = z.object({ days: z.number().int().min(1).max(MAX_ADVANCE_DAYS) });
-export const RewindRequest = z.object({ seq: z.number().int().positive() });
+/** Go back to a saved point, or to any past date. */
+export const RewindRequest = z.union([
+  z.object({ seq: z.number().int().positive() }),
+  z.object({ date: z.iso.date() }),
+]);
+export const CardPatch = z.object({
+  text: PolicyCard.shape.text.optional(),
+  pinned: z.boolean().optional(),
+  /** Move the box to sit before this one; null moves it to the end. */
+  beforeId: z.string().nullable().optional(),
+});
 export const StartRequest = z.object({ scenarioId: z.string().min(1) });
 
 export const MODEL_KINDS = ['none', 'openai', 'anthropic', 'gemini'] as const;
@@ -117,3 +138,19 @@ export const ModelSettings = z.object({
   keyEnv: z.string().max(100).default(''),
 });
 export type ModelSettings = z.infer<typeof ModelSettings>;
+
+export const MODEL_ROLES = ['adjudicator', 'extractor', 'narrator'] as const;
+export type ModelRole = (typeof MODEL_ROLES)[number];
+/** One main model, and optionally a different one for any role (REQ-HARN-08). */
+export const ModelConfig = z.object({
+  main: ModelSettings,
+  roles: z
+    .object({
+      adjudicator: ModelSettings.optional(),
+      extractor: ModelSettings.optional(),
+      narrator: ModelSettings.optional(),
+    })
+    .default({}),
+});
+export type ModelConfig = z.infer<typeof ModelConfig>;
+export const CheckRequest = z.object({ role: z.enum(MODEL_ROLES).optional() });

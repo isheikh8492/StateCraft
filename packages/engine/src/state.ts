@@ -144,6 +144,25 @@ export const ScenarioSchema = z.object({
     /** Why each missing authority is out of reach, shown when a policy is blocked. */
     limits: z.record(z.string(), z.string()),
   }),
+  /** Who else must agree. Left out, the office acts alone. */
+  government: z
+    .object({
+      legislature: z.object({
+        name: z.string().min(1),
+        seats: z.number().int().positive(),
+        majority: z.number().int().positive(),
+        blocs: z.array(
+          z.object({
+            id: z.string().min(1),
+            name: z.string().min(1),
+            seats: z.number().int().nonnegative(),
+            stance: z.enum(['government', 'ally', 'opposition']),
+          }),
+        ),
+      }),
+      court: z.object({ name: z.string().min(1), independence: z.number().min(0).max(1) }),
+    })
+    .optional(),
   /** Facts every model is given, and must prefer over its own memory. */
   brief: z.string().min(1),
   economy: z.object({
@@ -197,6 +216,10 @@ export const ScenarioSchema = z.object({
         population: z.number().positive(),
         groupMix: z.record(z.string(), z.number().min(0).max(1)),
         neighbours: z.array(z.string()),
+        /** Other names people use for the region or its main cities, in lower case. */
+        aliases: z.array(z.string()).default([]),
+        /** Natural Earth subdivisions (ISO 3166-2) this region is made of, for the map. */
+        shapes: z.array(z.string()).default([]),
         unrest: pct,
         mobilization: z.number().positive(),
         capacity: z.number().positive(),
@@ -207,6 +230,8 @@ export const ScenarioSchema = z.object({
     .min(1),
 });
 export type Scenario = z.infer<typeof ScenarioSchema>;
+/** A scenario as written in its file, before defaults are filled in. */
+export type ScenarioInput = z.input<typeof ScenarioSchema>;
 
 /** Thrown when an input breaks an engine rule. `code` is stable; `message` is for people. */
 export class EngineRuleError extends Error {

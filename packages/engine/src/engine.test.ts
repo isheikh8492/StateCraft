@@ -9,13 +9,13 @@ import {
   fiscal,
   nationalApproval,
   resolveInstrument,
-  type Scenario,
+  type ScenarioInput,
   transferControl,
   type World,
 } from './index.ts';
 
 /** A small made-up country, so these tests do not move when a real scenario is retuned. */
-const scenario: Scenario = {
+const scenario: ScenarioInput = {
   id: 'testland',
   title: 'Testland',
   country: 'TST',
