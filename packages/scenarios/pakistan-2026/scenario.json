@@ -1,0 +1,227 @@
+{
+  "id": "pakistan-2026",
+  "title": "Pakistan, November 2026",
+  "country": "PAK",
+  "startDate": "2026-11-01",
+  "headOfGovernment": { "name": "Shehbaz Sharif", "office": "Prime Minister" },
+  "economy": {
+    "gdpUsdBn": 452,
+    "trendGrowth": 3.5,
+    "growth": 3.7,
+    "inflation": 10.3,
+    "inflationAnchor": 6,
+    "unemployment": 7.1,
+    "naturalUnemployment": 7.1,
+    "revenue": 15.4,
+    "spending": {
+      "defence": 2.0,
+      "development": 2.6,
+      "subsidies": 0.8,
+      "social": 0.6,
+      "administration": 6.5
+    },
+    "debt": 68.5,
+    "baseRate": 12,
+    "debtRate": 7.9,
+    "externalDebtShare": 0.31,
+    "externalRate": 3.4,
+    "reservesMonths": 3.0,
+    "externalBalance": 0.2
+  },
+  "groups": [
+    {
+      "id": "urban_middle",
+      "name": "Urban middle class and professionals",
+      "tags": ["urban_middle"],
+      "approval": 30,
+      "floor": 10,
+      "ceiling": 65,
+      "sensitivity": { "inflation": 0.6, "unemployment": 1.5, "growth": 1.0, "security": 0.8 }
+    },
+    {
+      "id": "urban_poor",
+      "name": "Urban working poor",
+      "tags": ["urban_poor"],
+      "approval": 28,
+      "floor": 8,
+      "ceiling": 65,
+      "sensitivity": { "inflation": 1.0, "unemployment": 1.5, "growth": 0.5, "security": 0.5 }
+    },
+    {
+      "id": "rural",
+      "name": "Farmers and rural labourers",
+      "tags": ["rural"],
+      "approval": 40,
+      "floor": 15,
+      "ceiling": 70,
+      "sensitivity": { "inflation": 0.8, "unemployment": 1.0, "growth": 0.8, "security": 0.5 }
+    },
+    {
+      "id": "business",
+      "name": "Traders and industrialists",
+      "tags": ["business"],
+      "approval": 45,
+      "floor": 15,
+      "ceiling": 75,
+      "sensitivity": { "inflation": 0.4, "unemployment": 0.5, "growth": 2.0, "security": 1.0 }
+    },
+    {
+      "id": "security",
+      "name": "Military families and state employees",
+      "tags": ["security"],
+      "approval": 55,
+      "floor": 25,
+      "ceiling": 80,
+      "sensitivity": { "inflation": 0.4, "unemployment": 0.5, "growth": 0.5, "security": 1.5 }
+    },
+    {
+      "id": "religious",
+      "name": "Religious conservatives",
+      "tags": ["religious"],
+      "approval": 30,
+      "floor": 8,
+      "ceiling": 60,
+      "sensitivity": { "inflation": 0.6, "unemployment": 0.8, "growth": 0.3, "security": 0.5 }
+    },
+    {
+      "id": "periphery",
+      "name": "Pashtun and Baloch periphery",
+      "tags": ["periphery"],
+      "approval": 15,
+      "floor": 3,
+      "ceiling": 50,
+      "sensitivity": { "inflation": 0.5, "unemployment": 1.0, "growth": 0.3, "security": 2.0 }
+    }
+  ],
+  "regions": [
+    {
+      "id": "punjab",
+      "name": "Punjab",
+      "population": 127.69,
+      "groupMix": {
+        "urban_middle": 0.13,
+        "urban_poor": 0.2,
+        "rural": 0.42,
+        "business": 0.07,
+        "security": 0.09,
+        "religious": 0.09
+      },
+      "neighbours": ["sindh", "kp", "balochistan", "islamabad", "ajk"],
+      "unrest": 20,
+      "mobilization": 1.0,
+      "capacity": 1.2,
+      "status": "held"
+    },
+    {
+      "id": "sindh",
+      "name": "Sindh",
+      "population": 55.7,
+      "groupMix": {
+        "urban_middle": 0.16,
+        "urban_poor": 0.28,
+        "rural": 0.38,
+        "business": 0.09,
+        "security": 0.04,
+        "religious": 0.05
+      },
+      "neighbours": ["punjab", "balochistan"],
+      "unrest": 31,
+      "mobilization": 1.0,
+      "capacity": 1.0,
+      "status": "held"
+    },
+    {
+      "id": "kp",
+      "name": "Khyber Pakhtunkhwa",
+      "population": 40.86,
+      "groupMix": {
+        "urban_middle": 0.06,
+        "urban_poor": 0.1,
+        "rural": 0.22,
+        "business": 0.04,
+        "security": 0.08,
+        "religious": 0.15,
+        "periphery": 0.35
+      },
+      "neighbours": ["punjab", "balochistan", "islamabad", "ajk", "gb"],
+      "unrest": 80,
+      "mobilization": 1.2,
+      "capacity": 0.8,
+      "status": "held"
+    },
+    {
+      "id": "balochistan",
+      "name": "Balochistan",
+      "population": 14.89,
+      "groupMix": {
+        "urban_middle": 0.04,
+        "urban_poor": 0.08,
+        "rural": 0.15,
+        "business": 0.03,
+        "security": 0.04,
+        "religious": 0.08,
+        "periphery": 0.58
+      },
+      "neighbours": ["punjab", "sindh", "kp"],
+      "unrest": 82,
+      "mobilization": 1.2,
+      "capacity": 0.6,
+      "status": "contested"
+    },
+    {
+      "id": "islamabad",
+      "name": "Islamabad Capital Territory",
+      "population": 2.36,
+      "groupMix": {
+        "urban_middle": 0.4,
+        "urban_poor": 0.2,
+        "rural": 0.05,
+        "business": 0.1,
+        "security": 0.2,
+        "religious": 0.05
+      },
+      "neighbours": ["punjab", "kp"],
+      "unrest": 18,
+      "mobilization": 1.0,
+      "capacity": 1.5,
+      "status": "held"
+    },
+    {
+      "id": "ajk",
+      "name": "Azad Jammu and Kashmir",
+      "population": 4.05,
+      "groupMix": {
+        "urban_middle": 0.1,
+        "urban_poor": 0.12,
+        "rural": 0.5,
+        "business": 0.05,
+        "security": 0.13,
+        "religious": 0.1
+      },
+      "neighbours": ["punjab", "kp", "gb"],
+      "unrest": 36,
+      "mobilization": 1.1,
+      "capacity": 1.0,
+      "status": "held"
+    },
+    {
+      "id": "gb",
+      "name": "Gilgit-Baltistan",
+      "population": 1.49,
+      "groupMix": {
+        "urban_middle": 0.06,
+        "urban_poor": 0.08,
+        "rural": 0.56,
+        "business": 0.04,
+        "security": 0.08,
+        "religious": 0.08,
+        "periphery": 0.1
+      },
+      "neighbours": ["kp", "ajk"],
+      "unrest": 31,
+      "mobilization": 0.9,
+      "capacity": 0.9,
+      "status": "held"
+    }
+  ]
+}

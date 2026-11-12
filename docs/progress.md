@@ -15,8 +15,8 @@ Scope: one country (Pakistan), one position (head of government), policy only. G
 | Step | Status | Notes |
 | --- | --- | --- |
 | 1. Skeleton, design system, first screen-to-ledger path | Done | Policy boxes persist through the API to the campaign file. 6 end-to-end and 10 unit tests. |
-| 2. Engine: budget, approval, unrest, control | Next | Pure functions with daily rates, keyed dice, invariant tests, a golden 12-month run. Needs a sourced Pakistan scenario pack. |
-| 3. Model harness and the seven M0 jobs | Not started | New packages `models` and `director`. Fallback first for every job, then the scripted stand-in model, then the OpenAI-compatible and Anthropic adapters. |
+| 2. Engine: budget, approval, unrest, control | Done | Daily update for the four systems, caused effects, policy catalogue with ranges, funding check, keyed dice. Pakistan scenario pack with sources. 8 engine tests including a golden 12-month run. Decision record 0005. |
+| 3. Model harness and the seven M0 jobs | Next | New packages `models` and `director`. Fallback first for every job, then the scripted stand-in model, then the OpenAI-compatible and Anthropic adapters. |
 | 4. Clock and resolution | Not started | Execute boxes, advance time, resumable steps, progress panel, cancel. |
 | 5. Reading the world | Not started | Chronicle, policy pages, world briefing, timeline, control map (MapLibre). |
 | 6. Saves and branches | Not started | Scheduled snapshots, rewind, branch view. |

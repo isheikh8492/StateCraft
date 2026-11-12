@@ -2,7 +2,7 @@
 
 An open-source geopolitics simulator, played in plain text on a live world map. You hold one position in a real country, and AI models play everyone else. A deterministic engine owns the numbers and the record of events, so any model can be connected without corrupting the world.
 
-**Status:** early. The project skeleton, design system and the first path from screen to campaign file work. The simulation itself is not built yet. See the [roadmap](#roadmap).
+**Status:** early. The project skeleton, design system and the first path from screen to campaign file work. The engine for the economy, approval, unrest and control runs (`npm run sim -w @statecraft/scenarios` prints a year of Pakistan with no player), but it is not yet connected to the screen or to a model. See the [roadmap](#roadmap).
 
 ## Run it
 
@@ -42,6 +42,7 @@ Open `http://127.0.0.1:4317/#gallery` to see every component of the design syste
 packages/
   protocol/   Zod schemas for everything that crosses a boundary. Types derive from these.
   engine/     The deterministic core: no I/O, no clock, seeded dice only.
+  scenarios/  Starting worlds as data, each with a list of its sources.
   ledger/     Append-only event store, one SQLite file per campaign.
   server/     Local HTTP API (Fastify). Binds to 127.0.0.1 and checks host, origin and token.
   web/        The interface (React, Vite, Tailwind). Design tokens in src/theme/tokens.css.
