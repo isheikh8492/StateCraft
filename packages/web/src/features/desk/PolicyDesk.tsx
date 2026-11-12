@@ -31,6 +31,9 @@ const STEP_LABEL: Record<string, string> = {
   commit: 'Saving',
 };
 const JUMPS = [
+  [1, 'One day'],
+  [2, 'Two days'],
+  [3, 'Three days'],
   [7, 'One week'],
   [14, 'Two weeks'],
   [30, 'One month'],
@@ -51,6 +54,8 @@ export function PolicyDesk() {
     until === '' || today === ''
       ? 0
       : Math.round((Date.parse(until) - Date.parse(today)) / 86_400_000);
+  /** How far the one button runs the clock, with or without boxes to send. */
+  const span = jump === 0 ? daysUntil : jump;
   const running = view?.running ?? null;
   const blocked = running ? null : (view?.blocked ?? null);
   const question = new Map((blocked?.needsDetail ?? []).map((n) => [n.card, n.question]));
@@ -134,7 +139,7 @@ export function PolicyDesk() {
             <span className="flex-1 text-xs text-fg-muted">
               Delete one of the marked boxes, or send both.
             </span>
-            <Button size="sm" onClick={() => void act(() => api.execute(true))}>
+            <Button size="sm" onClick={() => void act(() => api.execute(true, span))}>
               Send mixed signals
             </Button>
           </div>
@@ -224,17 +229,8 @@ export function PolicyDesk() {
       </form>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-2">
-        <Button
-          variant="primary"
-          disabled={fresh === 0 || running !== null}
-          onClick={() => void act(() => api.execute(false))}
-        >
-          <Play />
-          Execute {fresh > 0 ? `${fresh} ${fresh === 1 ? 'box' : 'boxes'}` : ''}
-        </Button>
-        <div className="flex-1" />
         <label htmlFor="jump" className="sr-only">
-          How far to advance
+          How far to run the clock
         </label>
         <Select id="jump" value={jump} onChange={(event) => setJump(Number(event.target.value))}>
           {JUMPS.map(([days, label]) => (
@@ -246,7 +242,7 @@ export function PolicyDesk() {
         </Select>
         {jump === 0 && (
           <label htmlFor="jump-date">
-            <span className="sr-only">Advance to this date</span>
+            <span className="sr-only">Run to this date</span>
             <Input
               id="jump-date"
               type="date"
@@ -257,21 +253,19 @@ export function PolicyDesk() {
             />
           </label>
         )}
+        <div className="flex-1" />
         <Button
+          variant="primary"
           disabled={
-            running !== null ||
-            view?.campaign == null ||
-            (jump === 0 && (daysUntil < 1 || daysUntil > MAX_ADVANCE_DAYS))
+            running !== null || view?.campaign == null || span < 1 || span > MAX_ADVANCE_DAYS
           }
           title={
-            jump === 0 && daysUntil > MAX_ADVANCE_DAYS
-              ? 'Time can be advanced by at most six months at once.'
-              : undefined
+            span > MAX_ADVANCE_DAYS ? 'The clock can run at most six months at once.' : undefined
           }
-          onClick={() => void act(() => api.advance(jump === 0 ? daysUntil : jump))}
+          onClick={() => void act(() => (fresh > 0 ? api.execute(false, span) : api.advance(span)))}
         >
-          <FastForward />
-          Advance
+          {fresh > 0 ? <Play /> : <FastForward />}
+          {fresh > 0 ? `Execute ${fresh} ${fresh === 1 ? 'box' : 'boxes'}` : 'Advance'}
         </Button>
       </div>
     </div>

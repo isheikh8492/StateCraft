@@ -86,7 +86,8 @@ export const api = {
   },
   patchCard: (id: string, patch: { text?: string; pinned?: boolean; beforeId?: string | null }) =>
     post<View>(`/api/cards/${encodeURIComponent(id)}`, patch, 'PATCH'),
-  execute: (mixedSignals: boolean) => post<View>('/api/execute', { mixedSignals }),
+  execute: (mixedSignals: boolean, days: number) =>
+    post<View>('/api/execute', { mixedSignals, days }),
   advance: (days: number) => post<View>('/api/advance', { days }),
   cancel: () => post<View>('/api/cancel'),
   repeal: (id: string) => post<View>(`/api/policies/${encodeURIComponent(id)}/repeal`),

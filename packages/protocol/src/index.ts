@@ -112,7 +112,11 @@ export type Health = z.infer<typeof Health>;
 export const ApiError = z.object({ error: z.string(), detail: z.string().optional() });
 export type ApiError = z.infer<typeof ApiError>;
 
-export const ExecuteRequest = z.object({ mixedSignals: z.boolean().default(false) });
+export const ExecuteRequest = z.object({
+  mixedSignals: z.boolean().default(false),
+  /** How far to run the clock. Left out, the game runs to the first result worth attention. */
+  days: z.number().int().min(1).max(MAX_ADVANCE_DAYS).optional(),
+});
 export const AdvanceRequest = z.object({ days: z.number().int().min(1).max(MAX_ADVANCE_DAYS) });
 /** Go back to a saved point, or to any past date. */
 export const RewindRequest = z.union([

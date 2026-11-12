@@ -134,13 +134,19 @@ test('time advances, the chronicle places events on the map, and the inspector s
 }) => {
   await page.goto('/');
   const before = await date(page).textContent();
-  await page.getByLabel('How far to advance').selectOption('30');
+  await page.getByLabel('How far to run the clock').selectOption('30');
   await page.getByRole('button', { name: 'Advance' }).click();
   await expect(date(page)).not.toHaveText(before ?? '');
 
+  // The same button runs a single day.
+  const dayBefore = await date(page).textContent();
+  await page.getByLabel('How far to run the clock').selectOption('1');
+  await page.getByRole('button', { name: 'Advance' }).click();
+  await expect(date(page)).not.toHaveText(dayBefore ?? '');
+
   // Or straight to a chosen date.
-  await page.getByLabel('How far to advance').selectOption('0');
-  await page.getByLabel('Advance to this date').fill('2027-03-01');
+  await page.getByLabel('How far to run the clock').selectOption('0');
+  await page.getByLabel('Run to this date').fill('2027-03-01');
   await page.getByRole('button', { name: 'Advance' }).click();
   await expect(date(page)).toHaveText('1 March 2027');
   await expect(page.getByRole('list', { name: 'Chronicle' })).toContainText(

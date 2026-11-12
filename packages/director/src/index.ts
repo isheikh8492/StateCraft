@@ -335,7 +335,8 @@ export interface Director {
       beforeId?: string | null | undefined;
     },
   ): void;
-  execute(mixedSignals: boolean): void;
+  /** Send the boxes and run the clock; with no `days`, to the first result worth attention. */
+  execute(mixedSignals: boolean, days?: number): void;
   advance(days: number): void;
   cancel(): void;
   repeal(policyId: string): void;
@@ -1372,12 +1373,12 @@ export function createDirector(options: DirectorOptions): Director {
         throw new DirectorError('not_found', 'No such policy box.');
       ledger.append({ type: 'card.deleted', cardId: id });
     },
-    execute(mixedSignals) {
+    execute(mixedSignals, days) {
       const { projection } = requireCampaign();
       const fresh = [...projection.cards.values()].filter((c) => !c.sent).map((c) => c.id);
       if (fresh.length === 0)
         throw new DirectorError('nothing_to_do', 'Add at least one policy box first.');
-      begin('execute', null, fresh, mixedSignals);
+      begin('execute', days ?? null, fresh, mixedSignals);
     },
     advance(days) {
       begin('advance', days, [], false);

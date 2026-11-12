@@ -140,7 +140,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.post('/api/execute', async (request, reply) => {
     const data = body(ExecuteRequest, request.body, reply, 'Bad request.');
     if (!data) return reply;
-    game.director().execute(data.mixedSignals);
+    game.director().execute(data.mixedSignals, data.days);
     return reply.code(202).send(view());
   });
   app.post('/api/advance', async (request, reply) => {
