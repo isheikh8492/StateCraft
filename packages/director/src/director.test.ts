@@ -88,7 +88,7 @@ describe('director', () => {
     expect(cut?.orders).toEqual(['Cut the fuel subsidy sharply.']);
     expect(cut?.costPerYear).toBeLessThan(0);
     expect(view.chronicle.length).toBeGreaterThan(0);
-    expect(view.chronicle.every((e) => e.cites.length > 0 && e.via === 'model')).toBe(true);
+    expect(view.chronicle.every((e) => e.cites.length > 0)).toBe(true);
     expect(view.campaign?.day).toBeGreaterThanOrEqual(14);
     expect(calls.filter((c) => c.via === 'fallback')).toEqual([]);
 
@@ -98,16 +98,111 @@ describe('director', () => {
     }
     view = director.view();
     expect(view.campaign?.day).toBeGreaterThan(300);
-    expect(view.digests.length).toBeGreaterThanOrEqual(10);
     expect(view.policies.find((p) => p.instrument === 'fuel_subsidy_cut')).toMatchObject({
       stage: 'felt',
     });
-    expect(view.policies.find((p) => p.instrument === 'fuel_subsidy_cut')?.report).toBeDefined();
+    expect(
+      view.events.some(
+        (e) => e.kind === 'policy.milestone' && /A month into its effect: Cut fuel/.test(e.summary),
+      ),
+    ).toBe(true);
     // Every recorded event has a cause, and every chronicle entry cites a real event.
     const ids = new Set(view.events.map((e) => e.id));
     expect(view.events.every((e) => e.causes.length > 0)).toBe(true);
     expect(view.chronicle.every((e) => e.cites.every((id) => ids.has(id)))).toBe(true);
   }, 30_000);
+
+  it('waits only for reading and judging; reactions follow, and short moves call no model', async () => {
+    const { director, add, calls } = open('standin-slow');
+    director.start('pakistan-2026');
+    const jobs = () => calls.map((c) => c.job.split(' ')[0]);
+
+    // Adding and editing boxes costs nothing.
+    const id = add('Raise the sales tax a little.');
+    director.patchCard(id, { text: 'Raise the sales tax slightly.' });
+    await director.idle();
+    expect(jobs()).toEqual([]);
+
+    // The turn commits after two calls. The cast's answers are still being written.
+    director.move({ days: 3 }, false);
+    await expect.poll(() => director.view().campaign?.day, { timeout: 10_000 }).toBe(3);
+    expect(jobs()).toEqual(['policy.compile', 'turn.adjudicate']);
+    expect(director.view().arriving.reactions).toBe(true);
+    expect(director.view().chronicle.length).toBeGreaterThan(0);
+    await director.idle();
+    expect(jobs().slice(2)).toEqual(['policy.react', 'policy.react', 'policy.react']);
+    expect(director.view().arriving.reactions).toBe(false);
+
+    // Running the clock an hour, a day or a few days with nothing ordered: no calls at all.
+    calls.length = 0;
+    director.move({ hours: 1 }, false);
+    await director.idle();
+    expect(director.view().campaign).toMatchObject({ day: 3, hour: 10 });
+    director.move({ days: 1 }, false);
+    await director.idle();
+    director.move({ days: 3 }, false);
+    await director.idle();
+    expect(jobs()).toEqual([]);
+
+    // A longer run is judged once, and nothing is written that nobody asked for.
+    director.move({ days: 60 }, false);
+    await director.idle();
+    expect(jobs()).toEqual(['turn.adjudicate']);
+  }, 60_000);
+
+  it('answers every order: the cast reacts, a later beat is decided by dice, and people can be asked', async () => {
+    const { director, add, calls } = open(null);
+    director.start('pakistan-2026');
+    add('Declare an immediate ceasefire and open talks with the insurgents in Balochistan.');
+    director.move({ days: 2 }, false);
+    await director.idle();
+    let view = director.view();
+    const policy = view.policies[0];
+    expect(policy).toMatchObject({
+      instrument: 'regional_settlement',
+      region: 'balochistan',
+      status: 'active',
+    });
+    // The engine, not a model, decided who is touched: the insurgents first.
+    expect(policy?.reactions.map((r) => r.actor)).toEqual(['bla', 'juif', 'china']);
+    expect(policy?.reactions[0]?.text).toMatch(
+      /Baloch Liberation Army dismissed the government's offer/,
+    );
+    expect(policy?.alsoNoted).toEqual(
+      expect.arrayContaining(['The Government of Balochistan', 'The Army high command']),
+    );
+    const spoken = view.chronicle.filter((e) => e.speaker);
+    expect(spoken).toHaveLength(3);
+    expect(spoken.every((e) => e.quote && e.cites.length === 1)).toBe(true);
+
+    // Two weeks on, the dice decide whether the lull holds, and the result cites the order.
+    director.move({ days: 20 }, false);
+    await director.idle();
+    view = director.view();
+    const beat = view.events.find((e) => e.kind === 'beat');
+    expect(beat?.summary).toMatch(/attacks in Balochistan have fallen away|ending talk of a lull/);
+    expect(beat?.causes).toEqual([policy?.id]);
+    expect(view.turns[0]).toMatchObject({ orders: [], move: 'Ran the clock 20 days' });
+    expect(view.turns[1]?.orders).toEqual([
+      'Declare an immediate ceasefire and open talks with the insurgents in Balochistan.',
+    ]);
+
+    // Depth on demand: a full piece is written once and kept.
+    director.expandEntry(beat?.id ?? '');
+    await director.idle();
+    const full = director.view().chronicle.find((e) => e.id === beat?.id)?.full;
+    expect(full).toContain(beat?.summary);
+    const written = calls.length;
+    director.expandEntry(beat?.id ?? '');
+    await director.idle();
+    expect(calls.length).toBe(written);
+
+    // People can be asked; some cannot be reached.
+    director.ask('interior_minister', 'Is the lull in Balochistan real?');
+    await director.idle();
+    expect(director.view().talks.interior_minister?.[0]?.reply).toMatch(/on the record/);
+    expect(() => director.ask('bla', 'Will you talk?')).toThrow(/no channel/);
+  });
 
   it('is playable with no model, and with a model that never answers properly', async () => {
     for (const model of [null, 'standin-invalid', 'standin-refuse']) {
@@ -180,7 +275,7 @@ describe('director', () => {
     };
     crashed.director.execute(false);
     await crashed.director.idle();
-    expect(crashed.director.view().running?.step).toBe('narrate');
+    expect(crashed.director.view().running?.step).toBe('commit');
     crashed.ledger.close();
 
     const resumed = open(null, crashed.file);

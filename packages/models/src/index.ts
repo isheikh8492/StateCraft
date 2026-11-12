@@ -9,4 +9,5 @@ export {
 } from './harness.ts';
 export * from './jobs.ts';
 export { findRegion, matchInstrument, type Ref } from './match.ts';
+export { REACTION_OPTIONS, type ReactionOption } from './reactions.ts';
 export { startStandIn } from './standin.ts';

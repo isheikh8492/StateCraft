@@ -18,7 +18,7 @@ Scope: one country (Pakistan), one position (head of government), policy only. G
 | 2. Engine: budget, approval, unrest, control | Done | Pakistan scenario pack with sources. Golden 12-month run. Decision record 0005. |
 | 3. Model harness and the seven M0 jobs | Done | Package `models`: OpenAI-compatible, Anthropic and Gemini adapters; parse, check, repair twice, fall back; refusal handling; call log; scripted stand-in model; in-app model check. |
 | 4. Clock and resolution | Done | Package `director`: compile, adjudicate, apply, narrate, report, each saved before the next; resume after a stop; cancel; conflicts held for a choice; blocked orders returned with the reason; advance up to six months; early stop on a crisis. |
-| 5. Reading the world | Done in part | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, MapLibre map of regions with no tile service. See gaps. |
+| 5. Reading the world | Done in part (see below) | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, MapLibre map of regions with no tile service. See gaps. |
 | 6. Saves and branches | Done | Snapshot at every commit, rewind to any saved point or any date onto a new branch, old line kept. Decision record 0006. |
 | 7. Developer tools | Done | Inspector with every model call and a cost meter; true numbers behind a developer switch. |
 | 8. Gate | **Not passed** | A one-year term plays end to end on the scripted stand-in and on no model at all (tested). It has not been run on a real model: no local or hosted model was available where this was built. |
@@ -59,16 +59,36 @@ These are in `docs/requirements.md` for M0 and are not built, or are built in a 
 - There is no "Read as" line and no follow-up question (a departure from REQ-POL-03 and REQ-JOB-06). Boxes go out as written. An order too vague to act on is answered in the world: the chronicle reports that ministries could not act on it, and its policy page says why.
 - A pinned box stays on the desk after it is executed and is not sent again until its wording changes.
 
-## Agreed in the spec, not built yet
+## Built from the 12 November spec
 
-Decided in play-testing on 12 November 2026 and written into the spec and requirements. The code still has the dropdown, the six-month limit, single-call narration and commit-after-writing.
+The speed slice and the first part of M1, built together.
 
-- The time control: a date pill, a forward panel (to next major event, one hour to one year, a specific time) and a back arrow to history.
-- History by turn (your move, world response), by time and by story; read-only viewing; export.
-- Chronicle: a headline and a sentence or two up front; the full piece, with quotes and declared detail figures, written only when you open the entry, then saved.
-- No ministry reports and no monthly summaries to read: the policy page shows engine figures, milestones are built-in chronicle events, and an account in someone's voice comes from asking them.
-- Speed: only reading the boxes and judging run before a turn commits; reactions and headlines follow; no model for short moves, routine notices or box edits.
+| Area | State |
+| --- | --- |
+| Speed | A turn commits after two model calls at most (reading the boxes, judging the period). Nothing is written before the commit. A move of under a week with nothing ordered calls no model. Prompts carry a compact output shape, and the world brief only where needed. |
+| The time control | A date pill with the hour. Right arrow: to next major event, 1 hour, 1 day, 1 week, 1 month, 3 months, 6 months, 1 year, or a specific date; any of them sends the desk first. Left arrow opens history. |
+| History | By turn (your move, then the world's response) and by time. |
+| Depth on demand | Entries are short. "Read the full account" writes the long piece once and saves it. |
+| The cast | Sixteen Pakistani stakeholders with interests, stance and voice (authored; see the scenario's SOURCES.md). |
+| Reactions | Every order that takes effect is answered: the engine picks who is touched, up to three answer in full after the turn commits, side by side, and the rest are named. An answer can be an action with bounded effects. |
+| Later beats | A reaction can set up a follow-up that the dice decide on its day (a lull holds or breaks), recorded as its own event citing the order. |
+| Asking people | The People window: put a question to any reachable member of the cast and get an answer in their voice, from what they could know. Armed groups cannot be reached. |
+| Removed | Ministry reports, monthly summaries, the "Read as" line. Policy milestones are chronicle events in built-in wording. |
+
+## Still not built from that spec
+
+| Item | State |
+| --- | --- |
+| Streaming of long pieces (REQ-PERF-16) | Not built. A full account appears when it is finished, with a "Writing…" state meanwhile. |
+| Brief model-written headlines | Not built, deliberately: an event's own one-line summary is the headline, so no call is made. |
+| History by story, read-only viewing of a past turn with the map as it was, export (REQ-READ-14 to 16) | Not built. |
+| Time of day beyond the hour hand (REQ-CLK-12) | Partly. The clock shows an hour and an hour's move leaves the engine's day untouched; messages do not yet arrive by the hour. |
+| Quotes stored as utterances, declared detail figures kept across entries (REQ-JOB-24, 26) | Partly. Reactions are stored and quoted; detail figures are checked when written but not yet carried into later entries. |
+| Conversation that changes positions (pressure, levers, persuasion) | Not built. Asking gets you information and a view; it does not yet move anyone. |
+| Advisors warning you before you act; people reaching out to you unasked | Not built. |
+| Reactions when you move before the last ones have arrived | Known gap: rewinding to a date inside the following turn can drop those late reactions. |
+| The judge's memory of earlier months | Not wired. It sees the last eight events only. |
 
 ## M1 to M4
 
-Not started. M1 begins with the cast and a response to every order (spec: "Every order gets an answer", REQ-ACT-18 to 24), before conversations. See the roadmap in the README.
+M1 is under way: the cast, reactions, later beats and asking people are built (see above). Personas with traits and motives, pressure and persuasion, hiring and firing, and delegation are not started. M2 to M4 are not started. See the roadmap in the README.

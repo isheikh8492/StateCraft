@@ -24,6 +24,10 @@ interface Game {
   /** The policy whose page is open. */
   policy: string | null;
   openPolicy: (id: string | null) => void;
+  /** Whether the panel for moving time forward is open. */
+  timeOpen: boolean;
+  setTimeOpen: (open: boolean) => void;
+  openWindow: (id: string) => void;
 }
 
 const GameContext = createContext<Game | null>(null);
@@ -40,7 +44,14 @@ export function GameProvider({
   const [error, setError] = useState<string | null>(null);
   const [place, setPlace] = useState<string | null>(null);
   const [policy, setPolicy] = useState<string | null>(null);
-  const busy = view?.running != null;
+  const [timeOpen, setTimeOpen] = useState(false);
+  const busy =
+    view?.running != null ||
+    view?.arriving.reactions === true ||
+    (view?.arriving.entries.length ?? 0) > 0 ||
+    Object.values(view?.talks ?? {}).some((thread) =>
+      thread.some((turn) => turn.reply === undefined),
+    );
   const alive = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -92,8 +103,11 @@ export function GameProvider({
         setPolicy(id);
         if (id) onOpenWindow?.('policies');
       },
+      timeOpen,
+      setTimeOpen,
+      openWindow: (id) => onOpenWindow?.(id),
     }),
-    [view, error, act, place, policy, onOpenWindow],
+    [view, error, act, place, policy, timeOpen, onOpenWindow],
   );
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

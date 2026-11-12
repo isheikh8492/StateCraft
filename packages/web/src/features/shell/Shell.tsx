@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   ScrollText,
   SquarePen,
+  Users,
   Wrench,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -15,12 +16,14 @@ import { PolicyDesk } from '@/features/desk/PolicyDesk';
 import { Inspector } from '@/features/inspector/Inspector';
 import { WorldMap } from '@/features/map/WorldMap';
 import { ModelPanel } from '@/features/model/ModelPanel';
+import { People } from '@/features/people/People';
 import { Policies } from '@/features/policies/Policies';
 import { StartScreen } from '@/features/start/StartScreen';
+import { TimeControl } from '@/features/time/TimeControl';
 import { Timeline } from '@/features/timeline/Timeline';
 import { Briefing } from '@/features/world/Briefing';
 import { api } from '@/lib/api';
-import { formatDate, GameProvider, useGame } from '@/lib/game';
+import { GameProvider, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { useWindowLayout, Window, type WindowFrame, type WindowLayout } from '@/ui/window';
@@ -41,6 +44,7 @@ const DEFAULT_LAYOUT: WindowLayout = {
   timeline: frame(540, 160, 480, 380, 0, true),
   model: frame(580, 100, 480, 520, 0, true),
   inspector: frame(300, 80, 720, 520, 0, true),
+  people: frame(440, 330, 620, 420, 0, true),
 };
 
 const WINDOWS: { id: string; title: string; icon: LucideIcon; body: () => ReactNode }[] = [
@@ -48,7 +52,8 @@ const WINDOWS: { id: string; title: string; icon: LucideIcon; body: () => ReactN
   { id: 'chronicle', title: 'Chronicle', icon: ScrollText, body: () => <Chronicle /> },
   { id: 'briefing', title: 'Briefing', icon: Globe, body: () => <Briefing /> },
   { id: 'policies', title: 'Policies', icon: Landmark, body: () => <Policies /> },
-  { id: 'timeline', title: 'Timeline', icon: History, body: () => <Timeline /> },
+  { id: 'people', title: 'People', icon: Users, body: () => <People /> },
+  { id: 'timeline', title: 'Rewind', icon: History, body: () => <Timeline /> },
   { id: 'model', title: 'Model', icon: Cpu, body: () => <ModelPanel /> },
   { id: 'inspector', title: 'Inspector', icon: Wrench, body: () => <Inspector /> },
 ];
@@ -81,35 +86,40 @@ function Desktop({ windows }: { windows: ReturnType<typeof useWindowLayout> }) {
           State<span className="text-accent">Craft</span>
         </h1>
         <nav aria-label="Windows" className="flex items-center gap-0.5">
-          {WINDOWS.map(({ id, title, icon: Icon }) => (
-            <Button key={id} variant="ghost" size="sm" onClick={() => open(id)}>
-              <Icon />
-              {title}
-            </Button>
-          ))}
+          {WINDOWS.map(({ id, title, icon: Icon }) =>
+            // Tools for setting up and inspecting the game take less room than windows for playing it.
+            id === 'model' || id === 'inspector' ? (
+              <Button
+                key={id}
+                variant="ghost"
+                size="icon"
+                aria-label={title}
+                title={title}
+                onClick={() => open(id)}
+              >
+                <Icon />
+              </Button>
+            ) : (
+              <Button key={id} variant="ghost" size="sm" onClick={() => open(id)}>
+                <Icon />
+                {title}
+              </Button>
+            ),
+          )}
         </nav>
         <div className="flex-1" />
+        {campaign && <TimeControl />}
         {campaign && (
           <p className="flex items-center gap-2 text-xs whitespace-nowrap text-fg-muted">
             <span>
               {campaign.office}, {campaign.title.split(',')[0]}
             </span>
-            <time
-              dateTime={campaign.date}
-              data-testid="game-date"
-              className="tabular rounded-control border border-border bg-surface-2 px-2 py-0.5 text-fg"
-            >
-              {formatDate(campaign.date, true)}
-            </time>
             {campaign.branch > 1 && <Badge tone="accent">Line {campaign.branch}</Badge>}
           </p>
         )}
         {view !== null && events !== undefined && (
           <Badge tone="good" title={health ? `Engine ${health.engineVersion}` : undefined}>
             Connected
-            <span className="tabular text-fg-muted">
-              {events} {events === 1 ? 'event' : 'events'}
-            </span>
           </Badge>
         )}
         {view === null && error === null && <Badge>Connecting</Badge>}

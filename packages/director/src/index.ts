@@ -23,21 +23,24 @@ import {
   removeEffects,
   resolveInstrument,
   resolveNovel,
+  roll,
   type Scenario,
   stepDay,
+  touchedBy,
   type World,
 } from '@statecraft/engine';
 import type { Ledger } from '@statecraft/ledger';
 import {
   type AdjudicateIn,
   type Allowed,
+  actorReply,
   type CompiledPolicy,
   chronicleWrite,
   type Harness,
   INSTRUMENT_REFS,
-  memoryDigest,
   policyCompile,
-  policyReport,
+  policyReact,
+  REACTION_OPTIONS,
   type Size,
   turnAdjudicate,
   turnReview,
@@ -48,6 +51,7 @@ import {
   type ChronicleEntry,
   type Figure,
   MAX_ADVANCE_DAYS,
+  type MoveSpan,
   type PolicyCard,
   type PolicyView,
   RESOLUTION_STEPS,
@@ -135,11 +139,29 @@ interface ApplyData {
   baseline: Record<string, Record<string, number | string>>;
   stoppedEarly?: string;
 }
-interface NarrateData {
-  entries: ChronicleEntry[];
+interface ReactionRecord {
+  id: string;
+  actor: string;
+  actorName: string;
+  policy: string;
+  kind: 'statement' | 'action' | 'silence';
+  text: string;
 }
-interface ReportData {
-  reports: Record<string, NonNullable<PolicyView['report']>>;
+/** A follow-up the dice will decide on its day. */
+interface Beat {
+  id: string;
+  dueDay: number;
+  policy: string;
+  place?: string;
+  ifYes: string;
+  ifNo: string;
+}
+interface ReactionData {
+  reactions: ReactionRecord[];
+  events: WorldEventView[];
+  beats: Beat[];
+  /** Actors touched more lightly, by policy id. */
+  others: Record<string, string[]>;
 }
 interface Resolution {
   id: string;
@@ -152,11 +174,14 @@ interface Resolution {
   compile?: CompileData;
   adjudicate?: AdjudicateData;
   apply?: ApplyData;
-  narrate?: NarrateData;
-  report?: ReportData;
   blocked?: Pick<CompileData, 'conflicts' | 'needsDetail'>;
   commitSeq?: number;
   startSeq?: number;
+  hours?: number;
+  untilMajor?: boolean;
+  /** The hour of day the turn ended on. */
+  hour?: number;
+  reactions?: ReactionData;
 }
 
 /** Everything the ledger says about the current branch, folded into one object. */
@@ -168,10 +193,19 @@ interface Projection {
   resolutions: Resolution[];
   repealed: Set<string>;
   digests: { month: string; text: string }[];
+  expanded: Map<string, { body: string; via: string }>;
+  talks: Map<string, { id: string; day: number; question: string; reply?: string }[]>;
 }
 
 function project(events: readonly StoredEvent[]): Projection {
-  const p: Projection = { cards: new Map(), resolutions: [], repealed: new Set(), digests: [] };
+  const p: Projection = {
+    cards: new Map(),
+    resolutions: [],
+    repealed: new Set(),
+    digests: [],
+    expanded: new Map(),
+    talks: new Map(),
+  };
   const byId = new Map<string, Resolution>();
   for (const { seq, event } of events) {
     switch (event.type) {
@@ -238,6 +272,8 @@ function project(events: readonly StoredEvent[]): Projection {
           mixedSignals: event.mixedSignals,
           status: 'running',
           startSeq: seq,
+          ...(event.hours ? { hours: event.hours } : {}),
+          ...(event.untilMajor ? { untilMajor: true } : {}),
         };
         byId.set(r.id, r);
         p.resolutions.push(r);
@@ -267,6 +303,7 @@ function project(events: readonly StoredEvent[]): Projection {
         if (r) {
           r.status = 'committed';
           r.commitSeq = seq;
+          if (event.hour !== undefined) r.hour = event.hour;
           for (const id of r.compile?.consumed ?? []) {
             const card = p.cards.get(id);
             // A pinned box stays on the desk as a standing instruction.
@@ -276,6 +313,26 @@ function project(events: readonly StoredEvent[]): Projection {
         }
         break;
       }
+      case 'reactions.written': {
+        const r = byId.get(event.id);
+        if (r) r.reactions = event.data as ReactionData;
+        break;
+      }
+      case 'entry.expanded':
+        p.expanded.set(event.eventId, { body: event.body, via: event.via });
+        break;
+      case 'talk.asked': {
+        const thread = p.talks.get(event.actorId) ?? [];
+        thread.push({ id: event.id, day: event.day, question: event.question });
+        p.talks.set(event.actorId, thread);
+        break;
+      }
+      case 'talk.replied':
+        for (const thread of p.talks.values()) {
+          const turn = thread.find((t) => t.id === event.id);
+          if (turn) turn.reply = event.reply;
+        }
+        break;
       case 'policy.repealed':
         p.repealed.add(event.policyId);
         break;
@@ -311,7 +368,18 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
     'The premium on government debt eased.',
   ],
 };
+/** How many actors answer one order in full; the rest are noted by name. */
+const MAX_REACTIONS = 3;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
+const ROUTINE_KINDS = new Set([
+  'policy.announced',
+  'policy.enacted',
+  'policy.milestone',
+  'figures.monthly',
+]);
+/** Notices that need no telling: they are reported in built-in wording, without a model. */
+const isRoutine = (e: WorldEventView) =>
+  ROUTINE_KINDS.has(e.kind) || (e.kind === 'legislature.vote' && e.size === 'minor');
 
 export interface DirectorOptions {
   ledger: Ledger;
@@ -341,6 +409,12 @@ export interface Director {
   advance(days: number): void;
   cancel(): void;
   repeal(policyId: string): void;
+  /** One move of the clock. Any boxes on the desk are sent first. */
+  move(span: MoveSpan, mixedSignals: boolean): void;
+  /** Write the full piece on one event, the first time its entry is opened. */
+  expandEntry(eventId: string): void;
+  /** Put a question to a member of the cast. The answer arrives later. */
+  ask(actorId: string, question: string): void;
   rewind(seq: number): void;
   /** Go back to any past date, including one in the middle of a resolution. */
   rewindToDate(date: string): void;
@@ -375,6 +449,10 @@ export function createDirector(options: DirectorOptions): Director {
   const queue: { priority: number; run: () => Promise<void> }[] = [];
   let working: Promise<void> | undefined;
   let cancelRequested: string | undefined;
+  /** True while the cast's answers to the last turn are still being written. */
+  let arrivingReactions = false;
+  /** Entries whose full piece is being written right now. */
+  const writing = new Set<string>();
   const pump = () => {
     if (working) return;
     const next = queue.sort((a, b) => a.priority - b.priority).shift();
@@ -398,6 +476,12 @@ export function createDirector(options: DirectorOptions): Director {
     return { ...s, world: s.world, scenario: s.scenario };
   };
   const running = () => state().projection.resolutions.find((r) => r.status === 'running');
+  /** Nothing may rewrite the world while reactions to the last turn are still arriving. */
+  const requireSettled = () => {
+    requireQuiet();
+    if (arrivingReactions)
+      throw new DirectorError('busy', 'Reactions to your last move are still arriving.');
+  };
   const requireQuiet = () => {
     if (running()) throw new DirectorError('busy', 'A resolution is still running.');
   };
@@ -415,9 +499,9 @@ export function createDirector(options: DirectorOptions): Director {
       .filter((r) => r.status === 'committed')
       .flatMap((r) => (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r })));
   const allEvents = (p: Projection): WorldEventView[] =>
-    p.resolutions.filter((r) => r.status === 'committed').flatMap((r) => r.apply?.events ?? []);
-  const allEntries = (p: Projection): ChronicleEntry[] =>
-    p.resolutions.filter((r) => r.status === 'committed').flatMap((r) => r.narrate?.entries ?? []);
+    p.resolutions
+      .filter((r) => r.status === 'committed')
+      .flatMap((r) => [...(r.apply?.events ?? []), ...(r.reactions?.events ?? [])]);
 
   const saveStep = (id: string, step: ResolutionStep, data: unknown) =>
     ledger.append({ type: 'resolution.step', id, step, data });
@@ -552,6 +636,7 @@ export function createDirector(options: DirectorOptions): Director {
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   const periodDays = (r: Resolution, active: PolicyRecord[]): number => {
+    if (r.hours) return 0;
     if (r.days !== null) return Math.min(r.days, MAX_ADVANCE_DAYS);
     if (active.length === 0) return 7;
     // Run to the first result worth the player's attention (REQ-CLK-02).
@@ -586,6 +671,10 @@ export function createDirector(options: DirectorOptions): Director {
       stage: 'announced',
       allowed: allowedFor(x, world),
     }));
+    // Nothing was ordered and little time passes: there is nothing to judge, so no model is
+    // called and the world's own events fill the days.
+    if (actions.length === 0 && days < 7) return { quiet: true, outcomes: [], events: [] };
+
     const tags = [...new Set(world.groups.flatMap((g) => g.tags))];
     const input: AdjudicateIn = {
       period: {
@@ -598,17 +687,15 @@ export function createDirector(options: DirectorOptions): Director {
         ...Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage])),
         ...Object.fromEntries(world.groups.map((g) => [`mood.${g.id}`, mood(g.approval)])),
       },
-      regions: regionRefs(world),
+      regions: world.regions.map((x) => ({ id: x.id, label: x.name })),
       actions,
-      eventLimits: [
-        { on: 'inflation', range: [-0.5, 0.5], unit: 'points' },
-        { on: 'growth', range: [-0.2, 0.2], unit: 'points' },
-        { on: 'grievance.all', range: [-3, 3], unit: 'points' },
-        ...world.regions.map(
-          (x): Allowed => ({ on: `grievance.${x.id}`, range: [-3, 3], unit: 'points' }),
-        ),
-        ...tags.map((t): Allowed => ({ on: `approval.${t}`, range: [-3, 3], unit: 'points' })),
-      ],
+      eventLimits: {
+        inflation: 0.5,
+        growth: 0.2,
+        'grievance.all': 3,
+        ...Object.fromEntries(world.regions.map((x) => [`grievance.${x.id}`, 3])),
+        ...Object.fromEntries(tags.map((t) => [`approval.${t}`, 3])),
+      },
       recent: allEvents(p)
         .slice(-8)
         .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
@@ -638,49 +725,33 @@ export function createDirector(options: DirectorOptions): Director {
       })),
     };
 
-    // A second opinion on anything major or outside the catalogue (REQ-JOB-12).
-    const novel = data.outcomes.filter(
-      (o) =>
-        Object.keys(o.picks).length > 0 &&
-        active.find((x) => x.id === o.policy)?.instrument === 'novel',
-    );
+    // A second opinion, for major events only (REQ-JOB-12). Orders outside the catalogue do
+    // not need one: the engine already holds their effects to small amounts.
     const major = data.events.filter((e) => e.size === 'major');
-    if (novel.length + major.length > 0) {
-      const items = [
-        ...novel.map((o) => ({
-          summary: `${active.find((x) => x.id === o.policy)?.summary ?? ''} Proposed effects: ${JSON.stringify(o.picks)}`,
-          causes: [],
-          actorPowers: scenario.office.powers,
+    if (major.length > 0) {
+      const items = major.map((e, index) => ({
+        index,
+        summary: e.summary,
+        causes: e.causes.map((id) => ({
+          id,
+          summary: input.recent.find((x) => x.id === id)?.summary ?? id,
         })),
-        ...major.map((e) => ({
-          summary: e.summary,
-          causes: e.causes.map((id) => ({
-            id,
-            summary: input.recent.find((x) => x.id === id)?.summary ?? id,
-          })),
-          actorPowers: [],
-        })),
-      ].map((item, index) => ({ index, ...item }));
+        actorPowers: [],
+      }));
       const review = await harness.run(turnReview, { items }, context);
       const failed = new Set(
         review.output.verdicts
           .filter((v) => !(v.plausible && v.caused && v.withinPower))
           .map((v) => v.index),
       );
-      novel.forEach((o, i) => {
-        if (failed.has(i)) {
-          o.picks = {};
-          o.note = `${o.note} No measurable effect.`.trim();
-        }
-      });
       data.events = data.events.filter(
-        (e) => !(e.size === 'major' && failed.has(novel.length + major.indexOf(e))),
+        (e) => !(e.size === 'major' && failed.has(major.indexOf(e))),
       );
     }
     return data;
   }
 
-  function applyStep(r: Resolution, start: World, scenario: Scenario): ApplyData {
+  function applyStep(r: Resolution, start: World, scenario: Scenario, p: Projection): ApplyData {
     const compile = r.compile ?? { policies: [], conflicts: [], needsDetail: [], consumed: [] };
     const judged = r.adjudicate ?? { outcomes: [], events: [] };
     const active = compile.policies.filter((x) => !x.blockedReason);
@@ -832,6 +903,26 @@ export function createDirector(options: DirectorOptions): Director {
     let monthStart = { month: monthOf(dateOf(world.startDate, world.day)), world };
     let stoppedEarly: string | undefined;
     let ambientSignificant = 1 + Math.floor(days / 45);
+    const beats = p.resolutions.flatMap((x) =>
+      x.status === 'committed' ? (x.reactions?.beats ?? []) : [],
+    );
+    // Policies whose progress is worth a line when they start to bite or have been felt.
+    const watched = [
+      ...committedPolicies(p)
+        .filter(
+          ({ policy, resolution }) => !refusalOf(policy, resolution) && !p.repealed.has(policy.id),
+        )
+        .map(({ policy, resolution }) => ({
+          policy,
+          made: resolution.apply?.effects[policy.id] ?? [],
+          was: resolution.apply?.baseline[policy.id] ?? {},
+        })),
+      ...pendingEnact.map((policy) => ({
+        policy,
+        made: effects[policy.id] ?? [],
+        was: baseline[policy.id] ?? {},
+      })),
+    ];
 
     for (let i = 0; i < days && !stoppedEarly; i++) {
       for (const policy of pendingEnact.filter(
@@ -891,6 +982,19 @@ export function createDirector(options: DirectorOptions): Director {
           );
         }
       }
+      // Follow-ups set up by earlier reactions come due: the dice decide which way each goes.
+      for (const beat of beats.filter((b) => b.dueDay === world.day)) {
+        const yes = roll(world.seed, `beat:${beat.id}`) < 0.5;
+        emit(
+          world.day,
+          'beat',
+          'significant',
+          yes ? beat.ifYes : beat.ifNo,
+          [beat.policy],
+          beat.place ? { place: beat.place } : {},
+        );
+      }
+      const seen = events.length;
       const stepped = stepDay(world);
       world = stepped.world;
       for (const e of stepped.events) {
@@ -944,6 +1048,37 @@ export function createDirector(options: DirectorOptions): Director {
         );
         monthStart = { month, world };
       }
+      for (const { policy, made, was } of watched) {
+        const now = stageOf(policy, made, world.day);
+        if (
+          now === stageOf(policy, made, world.day - 1) ||
+          (now !== 'implemented' && now !== 'felt')
+        )
+          continue;
+        const figures = Object.entries(was)
+          .filter(([, before]) => typeof before === 'number')
+          .slice(0, 2)
+          .map(
+            ([on, before]) =>
+              `${labelOf(world, on).label}: ${before} to ${readTarget(world, on)} ${labelOf(world, on).unit}.`,
+          );
+        const lead = now === 'implemented' ? 'Began to take effect' : 'A month into its effect';
+        emit(
+          world.day,
+          'policy.milestone',
+          'minor',
+          `${lead}: ${policy.title}. ${figures.join(' ')}`.trim(),
+          [policy.id],
+          policy.region ? { place: policy.region } : {},
+        );
+      }
+      // "To the next event that matters": stop the day something notable happens.
+      if (r.untilMajor && !stoppedEarly) {
+        const notable = events
+          .slice(seen)
+          .find((e) => !isRoutine(e) && (e.size === 'significant' || e.size === 'major'));
+        if (notable) stoppedEarly = notable.summary;
+      }
     }
     return {
       ...(Object.keys(stopped).length > 0 ? { stopped } : {}),
@@ -953,63 +1088,6 @@ export function createDirector(options: DirectorOptions): Director {
       effects,
       baseline,
       ...(stoppedEarly ? { stoppedEarly } : {}),
-    };
-  }
-
-  async function narrateStep(
-    r: Resolution,
-    scenario: Scenario,
-    p: Projection,
-  ): Promise<NarrateData> {
-    const apply = r.apply;
-    if (!apply || apply.events.length === 0) return { entries: [] };
-    const world = apply.world;
-    const days = apply.toDay - r.fromDay;
-    const { output, via } = await harness.run(
-      chronicleWrite,
-      {
-        period: {
-          from: dateOf(world.startDate, r.fromDay),
-          to: dateOf(world.startDate, apply.toDay),
-        },
-        events: apply.events.map((e) => {
-          const place = world.regions.find((x) => x.id === e.place);
-          return {
-            id: e.id,
-            when: e.date,
-            kind: e.kind,
-            size: e.size,
-            summary: e.summary,
-            ...(place ? { place: { id: place.id, label: place.name } } : {}),
-            numbers: e.numbers
-              .filter(
-                (x): x is Figure & { before: number; now: number } =>
-                  typeof x.before === 'number' && typeof x.now === 'number',
-              )
-              .map((x) => ({ label: x.label, before: x.before, after: x.now, unit: x.unit })),
-            causes: e.causes,
-          };
-        }),
-        previous: allEntries(p)
-          .slice(-3)
-          .map((e) => ({ headline: e.headline })),
-        audience: 'player',
-        level: 'standard',
-        maxEntries: Math.max(3, Math.min(12, 3 + Math.floor(days / 10))),
-      },
-      { resolution: r.id, brief: scenario.brief },
-    );
-    return {
-      entries: output.entries.map((e, i) => ({
-        id: `${r.id}-c${i + 1}`,
-        day: dayOf(world.startDate, e.when),
-        date: e.when.slice(0, 10),
-        headline: e.headline,
-        body: e.body,
-        cites: e.cites,
-        ...(e.place ? { place: e.place } : {}),
-        via: via === 'fallback' ? 'fallback' : 'model',
-      })),
     };
   }
 
@@ -1023,57 +1101,6 @@ export function createDirector(options: DirectorOptions): Director {
     }));
   };
 
-  async function reportStep(r: Resolution, scenario: Scenario, p: Projection): Promise<ReportData> {
-    const world = r.apply?.world;
-    if (!world) return { reports: {} };
-    const mine = (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r }));
-    const moving = [...committedPolicies(p), ...mine]
-      .filter(
-        ({ policy, resolution }) => !refusalOf(policy, resolution) && !p.repealed.has(policy.id),
-      )
-      .slice(-6);
-    if (moving.length === 0) return { reports: {} };
-    const events = [...allEvents(p), ...(r.apply?.events ?? [])];
-    const { output } = await harness.run(
-      policyReport,
-      {
-        policies: moving.map(({ policy, resolution }) => ({
-          id: policy.id,
-          title: policy.title,
-          stage: stageOf(
-            policy,
-            resolution === r ? r.apply?.effects[policy.id] : resolution.apply?.effects[policy.id],
-            world.day,
-          ),
-          owner: { id: actorId(world), label: 'The ministry responsible' },
-          targets: figuresFor(policy, resolution, world).filter(
-            (f): f is Figure & { before: number; now: number } =>
-              typeof f.before === 'number' && typeof f.now === 'number',
-          ),
-          linked: events
-            .filter((e) => e.causes.includes(policy.id))
-            .slice(-5)
-            .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
-          slant: 'candid' as const,
-        })),
-      },
-      { resolution: r.id, brief: scenario.brief },
-    );
-    return {
-      reports: Object.fromEntries(
-        output.reports.map((x) => [
-          x.policy,
-          {
-            status: x.status,
-            effect: x.effect,
-            attribution: x.attribution,
-            sideEffects: x.sideEffects,
-          },
-        ]),
-      ),
-    };
-  }
-
   function stageOf(
     policy: PolicyRecord,
     effects: Effect[] | undefined,
@@ -1085,36 +1112,11 @@ export function createDirector(options: DirectorOptions): Director {
     return day < first + 30 ? 'implemented' : 'felt';
   }
 
-  async function digestMonths(r: Resolution, scenario: Scenario) {
-    const { projection, world } = state();
-    if (!world) return;
-    const done = new Set(projection.digests.map((d) => d.month));
-    const current = monthOf(dateOf(world.startDate, world.day));
-    const entries = allEntries(projection);
-    const months = [...new Set(entries.map((e) => monthOf(e.date)))].filter(
-      (m) => m < current && !done.has(m),
-    );
-    for (const month of months) {
-      const inMonth = entries.filter((e) => monthOf(e.date) === month);
-      const { output } = await harness.run(
-        memoryDigest,
-        {
-          span: { from: `${month}-01`, to: `${month}-31`, level: 'month' },
-          entries: inMonth.map((e) => ({
-            id: e.id,
-            when: e.date,
-            headline: e.headline,
-            body: e.body,
-          })),
-          pinned: [],
-        },
-        { resolution: r.id, brief: scenario.brief },
-      );
-      ledger.append({ type: 'digest.written', month, text: output.digest });
-    }
-  }
+  const currentHour = (p: Projection) =>
+    [...p.resolutions].reverse().find((r) => r.status === 'committed' && r.hour !== undefined)
+      ?.hour ?? 9;
 
-  /** Runs a resolution from wherever it stopped. Finished steps are read back, not redone. */
+  /** Runs a turn from wherever it stopped. Finished steps are read back, not redone. */
   async function runResolution(id: string): Promise<void> {
     const stopIfCancelled = () => {
       if (cancelRequested !== id) return false;
@@ -1135,26 +1137,160 @@ export function createDirector(options: DirectorOptions): Director {
           ledger.append({
             type: 'resolution.blocked',
             id,
-            data: { conflicts: data.conflicts, needsDetail: data.needsDetail },
+            data: { conflicts: data.conflicts, needsDetail: [] },
           });
           return;
         }
       } else if (step === 'adjudicate')
         saveStep(id, step, await adjudicateStep(r, world, scenario, projection));
-      else if (step === 'apply') saveStep(id, step, applyStep(r, world, scenario));
-      else if (step === 'narrate') saveStep(id, step, await narrateStep(r, scenario, projection));
-      else saveStep(id, step, await reportStep(r, scenario, projection));
+      else saveStep(id, step, applyStep(r, world, scenario, projection));
     }
-    const { projection, scenario } = state();
+    const { projection } = state();
     const r = projection.resolutions.find((x) => x.id === id);
-    if (!r?.apply || !scenario || stopIfCancelled()) return;
+    if (!r?.apply || stopIfCancelled()) return;
     // The world changes here and only here: the event and its snapshot commit together.
+    // Nothing is written before this point, so the turn never waits for prose (REQ-PERF-03).
+    const hour = r.hours ? (currentHour(projection) + r.hours) % 24 : currentHour(projection);
     ledger.appendWithSnapshot(
-      { type: 'resolution.committed', id, toDay: r.apply.toDay },
+      { type: 'resolution.committed', id, toDay: r.apply.toDay, hour },
       r.apply.toDay,
       r.apply.world,
     );
-    await digestMonths(r, scenario);
+    arrivingReactions = true;
+    enqueue(0, () =>
+      aftermath(id).finally(() => {
+        arrivingReactions = false;
+      }),
+    );
+  }
+
+  /**
+   * After a turn commits: everyone its orders touch answers them (REQ-ACT-19). The engine
+   * decides who is touched; a model, or a template, writes what each says or does. Up to
+   * three answer an order in full, side by side; the rest are noted by name.
+   */
+  async function aftermath(id: string): Promise<void> {
+    const { projection: p, world, scenario } = state();
+    const r = p.resolutions.find((x) => x.id === id);
+    if (
+      r?.status !== 'committed' ||
+      r.reactions ||
+      !world ||
+      !scenario ||
+      scenario.cast.length === 0
+    )
+      return;
+    const orders = (r.compile?.policies ?? []).filter((x) => !refusalOf(x, r));
+    if (orders.length === 0) return;
+
+    const context = { resolution: id, brief: scenario.brief };
+    const stateNow = Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage]));
+    const recent = allEvents(p)
+      .slice(-6)
+      .map((e) => ({ when: e.date, summary: e.summary }));
+    const others: Record<string, string[]> = {};
+    const asked = orders.flatMap((policy) => {
+      const authority = CATALOGUE.find((c) => c.id === policy.instrument)?.authority ?? 'executive';
+      let touched = touchedBy(scenario.cast, {
+        instrument: policy.instrument,
+        authority,
+        region: policy.region,
+      });
+      // Someone always answers: with nobody directly touched, the opposition does.
+      if (touched.length === 0) {
+        const fallback = scenario.cast.find((c) => c.kind === 'opposition');
+        touched = fallback ? [{ actor: fallback, score: 0 }] : [];
+      }
+      others[policy.id] = touched.slice(MAX_REACTIONS).map((t) => t.actor.name);
+      const region = world.regions.find((x) => x.id === policy.region);
+      return touched.slice(0, MAX_REACTIONS).map(({ actor }) => ({
+        policy,
+        actor,
+        answer: harness.run(
+          policyReact,
+          {
+            order: {
+              id: policy.id,
+              text: policy.orders.join(' '),
+              summary: `${policy.title}. ${policy.summary}`.slice(0, 300),
+              instrument: policy.instrument,
+              ...(region ? { region: { id: region.id, label: region.name } } : {}),
+            },
+            actor: {
+              id: actor.id,
+              name: actor.name,
+              kind: actor.kind,
+              stance: actor.stance,
+              voice: actor.voice,
+            },
+            options: (REACTION_OPTIONS[actor.kind] ?? []).map((o) => ({
+              id: o.id,
+              label: o.label,
+            })),
+            state: stateNow,
+            recent,
+          },
+          context,
+        ),
+      }));
+    });
+    const before = ledger.latestSnapshot()?.seq;
+    const answers = await Promise.all(asked.map((a) => a.answer));
+
+    // If the world was rewritten while the answers were being written (a repeal, say), the
+    // answers were to a world that is gone: drop them.
+    if (ledger.latestSnapshot()?.seq !== before) return;
+    let next = world;
+    const data: ReactionData = { reactions: [], events: [], beats: [], others };
+    for (const [n, { policy, actor }] of asked.entries()) {
+      const out = answers[n]?.output;
+      if (!out) continue;
+      const eventId = `${id}-x${n + 1}`;
+      const where = policy.region ?? actor.cares.regions[0];
+      const option = REACTION_OPTIONS[actor.kind]?.find((o) => o.id === out.option);
+      if (out.kind === 'action' && option) {
+        const picks = Object.fromEntries(
+          Object.entries(option.effects).map(([on, value]) => [
+            on.replace('{region}', where ?? 'all'),
+            value,
+          ]),
+        );
+        next = addEffects(
+          next,
+          resolveNovel(next, picks, { day: next.day, causes: [eventId], idPrefix: eventId }),
+        );
+      }
+      data.reactions.push({
+        id: eventId,
+        actor: actor.id,
+        actorName: actor.name,
+        policy: policy.id,
+        kind: out.kind,
+        text: out.text,
+      });
+      data.events.push({
+        id: eventId,
+        day: r.fromDay,
+        date: dateOf(world.startDate, r.fromDay),
+        kind: 'reaction',
+        size: out.kind === 'action' ? 'significant' : 'minor',
+        summary: out.text,
+        ...(where ? { place: where } : {}),
+        causes: [policy.id],
+        numbers: [],
+      });
+      if (out.later) {
+        data.beats.push({
+          id: `${eventId}-b`,
+          dueDay: world.day + out.later.inDays,
+          policy: policy.id,
+          ...(where ? { place: where } : {}),
+          ifYes: out.later.ifYes,
+          ifNo: out.later.ifNo,
+        });
+      }
+    }
+    ledger.appendWithSnapshot({ type: 'reactions.written', id, data }, next.day, next);
   }
 
   const begin = (
@@ -1162,6 +1298,7 @@ export function createDirector(options: DirectorOptions): Director {
     days: number | null,
     cardIds: string[],
     mixedSignals: boolean,
+    extra: { hours?: number; untilMajor?: boolean } = {},
   ) => {
     const { world } = requireCampaign();
     requireQuiet();
@@ -1174,15 +1311,31 @@ export function createDirector(options: DirectorOptions): Director {
       days,
       cardIds,
       mixedSignals,
+      ...extra,
     });
     enqueue(0, () => runResolution(id));
   };
 
-  // A resolution that was running when the server stopped picks up where it left off.
+  // A turn that was running when the server stopped picks up where it left off, and so do
+  // reactions that had not arrived.
   const unfinished = running();
   if (unfinished) enqueue(0, () => runResolution(unfinished.id));
+  else {
+    const last = state()
+      .projection.resolutions.filter((r) => r.status === 'committed')
+      .at(-1);
+    if (last && !last.reactions && (last.compile?.policies.length ?? 0) > 0)
+      enqueue(0, () => aftermath(last.id));
+  }
 
   // ---------------------------------------------------------------------------------- the view
+
+  const STANCE_WORD = {
+    hostile: 'hostile',
+    wary: 'wary',
+    neutral: 'watchful',
+    friendly: 'on your side',
+  } as const;
 
   function buildView(): View {
     const { projection: p, world, scenario } = state();
@@ -1192,14 +1345,22 @@ export function createDirector(options: DirectorOptions): Director {
     const events = allEvents(p);
     const lastCommitted = committed.at(-1);
     const lastCalls = lastCommitted ? (ledger.calls(lastCommitted.id) as CallView[]) : [];
+    const reactions = new Map(
+      committed.flatMap((r) => (r.reactions?.reactions ?? []).map((x) => [x.id, x] as const)),
+    );
+    const turnOf = new Map(
+      committed.flatMap((r) =>
+        [...(r.apply?.events ?? []), ...(r.reactions?.events ?? [])].map(
+          (e) => [e.id, r.id] as const,
+        ),
+      ),
+    );
 
     const policies: PolicyView[] = world
       ? committedPolicies(p).map(({ policy, resolution }) => {
           const effects = resolution.apply?.effects[policy.id] ?? [];
           const outcome = resolution.adjudicate?.outcomes.find((o) => o.policy === policy.id);
           const cost = round1(fiscalCost(effects));
-          const report = [...committed].reverse().find((r) => r.report?.reports[policy.id])?.report
-            ?.reports[policy.id];
           const repealed = p.repealed.has(policy.id);
           const refusal = refusalOf(policy, resolution);
           return {
@@ -1231,11 +1392,50 @@ export function createDirector(options: DirectorOptions): Director {
               until: e.endDay === null ? null : dateOf(world.startDate, e.endDay),
             })),
             targets: figuresFor(policy, resolution, world),
-            ...(report ? { report } : {}),
-            linkedEvents: events.filter((e) => e.causes.includes(policy.id)).map((e) => e.id),
+            reactions: (resolution.reactions?.reactions ?? [])
+              .filter((x) => x.policy === policy.id)
+              .map((x) => ({
+                id: x.id,
+                actor: x.actor,
+                actorName: x.actorName,
+                kind: x.kind,
+                text: x.text,
+                date: dateOf(world.startDate, resolution.fromDay),
+              })),
+            alsoNoted: resolution.reactions?.others[policy.id] ?? [],
+            linkedEvents: events
+              .filter((e) => e.causes.includes(policy.id) && e.kind !== 'reaction')
+              .map((e) => e.id),
           };
         })
       : [];
+
+    const chronicle: ChronicleEntry[] = events
+      .map((e) => {
+        const said = reactions.get(e.id);
+        const full = p.expanded.get(e.id);
+        return {
+          id: e.id,
+          turn: turnOf.get(e.id) ?? '',
+          day: e.day,
+          date: e.date,
+          size: e.size,
+          routine: isRoutine(e),
+          headline: said
+            ? `${said.actorName} ${said.kind === 'action' ? 'acted' : said.kind === 'silence' ? 'stayed silent' : 'responded'}`
+            : e.summary,
+          cites: [e.id],
+          ...(e.place ? { place: e.place } : {}),
+          ...(said ? { speaker: said.actorName, quote: said.text } : {}),
+          ...(full
+            ? {
+                full: full.body,
+                via: full.via === 'fallback' ? ('fallback' as const) : ('model' as const),
+              }
+            : {}),
+        };
+      })
+      .sort((a, b) => b.day - a.day);
 
     return {
       campaign:
@@ -1249,6 +1449,7 @@ export function createDirector(options: DirectorOptions): Director {
               startDate: world.startDate,
               date: dateOf(world.startDate, world.day),
               day: world.day,
+              hour: currentHour(p),
               branch: ledger.currentBranch(),
             }
           : null,
@@ -1257,8 +1458,8 @@ export function createDirector(options: DirectorOptions): Director {
         ? {
             id: active.id,
             kind: active.kind,
-            step: RESOLUTION_STEPS.find((s) => active[s] === undefined) ?? 'commit',
-            done: RESOLUTION_STEPS.filter((s) => active[s] !== undefined),
+            step: RESOLUTION_STEPS.find((x) => active[x] === undefined) ?? 'commit',
+            done: RESOLUTION_STEPS.filter((x) => active[x] !== undefined),
           }
         : null,
       blocked:
@@ -1267,19 +1468,19 @@ export function createDirector(options: DirectorOptions): Director {
         ? {
             economy: economyRows(world),
             groups: world.groups.map((g) => ({ id: g.id, name: g.name, mood: mood(g.approval) })),
-            regions: world.regions.map((r) => ({
-              id: r.id,
-              name: r.name,
-              stage: r.stage,
-              status: r.status,
-              owner: r.owner,
-              controller: r.controller,
+            regions: world.regions.map((x) => ({
+              id: x.id,
+              name: x.name,
+              stage: x.stage,
+              status: x.status,
+              owner: x.owner,
+              controller: x.controller,
             })),
             flags: world.flags,
           }
         : null,
       policies: policies.reverse(),
-      chronicle: allEntries(p).reverse(),
+      chronicle,
       events,
       timeline: world
         ? [
@@ -1290,10 +1491,7 @@ export function createDirector(options: DirectorOptions): Director {
               seq: r.commitSeq ?? 0,
               day: r.apply?.toDay ?? 0,
               date: dateOf(world.startDate, r.apply?.toDay ?? 0),
-              label:
-                r.kind === 'execute'
-                  ? `Executed ${r.compile?.policies.length ?? 0} ${(r.compile?.policies.length ?? 0) === 1 ? 'policy' : 'policies'}`
-                  : `Advanced ${(r.apply?.toDay ?? 0) - r.fromDay} days`,
+              label: moveLabel(r),
             })),
           ]
         : [],
@@ -1303,7 +1501,40 @@ export function createDirector(options: DirectorOptions): Director {
         label: b.label,
         current: b.id === ledger.currentBranch(),
       })),
-      digests: p.digests,
+      turns: world
+        ? committed
+            .map((r) => ({
+              id: r.id,
+              from: dateOf(world.startDate, r.fromDay),
+              to: dateOf(world.startDate, r.apply?.toDay ?? r.fromDay),
+              orders: (r.compile?.policies ?? []).flatMap((x) => x.orders),
+              move: moveLabel(r),
+              ...(r.apply?.stoppedEarly ? { stoppedEarly: r.apply.stoppedEarly } : {}),
+            }))
+            .reverse()
+        : [],
+      cast: (scenario?.cast ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        kind: c.kind,
+        stance: STANCE_WORD[c.stance],
+        askable: c.unreachable === undefined,
+        ...(c.unreachable ? { unreachable: c.unreachable } : {}),
+      })),
+      talks: world
+        ? Object.fromEntries(
+            [...p.talks].map(([actor, thread]) => [
+              actor,
+              thread.map((t) => ({
+                id: t.id,
+                date: dateOf(world.startDate, t.day),
+                question: t.question,
+                ...(t.reply !== undefined ? { reply: t.reply } : {}),
+              })),
+            ]),
+          )
+        : {},
+      arriving: { reactions: arrivingReactions, entries: [...writing] },
       lastResolution: lastCommitted
         ? {
             id: lastCommitted.id,
@@ -1319,6 +1550,18 @@ export function createDirector(options: DirectorOptions): Director {
         : null,
     };
   }
+
+  const moveLabel = (r: Resolution): string => {
+    const days = (r.apply?.toDay ?? r.fromDay) - r.fromDay;
+    const span = r.hours ? 'an hour' : days === 1 ? 'a day' : `${days} days`;
+    const count = r.compile?.policies.length ?? 0;
+    const ran = r.untilMajor
+      ? `ran the clock to the next event that mattered (${span})`
+      : `ran the clock ${span}`;
+    return count > 0
+      ? `Sent ${count} ${count === 1 ? 'order' : 'orders'} and ${ran}`
+      : `${ran[0]?.toUpperCase()}${ran.slice(1)}`;
+  };
 
   let viewCache: { version: number; view: View } | undefined;
 
@@ -1380,6 +1623,157 @@ export function createDirector(options: DirectorOptions): Director {
     advance(days) {
       begin('advance', days, [], false);
     },
+    move(span, mixedSignals) {
+      const { projection } = requireCampaign();
+      const fresh = [...projection.cards.values()].filter((c) => !c.sent).map((c) => c.id);
+      const kind = fresh.length > 0 ? 'execute' : 'advance';
+      if ('hours' in span) {
+        // The engine moves in whole days: an hour that crosses midnight is a day's step.
+        if (currentHour(projection) + span.hours >= 24) begin(kind, 1, fresh, mixedSignals);
+        else begin(kind, 0, fresh, mixedSignals, { hours: span.hours });
+      } else if ('days' in span) begin(kind, span.days, fresh, mixedSignals);
+      else begin(kind, MAX_ADVANCE_DAYS, fresh, mixedSignals, { untilMajor: true });
+    },
+    expandEntry(eventId) {
+      const { projection, world, scenario } = requireCampaign();
+      const event = allEvents(projection).find((e) => e.id === eventId);
+      if (!event) throw new DirectorError('not_found', 'No such entry.');
+      if (projection.expanded.has(eventId) || writing.has(eventId)) return;
+      writing.add(eventId);
+      enqueue(0, async () => {
+        try {
+          const all = allEvents(state().projection);
+          const speakers = new Map(
+            state().projection.resolutions.flatMap((r) =>
+              (r.reactions?.reactions ?? []).map((x) => [x.id, x.actorName] as const),
+            ),
+          );
+          // What else is on record about the same matter: shared causes, either way round.
+          const related = all
+            .filter(
+              (e) =>
+                e.id !== eventId &&
+                (e.causes.some((c) => event.causes.includes(c) && c !== 'trend') ||
+                  e.causes.includes(eventId) ||
+                  event.causes.includes(e.id)),
+            )
+            .slice(-8)
+            .map((e) => ({
+              when: e.date,
+              summary: e.summary,
+              ...(speakers.has(e.id) ? { speaker: speakers.get(e.id) ?? '' } : {}),
+            }));
+          const place = world.regions.find((x) => x.id === event.place);
+          const { output, via } = await harness.run(
+            chronicleWrite,
+            {
+              event: {
+                id: event.id,
+                when: event.date,
+                kind: event.kind,
+                size: event.size,
+                summary: event.summary,
+                ...(place ? { place: { id: place.id, label: place.name } } : {}),
+                numbers: event.numbers
+                  .filter(
+                    (x): x is Figure & { before: number; now: number } =>
+                      typeof x.before === 'number' && typeof x.now === 'number',
+                  )
+                  .map((x) => ({ label: x.label, before: x.before, after: x.now, unit: x.unit })),
+              },
+              related,
+              weight:
+                event.size === 'major'
+                  ? 'major'
+                  : event.size === 'significant'
+                    ? 'significant'
+                    : 'minor',
+              level: 'standard',
+            },
+            { resolution: 'entries', brief: scenario.brief },
+          );
+          // Saved once: opening the entry again shows the same text (REQ-READ-18).
+          ledger.append({ type: 'entry.expanded', eventId, body: output.body, via });
+        } finally {
+          writing.delete(eventId);
+        }
+      });
+    },
+    ask(actorId, question) {
+      const { scenario, world } = requireCampaign();
+      const actor = scenario.cast.find((c) => c.id === actorId);
+      if (!actor) throw new DirectorError('not_found', 'No such person.');
+      if (actor.unreachable) throw new DirectorError('bad_request', actor.unreachable);
+      const id = `t${ledger.count() + 1}`;
+      ledger.append({ type: 'talk.asked', id, actorId, question, day: world.day });
+      enqueue(0, async () => {
+        const now = state();
+        if (!now.world) return;
+        const thread = now.projection.talks.get(actorId) ?? [];
+        const events = allEvents(now.projection);
+        const mine = new Set(
+          committedPolicies(now.projection)
+            .filter(
+              ({ policy }) =>
+                actor.cares.instruments.includes(policy.instrument) ||
+                (policy.region !== undefined && actor.cares.regions.includes(policy.region)),
+            )
+            .map(({ policy }) => policy.id),
+        );
+        // An actor answers from what it could know: what touches its concerns, and what
+        // everyone has heard. An adviser sees the whole file.
+        const knows = events
+          .filter(
+            (e) =>
+              actor.kind === 'advisor' ||
+              e.size === 'major' ||
+              e.size === 'significant' ||
+              e.causes.some((c) => mine.has(c)) ||
+              (e.place !== undefined && actor.cares.regions.includes(e.place)),
+          )
+          .slice(-12)
+          .map((e) => ({ when: e.date, summary: e.summary }));
+        const insider = actor.kind === 'advisor';
+        const { output, via } = await harness.run(
+          actorReply,
+          {
+            actor: {
+              id: actor.id,
+              name: actor.name,
+              kind: actor.kind,
+              stance: actor.stance,
+              voice: actor.voice,
+            },
+            asker: `The ${scenario.office.title}`,
+            question,
+            knows,
+            state: {
+              ...Object.fromEntries(
+                economyRows(now.world).map((row) => [row.label, round1(row.value)]),
+              ),
+              ...Object.fromEntries(now.world.regions.map((x) => [`unrest in ${x.name}`, x.stage])),
+              ...(insider
+                ? Object.fromEntries(
+                    now.world.groups.map((g) => [`mood of ${g.name}`, mood(g.approval)]),
+                  )
+                : {}),
+            },
+            policies: committedPolicies(now.projection)
+              .filter(
+                ({ policy, resolution }) =>
+                  !refusalOf(policy, resolution) && !now.projection.repealed.has(policy.id),
+              )
+              .map(({ policy }) => policy.title),
+            earlier: thread
+              .filter((t) => t.id !== id && t.reply !== undefined)
+              .slice(-4)
+              .map((t) => ({ question: t.question, reply: t.reply ?? '' })),
+          },
+          { resolution: 'talks', brief: scenario.brief },
+        );
+        ledger.append({ type: 'talk.replied', id, reply: output.reply, via });
+      });
+    },
     cancel() {
       const r = running();
       if (!r) throw new DirectorError('nothing_to_do', 'Nothing is running.');
@@ -1387,7 +1781,7 @@ export function createDirector(options: DirectorOptions): Director {
     },
     repeal(policyId) {
       const { projection, world } = requireCampaign();
-      requireQuiet();
+      requireSettled();
       const found = committedPolicies(projection).find(({ policy }) => policy.id === policyId);
       if (!found || refusalOf(found.policy, found.resolution) || projection.repealed.has(policyId))
         throw new DirectorError('not_found', 'No such policy in force.');
@@ -1399,7 +1793,7 @@ export function createDirector(options: DirectorOptions): Director {
     },
     rewind(seq) {
       const { world } = requireCampaign();
-      requireQuiet();
+      requireSettled();
       const snapshot = ledger.snapshotAt(seq);
       if (!snapshot || !ledger.events().some((e) => e.seq === seq))
         throw new DirectorError('not_found', 'That point is not on this timeline.');
@@ -1407,7 +1801,7 @@ export function createDirector(options: DirectorOptions): Director {
     },
     rewindToDate(date) {
       const { world, scenario, projection } = requireCampaign();
-      requireQuiet();
+      requireSettled();
       const day = dayOf(world.startDate, date);
       if (day < 0 || day >= world.day)
         throw new DirectorError('bad_request', 'Choose a date in the past of this campaign.');
@@ -1444,17 +1838,15 @@ export function createDirector(options: DirectorOptions): Director {
         again.compile ?? { policies: [], conflicts: [], needsDetail: [], consumed: [] },
       );
       saveStep(again.id, 'adjudicate', again.adjudicate ?? { outcomes: [], events: [] });
-      const apply = applyStep(again, before, scenario);
+      const apply = applyStep(again, before, scenario, state().projection);
       saveStep(again.id, 'apply', apply);
-      const kept = new Set(apply.events.map((e) => e.id));
-      saveStep(again.id, 'narrate', {
-        entries: (inside.narrate?.entries ?? []).filter(
-          (e) => e.day <= day && e.cites.every((id) => kept.has(id)),
-        ),
-      });
-      saveStep(again.id, 'report', inside.report ?? { reports: {} });
       ledger.appendWithSnapshot(
-        { type: 'resolution.committed', id: again.id, toDay: apply.toDay },
+        {
+          type: 'resolution.committed',
+          id: again.id,
+          toDay: apply.toDay,
+          hour: currentHour(projection),
+        },
         apply.toDay,
         apply.world,
       );

@@ -115,20 +115,6 @@ export function Briefing() {
           ))}
         </ul>
       </section>
-
-      {(view?.digests.length ?? 0) > 0 && (
-        <section aria-labelledby="b-digests" className="mt-5">
-          <h3 id="b-digests" className="label-caps text-fg-subtle">
-            Month by month
-          </h3>
-          {[...(view?.digests ?? [])].reverse().map((d) => (
-            <p key={d.month} className="prose-read mt-2 text-fg-muted">
-              <span className="tabular mr-2 text-2xs text-fg-subtle">{d.month}</span>
-              {d.text}
-            </p>
-          ))}
-        </section>
-      )}
     </div>
   );
 }

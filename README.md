@@ -2,7 +2,7 @@
 
 An open-source geopolitics simulator, played in plain text on a live world map. You hold one position in a real country, and AI models play everyone else. A deterministic engine owns the numbers and the record of events, so any model can be connected without corrupting the world.
 
-**Status:** the first slice is playable. You take office as Prime Minister of Pakistan in November 2026, write policy in plain words, execute it, advance time, and read what happened. It has been tested end to end with a scripted stand-in model and with no model; it has not yet been played on a real model. [docs/progress.md](docs/progress.md) lists exactly what is and is not built.
+**Status:** playable. You take office as Prime Minister of Pakistan in November 2026, write orders in plain words, move time forward, and see who answers: the army, armed groups, your coalition partners, the opposition, lenders and neighbours each react to what you do, and you can put questions to them. It has been tested end to end with a scripted stand-in model and with no model. [docs/progress.md](docs/progress.md) lists exactly what is and is not built.
 
 ## Run it
 
@@ -79,7 +79,7 @@ Dependencies point one way: `web` and `server` depend on `protocol`; `server` de
 | Milestone      | Scope                                                                                                                 | Gate                                               |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | M0 First slice | One country, one position, policy only: boxes, clock, four core systems, chronicle, policy ledger, control map, saves | A one-year term plays end to end on a local model  |
-| M1 People      | Conversations, advisors, personas, resistance, hiring and firing, mandates                                            | No concessions below the threshold in 200 attempts |
+| M1 People      | A cast that answers every order, then conversations, advisors, personas, resistance, hiring and firing, mandates                                     | No concessions below the threshold in 200 attempts |
 | M2 The world   | 25 countries in depth, media, elections, trade, international bodies, intelligence                                    | A 2015 start looks like 2015 to 2020               |
 | M3 Conflict    | Units on the map, war, covert action, plots, the authoritarian path                                                   | Story and map agree in every replayed turn         |
 | M4 Breadth     | Lower starting positions, historical packs, self-improvement, desktop app                                             | A new country pack ships without code changes      |

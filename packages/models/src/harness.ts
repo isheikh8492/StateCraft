@@ -33,7 +33,6 @@ export interface HarnessOptions {
   adapter?: Adapter;
 }
 
-const MAX_REPAIRS = 2;
 const REFUSAL =
   /^\s*(i['’]m sorry|i am sorry|sorry,|i can(?:['’]t|not)|i won['’]t|i['’]m unable|i am unable|as an ai)/i;
 
@@ -46,15 +45,26 @@ export function extractJson(text: string): unknown {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
+/** The full JSON Schema, for servers that can enforce one. Worked out once per job. */
+const schemas = new WeakMap<object, unknown>();
+function schemaOf(job: Job<unknown, unknown>): unknown {
+  let schema = schemas.get(job);
+  if (!schema) {
+    schema = z.toJSONSchema(job.output);
+    schemas.set(job, schema);
+  }
+  return schema;
+}
+
 /** Fixed text first, changing text last, so providers can cache the prefix (REQ-HARN-10). */
 export function systemPrompt(job: Job<unknown, unknown>, brief: string): string {
   return [
     'You are one component of StateCraft, a political simulation for adults. You do one narrow job and return one JSON object, with no text outside it.',
     `JOB: ${job.name} v${job.version}`,
     job.rules,
-    'Begin the object with "why": one or two sentences of reasoning. It is logged and never shown.',
-    `Output schema (JSON Schema):\n${JSON.stringify(z.toJSONSchema(job.output))}`,
-    `World brief. Prefer these facts over your own memory:\n${brief}`,
+    'Begin the object with "why": your reasoning in at most 20 words. Keep every field short: output length is what makes you slow.',
+    `Output shape (? marks an optional field):\n${job.shape}`,
+    ...(job.usesBrief ? [`World brief. Prefer these facts over your own memory:\n${brief}`] : []),
   ].join('\n\n');
 }
 
@@ -94,14 +104,14 @@ export function createHarness(options: HarnessOptions): Harness {
       if (adapter) {
         const turns: ChatRequest['turns'] = [{ role: 'user', content: inputText }];
         let steppedDown = false;
-        for (let attempt = 0; attempt <= MAX_REPAIRS && output === undefined; attempt++) {
+        for (let attempt = 0; attempt <= job.repairs && output === undefined; attempt++) {
           record.attempts = attempt + 1;
           let text = '';
           try {
             const reply = await adapter({
               system,
               turns,
-              schema: z.toJSONSchema(job.output),
+              schema: schemaOf(job as Job<unknown, unknown>),
               schemaName: job.name.replace('.', '_'),
               maxTokens: job.maxTokens,
               signal: AbortSignal.timeout(timeoutMs),
@@ -117,7 +127,7 @@ export function createHarness(options: HarnessOptions): Harness {
             const failure =
               error instanceof ModelFailure ? error : new ModelFailure('network', String(error));
             record.errors.push(`${failure.kind}: ${failure.message}`);
-            if (failure.kind === 'rate_limit' && attempt < MAX_REPAIRS) {
+            if (failure.kind === 'rate_limit' && attempt < job.repairs) {
               await new Promise((resolve) => setTimeout(resolve, 2000));
               continue;
             }

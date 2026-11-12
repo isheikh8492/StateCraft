@@ -163,6 +163,38 @@ export const ScenarioSchema = z.object({
       court: z.object({ name: z.string().min(1), independence: z.number().min(0).max(1) }),
     })
     .optional(),
+  /** The people and bodies who answer what the player does. */
+  cast: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        kind: z.enum([
+          'advisor',
+          'military',
+          'militant',
+          'ally',
+          'opposition',
+          'religious',
+          'business',
+          'lender',
+          'province',
+          'foreign',
+        ]),
+        /** What they watch: regions, kinds of policy, and the authority a policy is made under. */
+        cares: z.object({
+          regions: z.array(z.string()).default([]),
+          instruments: z.array(z.string()).default([]),
+          authorities: z.array(z.string()).default([]),
+        }),
+        stance: z.enum(['hostile', 'wary', 'neutral', 'friendly']),
+        /** How they talk, in a phrase, for whoever writes their words. */
+        voice: z.string().default(''),
+        /** Whether the player can put a question to them, and if not, why. */
+        unreachable: z.string().optional(),
+      }),
+    )
+    .default([]),
   /** Facts every model is given, and must prefer over its own memory. */
   brief: z.string().min(1),
   economy: z.object({

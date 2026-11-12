@@ -15,6 +15,12 @@ export interface Job<I, O> {
   /** Fixed instructions. They never change during a campaign. */
   rules: string;
   output: z.ZodType<O>;
+  /** The output written compactly, for the prompt. Far shorter than the full JSON Schema. */
+  shape: string;
+  /** Whether the job needs the scenario's world brief. Most do not, and skipping it saves tokens. */
+  usesBrief: boolean;
+  /** How many times a rejected answer is sent back before the built-in wording is used. */
+  repairs: number;
   maxTokens: number;
   /** Problems with a schema-valid output, in words a model can act on. Empty means it passes. */
   check(input: I, output: O): string[];
@@ -75,6 +81,10 @@ export type ReadOut = z.infer<typeof ReadOut>;
 /** Not used in play: boxes are no longer read back to the player. Kept for the model check. */
 export const policyRead: Job<ReadIn, ReadOut> = {
   name: 'policy.read',
+  shape:
+    '{"why":string,"reading":string,"instrument":string,"targets":string[],"question"?:string}',
+  usesBrief: false,
+  repairs: 1,
   version: 1,
   role: 'extractor',
   maxTokens: 1000,
@@ -163,6 +173,10 @@ export type CompileOut = z.infer<typeof CompileOut>;
 
 export const policyCompile: Job<CompileIn, CompileOut> = {
   name: 'policy.compile',
+  shape:
+    '{"why":string,"policies":[{"title":string,"summary":string,"instrument":string,"region"?:string,"scale":"small"|"medium"|"large","direction"?:"raise"|"lower","funding":"tax"|"borrowing"|"cuts"|"reserves"|"unspecified","fromCards":string[]}],"duplicates":[{"card":string,"of":string}],"conflicts":[{"cards":string[],"explanation":string}],"needsDetail":[{"card":string,"question":string}]}',
+  usesBrief: false,
+  repairs: 2,
   version: 1,
   role: 'extractor',
   maxTokens: 3000,
@@ -294,7 +308,8 @@ export interface AdjudicateIn {
   /** Every actor's actions in one list with one shape. Nothing marks the human player. */
   actions: { id: string; by: string; summary: string; stage: string; allowed: Allowed[] }[];
   /** What an unprompted event may touch, and how far. */
-  eventLimits: Allowed[];
+  /** How far an event may move each variable, either way: `{ "inflation": 0.5, ... }`. */
+  eventLimits: Record<string, number>;
   recent: { id: string; when: string; summary: string }[];
   surpriseBudget: { major: number; significant: number };
 }
@@ -333,15 +348,20 @@ const inRange = (value: number, [min, max]: [number, number]) =>
 
 export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
   name: 'turn.adjudicate',
+  shape:
+    '{"why":string,"outcomes":[{"action":string,"result":"as_intended"|"partial"|"stalled"|"backfired","effects":[{"on":string,"value":number}],"note":string}],"events":[{"kind":string,"size":"colour"|"minor"|"significant"|"major","summary":string,"place"?:string,"inDays":number,"effects":[{"on":string,"value":number}],"causes":string[]}]}',
+  usesBrief: true,
+  repairs: 2,
   version: 1,
   role: 'adjudicator',
   maxTokens: 4000,
   rules: `You judge one stretch of time in a political simulation. You do not know which actor, if any, is a human; treat every action the same way.
 - Return exactly one outcome per action. "result" says how the action went in practice: as_intended, partial, stalled or backfired. Institutions resist change: most large changes land partially.
-- "effects": for each variable in the action's "allowed" list, you may give a value inside its range, with a short reason. You may not name any other variable. A stalled action has no effects.
+- "effects": for each variable in the action's "allowed" list, you may give a value inside its range. You may not name any other variable. A stalled action has no effects.
 - "note": one sentence for the record, plain and factual.
 - "events": other things that happen in the period, from trivial to grave: scandals, strikes, statements, accidents, deals. Keep them consistent with the state and the world brief. Each needs a "kind", a "size", a one-sentence "summary" (at most 200 characters), "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "actions". An event with no cause among those may only be size "colour" or "minor".
-- Event "effects" may use only the variables in "eventLimits", inside those ranges.
+- Event "effects" may use only the variables named in "eventLimits", each between minus and plus its limit. Most events need no effects.
+- Be brief. Give only "on" and "value" for an effect. Write few events, and none when nothing notable would happen.
 - Stay inside "surpriseBudget" for events of size major and significant. Continuity is the default: most periods have no major event.
 - "place" is a region id from the list. Use ids only. State what happens; do not comment on whether it is right or wrong.`,
   output: AdjudicateOut,
@@ -375,7 +395,7 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
 
     const causes = new Set([...input.recent.map((r) => r.id), ...actions.keys()]);
     const regions = new Set(input.regions.map((r) => r.id));
-    const limits = new Map(input.eventLimits.map((l) => [l.on, l]));
+    const limits = input.eventLimits;
     let major = 0;
     let significant = 0;
     for (const [i, e] of out.events.entries()) {
@@ -390,12 +410,10 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         problems.push(`Event ${i}: a ${e.size} event must cite a cause.`);
       }
       for (const fx of e.effects) {
-        const rule = limits.get(fx.on);
-        if (!rule) problems.push(`Event ${i}: may not touch ${fx.on}.`);
-        else if (!inRange(fx.value, rule.range))
-          problems.push(
-            `Event ${i}: ${fx.on} must be between ${rule.range[0]} and ${rule.range[1]}.`,
-          );
+        const limit = limits[fx.on];
+        if (limit === undefined) problems.push(`Event ${i}: may not touch ${fx.on}.`);
+        else if (Math.abs(fx.value) > limit + 1e-9)
+          problems.push(`Event ${i}: ${fx.on} must be between ${-limit} and ${limit}.`);
       }
       if (COMMENTARY.test(e.summary))
         problems.push(`Event ${i}: state what happened without commentary.`);
@@ -454,6 +472,10 @@ export type ReviewOut = z.infer<typeof ReviewOut>;
 
 export const turnReview: Job<ReviewIn, ReviewOut> = {
   name: 'turn.review',
+  shape:
+    '{"why":string,"verdicts":[{"index":number,"plausible":boolean,"caused":boolean,"withinPower":boolean,"note":string}]}',
+  usesBrief: true,
+  repairs: 1,
   version: 1,
   role: 'adjudicator',
   maxTokens: 1500,
@@ -491,9 +513,9 @@ Return exactly one verdict per item, with its index and a one-sentence note. Jud
 
 // ------------------------------------------------------------------------------ chronicle.write
 
+/** The full piece on one event, written when the player opens its entry. */
 export interface ChronicleIn {
-  period: { from: string; to: string };
-  events: {
+  event: {
     id: string;
     when: string;
     kind: string;
@@ -501,241 +523,319 @@ export interface ChronicleIn {
     summary: string;
     place?: Ref;
     numbers: { label: string; before: number; after: number; unit: string }[];
-    causes: string[];
-  }[];
-  previous: { headline: string }[];
-  audience: 'player';
+  };
+  /** What else is on record about the same matter, including what people said. */
+  related: { when: string; summary: string; speaker?: string }[];
+  weight: 'minor' | 'significant' | 'major';
   level: 'restrained' | 'standard' | 'mature';
-  maxEntries: number;
 }
 const ChronicleOut = z.object({
   why: z.string(),
-  entries: z.array(
-    z.object({
-      when: z.string(),
-      headline: z.string().min(1),
-      body: z.string(),
-      cites: z.array(z.string()).min(1),
-      place: z.string().optional(),
-    }),
-  ),
+  body: z.string().min(1),
+  /** Every figure in the body that is not in the input, declared so it can be kept consistent. */
+  details: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
   ...ext,
 });
 export type ChronicleOut = z.infer<typeof ChronicleOut>;
+const WORD_LIMIT = { minor: 70, significant: 190, major: 480 } as const;
 
 export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   name: 'chronicle.write',
-  version: 1,
+  shape: '{"why":string,"body":string,"details":[{"label":string,"value":string}]}',
+  usesBrief: true,
+  repairs: 1,
+  version: 2,
   role: 'narrator',
-  maxTokens: 4000,
-  rules: `You write the record of a period in a political simulation for adult readers, from a list of events that have already happened in the simulation. This is fiction about politics; some events are violent.
-- Add nothing that is not in the events. Tell each event once. You may combine related events into one entry.
-- Entries are in time order. "when" is the date of the first event the entry cites.
-- "headline": at most 90 characters. "body": at most 80 words, plain and specific, like a wire report.
-- "cites": ids of the events the entry is built from, at least one. Every event of size significant or major must be cited by some entry.
-- Use only figures given in the cited events' "numbers". Never invent a number.
-- State what happened. No lessons, warnings, disclaimers or judging adjectives. Report violence as a newspaper of record would: what, where, who, with no instructions or technique.
-- At most "maxEntries" entries. "place" is a region id when the entry has one.`,
+  maxTokens: 2500,
+  rules: `You write the full account of one event in a political simulation for adult readers, as a newspaper of record would. This is fiction about politics; some events are violent.
+- Build the account from "event" and "related". Do not add new events, decisions or outcomes: describe this one more fully, with setting, sequence and consequence.
+- Length by "weight": minor about 50 words, significant about 150, major about 400. For significant and major, open with a dateline: place, date and hour.
+- You may quote what people said only from "related" entries that have a "speaker", attributing each quote to that speaker.
+- You may add descriptive figures for texture (a crowd size, a share price, a vote in a committee). Declare every such figure in "details". Never restate or change a figure given in the input.
+- State what happened. No lessons, warnings, disclaimers or judging adjectives. Report violence plainly: what, where, who, with no technique or instructions.
+- Plain paragraphs separated by blank lines. A short list is allowed where figures read best as a list.`,
   output: ChronicleOut,
   check(input, out) {
     const problems: string[] = [];
-    const events = new Map(input.events.map((e) => [e.id, e]));
-    const cited = new Set<string>();
-    let last = '';
-    if (out.entries.length > input.maxEntries)
-      problems.push(`At most ${input.maxEntries} entries.`);
-    for (const [i, entry] of out.entries.entries()) {
-      if (entry.headline.length > 90) problems.push(`Entry ${i}: headline is over 90 characters.`);
-      if (words(entry.body) > 80) problems.push(`Entry ${i}: body is over 80 words.`);
-      if (entry.when < last) problems.push(`Entry ${i}: entries must be in time order.`);
-      last = entry.when;
-      const sources = [];
-      for (const id of entry.cites) {
-        const event = events.get(id);
-        if (!event) problems.push(`Entry ${i}: unknown event id ${id}.`);
-        else sources.push(event);
-        cited.add(id);
-      }
-      const invented = inventedNumbers(`${entry.headline} ${entry.body}`, [sources, input.period]);
-      if (invented.length > 0)
-        problems.push(
-          `Entry ${i}: the figures ${invented.join(', ')} are not in the cited events.`,
-        );
-      if (COMMENTARY.test(`${entry.headline} ${entry.body}`))
-        problems.push(`Entry ${i}: remove commentary; state only what happened.`);
-    }
-    for (const e of input.events) {
-      if ((e.size === 'major' || e.size === 'significant') && !cited.has(e.id))
-        problems.push(`Event ${e.id} (${e.size}) must be cited.`);
-    }
+    const limit = WORD_LIMIT[input.weight];
+    if (words(out.body) > limit) problems.push(`The body must be at most ${limit} words.`);
+    const invented = inventedNumbers(out.body, [input, out.details]);
+    if (invented.length > 0)
+      problems.push(`Declare these figures in "details", or remove them: ${invented.join(', ')}.`);
+    if (COMMENTARY.test(out.body)) problems.push('Remove commentary; state only what happened.');
     return problems;
   },
   fallback(input) {
-    const ranked = [...input.events].sort((a, b) => SIZES.indexOf(b.size) - SIZES.indexOf(a.size));
-    const keep = new Set(ranked.slice(0, input.maxEntries).map((e) => e.id));
-    for (const e of input.events)
-      if (e.size === 'major' || e.size === 'significant') keep.add(e.id);
-    return {
-      why: "No model: one entry per event, in the event's own words.",
-      entries: input.events
-        .filter((e) => keep.has(e.id))
-        .map((e) => ({
-          when: e.when,
-          headline: clip(e.summary, 90),
-          body:
-            e.numbers.length > 0
-              ? e.numbers.map((n) => `${n.label}: ${n.before} to ${n.after} ${n.unit}.`).join(' ')
-              : e.summary.length > 90
-                ? e.summary
-                : '',
-          cites: [e.id],
-          ...(e.place ? { place: e.place.id } : {}),
-        })),
-    };
+    const lines = [input.event.summary];
+    for (const n of input.event.numbers)
+      lines.push(`${n.label}: ${n.before} to ${n.after} ${n.unit}.`);
+    for (const r of input.related) lines.push(r.speaker ? `${r.speaker}: ${r.summary}` : r.summary);
+    return { why: 'No model: the record as it stands.', body: lines.join('\n\n'), details: [] };
   },
 };
 
-// -------------------------------------------------------------------------------- policy.report
+// --------------------------------------------------------------------------------- policy.react
 
-export interface ReportIn {
-  policies: {
+export interface ReactIn {
+  order: { id: string; text: string; summary: string; instrument: string; region?: Ref };
+  actor: {
     id: string;
-    title: string;
-    stage: string;
-    owner: Ref;
-    targets: { label: string; before: number; now: number; unit: string }[];
-    linked: { id: string; when: string; summary: string }[];
-    slant: 'candid' | 'favourable' | 'flattering';
-  }[];
+    name: string;
+    kind: string;
+    stance: 'hostile' | 'wary' | 'neutral' | 'friendly';
+    voice: string;
+  };
+  /** Things this actor is able to do, beyond speaking. May be empty. */
+  options: Ref[];
+  state: Record<string, number | string>;
+  recent: { when: string; summary: string }[];
 }
-const ReportOut = z.object({
+const ReactOut = z.object({
   why: z.string(),
-  reports: z.array(
-    z.object({
-      policy: z.string(),
-      status: z.string().min(1).max(240),
-      effect: z.string().min(1),
-      attribution: z.enum(['little', 'some', 'most']),
-      sideEffects: z.array(z.string()).default([]),
-      cites: z.array(z.string()).default([]),
-    }),
-  ),
+  kind: z.enum(['statement', 'action', 'silence']),
+  text: z.string().min(1),
+  option: z.string().optional(),
+  later: z
+    .object({
+      inDays: z.number().int().min(1).max(90),
+      question: z.string(),
+      ifYes: z.string().min(1),
+      ifNo: z.string().min(1),
+    })
+    .optional(),
   ...ext,
 });
-export type ReportOut = z.infer<typeof ReportOut>;
+export type ReactOut = z.infer<typeof ReactOut>;
 
-export const policyReport: Job<ReportIn, ReportOut> = {
-  name: 'policy.report',
+export const policyReact: Job<ReactIn, ReactOut> = {
+  name: 'policy.react',
+  shape:
+    '{"why":string,"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}',
+  usesBrief: true,
+  repairs: 1,
   version: 1,
   role: 'narrator',
-  maxTokens: 3000,
-  rules: `You write short status reports on government policies, in the voice of the ministry responsible, for the head of government.
-- One report per policy. "status": one sentence on where it stands. "effect": at most 60 words on what it has done so far.
-- Use only the figures given in "targets". Never invent a number.
-- "attribution": how much of the change the ministry claims for the policy: little, some or most.
-- Write in the given "slant": candid is plain; favourable stresses what went well; flattering avoids bad news. Never change the figures.
-- "cites": ids of linked events you rely on. Use ids only.`,
-  output: ReportOut,
+  maxTokens: 1200,
+  rules: `You voice one actor in a political simulation answering an order the head of government has just given. Answer as that actor would: from its interests, its stance toward the government, and in its own voice.
+- Respond to what the order actually says ("order.text"), not to a generic policy.
+- "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
+- "text": at most 60 words, third person, reporting what the actor said or did and including one short direct quote in its voice where it speaks. For silence, one sentence saying it has not responded.
+- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens.
+- Stay within what this actor could really do. Use no figures that are not in the input.`,
+  output: ReactOut,
   check(input, out) {
     const problems: string[] = [];
-    const policies = new Map(input.policies.map((p) => [p.id, p]));
-    const seen = new Set<string>();
-    for (const r of out.reports) {
-      const policy = policies.get(r.policy);
-      if (!policy) {
-        problems.push(`Report for unknown policy ${r.policy}.`);
-        continue;
-      }
-      seen.add(r.policy);
-      if (words(r.effect) > 60) problems.push(`${r.policy}: "effect" is over 60 words.`);
-      const invented = inventedNumbers(
-        `${r.status} ${r.effect} ${r.sideEffects.join(' ')}`,
-        policy,
+    if (words(out.text) > 75) problems.push('"text" must be at most 60 words.');
+    const isAction = out.kind === 'action';
+    if (isAction !== (out.option !== undefined))
+      problems.push('"option" must be given if and only if kind is "action".');
+    if (out.option !== undefined && !input.options.some((o) => o.id === out.option)) {
+      problems.push(
+        `"option" must be one of: ${input.options.map((o) => o.id).join(', ') || 'none; this actor can only speak'}.`,
       );
-      if (invented.length > 0)
-        problems.push(`${r.policy}: the figures ${invented.join(', ')} are not in the input.`);
-      const linked = new Set(policy.linked.map((l) => l.id));
-      for (const id of r.cites)
-        if (!linked.has(id)) problems.push(`${r.policy}: unknown event id ${id}.`);
     }
-    for (const id of policies.keys())
-      if (!seen.has(id)) problems.push(`No report for policy ${id}.`);
+    const invented = inventedNumbers(
+      `${out.text} ${out.later?.ifYes ?? ''} ${out.later?.ifNo ?? ''}`,
+      input,
+    );
+    if (invented.length > 0)
+      problems.push(`The figures ${invented.join(', ')} are not in the input.`);
     return problems;
   },
-  fallback(input) {
-    return {
-      why: 'No model: figures only.',
-      reports: input.policies.map((p) => ({
-        policy: p.id,
-        status: `Stage: ${p.stage}.`,
-        effect:
-          p.targets.length > 0
-            ? p.targets.map((t) => `${t.label}: ${t.before} to ${t.now} ${t.unit}.`).join(' ')
-            : 'No measured change yet.',
-        attribution: 'some' as const,
-        sideEffects: [],
-        cites: [],
-      })),
-    };
-  },
+  fallback: templateReaction,
 };
 
-// -------------------------------------------------------------------------------- memory.digest
+/** A reaction with no model: the actor's kind, stance and the kind of order pick the words. */
+function templateReaction(input: ReactIn): ReactOut {
+  const { actor, order } = input;
+  const name = actor.name;
+  const where = order.region?.label ?? 'the country';
+  const has = (id: string) => input.options.some((o) => o.id === id);
+  const security = order.instrument === 'security_operation';
+  const settlement = order.instrument === 'regional_settlement';
+  const austerity = ['fuel_subsidy_cut', 'sales_tax_rise', 'development_spending_cut'].includes(
+    order.instrument,
+  );
+  const giveaway = [
+    'subsidy_increase',
+    'income_tax_cut',
+    'cash_transfer_expansion',
+    'development_spending_rise',
+  ].includes(order.instrument);
+  const why = 'No model: a standard response for this kind of actor.';
+  const say = (text: string, more: Partial<ReactOut> = {}): ReactOut => ({
+    why,
+    kind: 'statement',
+    text,
+    ...more,
+  });
+  const act = (option: string, text: string, more: Partial<ReactOut> = {}): ReactOut =>
+    has(option) ? { why, kind: 'action', option, text, ...more } : say(text, more);
 
-export interface DigestIn {
-  span: { from: string; to: string; level: 'month' | 'year' };
-  entries: { id: string; when: string; headline: string; body: string }[];
-  pinned: string[];
+  switch (actor.kind) {
+    case 'militant':
+      if (security)
+        return act(
+          'step_up_attacks',
+          `${name} vowed to answer the operation in ${where}. "Every raid will be repaid," its spokesman said.`,
+          {
+            later: {
+              inDays: 10,
+              question: "Does the operation go the state's way?",
+              ifYes: `Security forces said they had cleared several militant hideouts in ${where}.`,
+              ifNo: `${name} struck back with a bombing in ${where}, killing members of the security forces.`,
+            },
+          },
+        );
+      if (settlement)
+        return say(
+          `${name} dismissed the government's offer. "We do not negotiate under occupation," its statement said, though attacks eased in the days that followed.`,
+          {
+            later: {
+              inDays: 14,
+              question: 'Does the lull hold?',
+              ifYes: `Two weeks on, attacks in ${where} have fallen away and intermediaries report quiet contacts.`,
+              ifNo: `${name} claimed an attack on a convoy in ${where}, ending talk of a lull.`,
+            },
+          },
+        );
+      return { why, kind: 'silence', text: `${name} has not responded.` };
+    case 'military':
+      if (security)
+        return act(
+          'back_publicly',
+          `${name} said its forces would carry out the operation in ${where} "with full resolve".`,
+        );
+      if (settlement)
+        return say(
+          `${name} said it supported the government's decision, adding that "the state's writ is not open to negotiation".`,
+        );
+      return say(
+        `${name} took note of the decision and said national security requirements "must remain fully resourced".`,
+      );
+    case 'lender':
+      if (austerity)
+        return act(
+          'endorse',
+          `${name} called the measure "consistent with programme commitments" and said it would support the next review.`,
+        );
+      if (giveaway)
+        return act(
+          'warn_publicly',
+          `${name} said the measure "was not discussed with staff" and could put programme targets at risk.`,
+        );
+      return say(`${name} said it was studying the decision.`);
+    case 'business':
+      if (austerity)
+        return act(
+          'shutter_strike',
+          `${name} condemned the measure and called a one-day shutdown. "Industry cannot absorb another blow," its president said.`,
+        );
+      if (giveaway)
+        return act(
+          'welcome',
+          `${name} welcomed the decision, calling it "overdue relief for those who keep the economy running".`,
+        );
+      return say(`${name} asked to be consulted before further changes.`);
+    case 'opposition':
+      return act(
+        'call_protests',
+        `${name} denounced the order as the act of "an unelected, unaccountable government" and called its supporters into the streets.`,
+        {
+          later: {
+            inDays: 7,
+            question: 'Do the protests fizzle?',
+            ifYes: "The opposition's protest call drew thin crowds and passed without incident.",
+            ifNo: 'Opposition rallies against the order filled streets in several cities.',
+          },
+        },
+      );
+    case 'ally':
+      if (austerity)
+        return say(
+          `${name} said it would back the government "for now" but warned that its voters "cannot be asked to pay again and again".`,
+        );
+      return say(
+        `${name} said it supported the decision and expected to be consulted on how it is carried out.`,
+      );
+    case 'religious':
+      if (settlement)
+        return act(
+          'offer_mediation',
+          `${name} offered its elders as go-betweens. "Blood has never ended a quarrel in ${where}," its leader said.`,
+        );
+      if (security)
+        return say(
+          `${name} warned that force in ${where} "will fill the graveyards and settle nothing".`,
+        );
+      return say(`${name} said it would judge the decision by its effect on ordinary believers.`);
+    case 'province':
+      if (actor.stance === 'hostile' || actor.stance === 'wary')
+        return act(
+          'defy',
+          `${name} accused Islamabad of acting over its head. "We were informed, not consulted," its spokesman said.`,
+        );
+      return act('cooperate', `${name} said it would give the decision its full cooperation.`);
+    default:
+      if (actor.stance === 'hostile')
+        return say(
+          `${name} said the decision reflected Pakistan's "deepening internal difficulties".`,
+        );
+      if (actor.stance === 'friendly')
+        return say(
+          `${name} said it hoped the step would bring stability and that it "attaches great importance to the safety of its personnel and projects".`,
+        );
+      return say(
+        `${name} cautioned that it would "not tolerate any violation of its territory" and denied any link to events in ${where}.`,
+      );
+  }
 }
-const DigestOut = z.object({
-  why: z.string(),
-  digest: z.string().min(1),
-  keep: z.array(z.string()).default([]),
-  threads: z
-    .array(
-      z.object({
-        title: z.string(),
-        status: z.enum(['open', 'closed']),
-        entries: z.array(z.string()),
-      }),
-    )
-    .default([]),
-  ...ext,
-});
-export type DigestOut = z.infer<typeof DigestOut>;
 
-export const memoryDigest: Job<DigestIn, DigestOut> = {
-  name: 'memory.digest',
+// ---------------------------------------------------------------------------------- actor.reply
+
+export interface ReplyIn {
+  actor: { id: string; name: string; kind: string; stance: string; voice: string };
+  asker: string;
+  question: string;
+  /** What this actor could know: public events and those that touch its concerns. */
+  knows: { when: string; summary: string }[];
+  state: Record<string, number | string>;
+  policies: string[];
+  earlier: { question: string; reply: string }[];
+}
+const ReplyOut = z.object({ why: z.string(), reply: z.string().min(1), ...ext });
+export type ReplyOut = z.infer<typeof ReplyOut>;
+
+export const actorReply: Job<ReplyIn, ReplyOut> = {
+  name: 'actor.reply',
+  shape: '{"why":string,"reply":string}',
+  usesBrief: true,
+  repairs: 1,
   version: 1,
-  role: 'extractor',
-  maxTokens: 2000,
-  rules: `You compress the record of one month of a political simulation into a digest that later readers will rely on.
-- "digest": at most 150 words, in time order, covering what mattered. Use only figures that appear in the entries.
-- "keep": ids of entries worth keeping in full. Every id in "pinned" must be in "keep".
-- "threads": ongoing stories, each with a title, whether it is open or closed, and the entry ids that belong to it.
-- State what happened, without commentary. Use ids only.`,
-  output: DigestOut,
+  role: 'narrator',
+  maxTokens: 1500,
+  rules: `You speak as one person or body in a political simulation, answering a question put by the head of government ("asker").
+- Answer in the first person, in that actor's voice, from its interests and its stance toward the asker. An adviser is candid; a rival is guarded or sharp; an official of another country is diplomatic.
+- Use only what is in "knows", "state", "policies" and the world brief. If you do not know, say so in character. Never invent events, decisions or figures.
+- Give a view, not a list: what this means, what worries you, what you would do. You may disagree with the asker.
+- At most 120 words. No stage directions, no narration, just what is said.`,
+  output: ReplyOut,
   check(input, out) {
     const problems: string[] = [];
-    const ids = new Set(input.entries.map((e) => e.id));
-    if (words(out.digest) > 150) problems.push('"digest" is over 150 words.');
-    for (const id of input.pinned)
-      if (!out.keep.includes(id)) problems.push(`Pinned entry ${id} must be in "keep".`);
-    for (const id of [...out.keep, ...out.threads.flatMap((t) => t.entries)]) {
-      if (!ids.has(id)) problems.push(`Unknown entry id ${id}.`);
-    }
-    const invented = inventedNumbers(out.digest, input);
+    if (words(out.reply) > 150) problems.push('"reply" must be at most 120 words.');
+    const invented = inventedNumbers(out.reply, input);
     if (invented.length > 0)
-      problems.push(`The figures ${invented.join(', ')} are not in the entries.`);
+      problems.push(`The figures ${invented.join(', ')} are not in what you know.`);
     return problems;
   },
   fallback(input) {
-    const text = input.entries.map((e) => e.headline).join('. ');
+    const recent = input.knows.slice(-3).map((k) => k.summary);
     return {
-      why: 'No model: the headlines.',
-      digest: text === '' ? 'A quiet month.' : `${text.split(/\s+/).slice(0, 140).join(' ')}.`,
-      keep: [...input.pinned],
-      threads: [],
+      why: 'No model: the record only.',
+      reply:
+        recent.length > 0
+          ? `I can only give you what is on the record. ${recent.join(' ')}`
+          : 'Nothing bearing on that has reached me yet.',
     };
   },
 };
@@ -748,8 +848,8 @@ export const JOBS: Readonly<Record<string, Job<any, any>>> = Object.fromEntries(
     turnAdjudicate,
     turnReview,
     chronicleWrite,
-    policyReport,
-    memoryDigest,
+    policyReact,
+    actorReply,
   ].map((j) => [j.name, j]),
 );
 

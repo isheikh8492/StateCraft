@@ -63,40 +63,35 @@ const adjudicateIn: AdjudicateIn = {
       ],
     },
   ],
-  eventLimits: [{ on: 'grievance.all', range: [-3, 3], unit: 'points' }],
+  eventLimits: { 'grievance.all': 3 },
   recent: [
     { id: 'e1', when: '2025-12-20', summary: 'Transport unions warned against fuel price rises.' },
   ],
   surpriseBudget: { major: 0, significant: 1 },
 };
 const chronicleIn: ChronicleIn = {
-  period: { from: '2026-01-01', to: '2026-01-31' },
-  events: [
+  event: {
+    id: 'e7',
+    when: '2026-01-12',
+    kind: 'assassination',
+    size: 'major',
+    summary:
+      'The interior minister was shot dead outside his home in the capital by two gunmen, who escaped.',
+    numbers: [],
+  },
+  related: [
     {
-      id: 'e7',
-      when: '2026-01-12',
-      kind: 'assassination',
-      size: 'major',
-      summary:
-        'The interior minister was shot dead outside his home in the capital by two gunmen, who escaped.',
-      numbers: [],
-      causes: ['e1'],
+      when: '2026-01-14',
+      summary: 'Security forces killed 14 suspected militants in raids in the Northern Province.',
     },
     {
-      id: 'e8',
-      when: '2026-01-14',
-      kind: 'security',
-      size: 'significant',
-      summary: 'Security forces killed 14 suspected militants in raids in the Northern Province.',
-      place: { id: 'north', label: 'Northern Province' },
-      numbers: [{ label: 'Militants killed', before: 0, after: 14, unit: 'people' }],
-      causes: ['e7'],
+      when: '2026-01-13',
+      summary: '"We will find those responsible," the Prime Minister said.',
+      speaker: 'The Prime Minister',
     },
   ],
-  previous: [],
-  audience: 'player',
+  weight: 'significant',
   level: 'standard',
-  maxEntries: 3,
 };
 
 export async function checkModel(

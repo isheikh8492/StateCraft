@@ -13,8 +13,8 @@ export const API_TOKEN_HEADER = 'x-statecraft-token';
 /** Version of the save-file layout. Bump on any change to stored shapes. */
 export const SCHEMA_VERSION = 2;
 
-/** Advancing time is capped at six months (REQ-CLK-01). */
-export const MAX_ADVANCE_DAYS = 183;
+/** One move of the clock is capped at a year (REQ-CLK-01). */
+export const MAX_ADVANCE_DAYS = 366;
 
 export const CardSource = z.enum(['composer', 'advisor', 'dm', 'call', 'meeting', 'event']);
 export type CardSource = z.infer<typeof CardSource>;
@@ -44,7 +44,10 @@ export const CardReading = z.object({
 });
 export type CardReading = z.infer<typeof CardReading>;
 
-export const RESOLUTION_STEPS = ['compile', 'adjudicate', 'apply', 'narrate', 'report'] as const;
+/** What runs before a turn commits. Writing and reactions follow afterwards. */
+export const RESOLUTION_STEPS = ['compile', 'adjudicate', 'apply'] as const;
+/** Steps older saves may contain. */
+const STORED_STEPS = ['compile', 'adjudicate', 'apply', 'narrate', 'report'] as const;
 export type ResolutionStep = (typeof RESOLUTION_STEPS)[number];
 
 /**
@@ -75,15 +78,41 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     days: z.number().int().nullable(),
     cardIds: z.array(z.string()),
     mixedSignals: z.boolean(),
+    /** A move of less than a day: the clock's hour moves and the daily systems do not. */
+    hours: z.number().int().min(1).max(23).optional(),
+    /** Stop at the first event that matters. */
+    untilMajor: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('resolution.step'),
     id: z.string(),
-    step: z.enum(RESOLUTION_STEPS),
+    step: z.enum(STORED_STEPS),
     data: z.unknown(),
   }),
   z.object({ type: z.literal('resolution.blocked'), id: z.string(), data: z.unknown() }),
-  z.object({ type: z.literal('resolution.committed'), id: z.string(), toDay: z.number().int() }),
+  z.object({
+    type: z.literal('resolution.committed'),
+    id: z.string(),
+    toDay: z.number().int(),
+    hour: z.number().int().min(0).max(23).optional(),
+  }),
+  /** How the cast answered a turn's orders. Written after the turn commits. */
+  z.object({ type: z.literal('reactions.written'), id: z.string(), data: z.unknown() }),
+  /** The full piece on one event, written when the player first opens it. */
+  z.object({
+    type: z.literal('entry.expanded'),
+    eventId: z.string(),
+    body: z.string(),
+    via: z.string(),
+  }),
+  z.object({
+    type: z.literal('talk.asked'),
+    id: z.string(),
+    actorId: z.string(),
+    question: z.string().min(1).max(1000),
+    day: z.number().int(),
+  }),
+  z.object({ type: z.literal('talk.replied'), id: z.string(), reply: z.string(), via: z.string() }),
   z.object({ type: z.literal('resolution.cancelled'), id: z.string() }),
   z.object({ type: z.literal('policy.repealed'), policyId: z.string(), day: z.number().int() }),
   z.object({ type: z.literal('digest.written'), month: z.string(), text: z.string() }),
@@ -111,6 +140,21 @@ export type Health = z.infer<typeof Health>;
 
 export const ApiError = z.object({ error: z.string(), detail: z.string().optional() });
 export type ApiError = z.infer<typeof ApiError>;
+
+/** One move of the clock. Any boxes on the desk are sent first. */
+export const MoveRequest = z.object({
+  span: z.union([
+    z.object({ hours: z.literal(1) }),
+    z.object({ days: z.number().int().min(1).max(MAX_ADVANCE_DAYS) }),
+    z.object({ untilMajor: z.literal(true) }),
+  ]),
+  mixedSignals: z.boolean().default(false),
+});
+export type MoveSpan = z.infer<typeof MoveRequest>['span'];
+export const AskRequest = z.object({
+  actorId: z.string().min(1),
+  question: z.string().trim().min(1).max(1000),
+});
 
 export const ExecuteRequest = z.object({
   mixedSignals: z.boolean().default(false),

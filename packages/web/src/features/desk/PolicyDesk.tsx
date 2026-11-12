@@ -1,4 +1,4 @@
-import { type CardView, MAX_ADVANCE_DAYS, RESOLUTION_STEPS } from '@statecraft/protocol';
+import { type CardView, RESOLUTION_STEPS } from '@statecraft/protocol';
 import {
   ArrowDown,
   ArrowUp,
@@ -18,7 +18,6 @@ import { cn } from '@/lib/cn';
 import { useGame } from '@/lib/game';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
-import { Input, Select } from '@/ui/input';
 import { Textarea } from '@/ui/textarea';
 
 const MAX_LENGTH = 2000;
@@ -26,36 +25,15 @@ const STEP_LABEL: Record<string, string> = {
   compile: 'Reading your boxes',
   adjudicate: 'Judging the period',
   apply: 'Moving the world forward',
-  narrate: 'Writing the chronicle',
-  report: 'Collecting ministry reports',
   commit: 'Saving',
 };
-const JUMPS = [
-  [1, 'One day'],
-  [2, 'Two days'],
-  [3, 'Three days'],
-  [7, 'One week'],
-  [14, 'Two weeks'],
-  [30, 'One month'],
-  [91, 'Three months'],
-  [183, 'Six months'],
-] as const;
 
 /** Where policy is set: type what you want to do, press +, and it becomes a box. */
 export function PolicyDesk() {
-  const { view, act, error, clearError } = useGame();
+  const { view, act, error, clearError, setTimeOpen } = useGame();
   const [draft, setDraft] = useState('');
-  const [jump, setJump] = useState(30);
-  const [until, setUntil] = useState('');
   const cards = view?.cards ?? [];
   const fresh = cards.filter((c) => !c.sent).length;
-  const today = view?.campaign?.date ?? '';
-  const daysUntil =
-    until === '' || today === ''
-      ? 0
-      : Math.round((Date.parse(until) - Date.parse(today)) / 86_400_000);
-  /** How far the one button runs the clock, with or without boxes to send. */
-  const span = jump === 0 ? daysUntil : jump;
   const running = view?.running ?? null;
   const blocked = running ? null : (view?.blocked ?? null);
   const inConflict = new Set((blocked?.conflicts ?? []).flatMap((c) => c.cards));
@@ -124,8 +102,8 @@ export function PolicyDesk() {
             <span className="flex-1 text-xs text-fg-muted">
               Delete one of the marked boxes, or send both.
             </span>
-            <Button size="sm" onClick={() => void act(() => api.execute(true, span))}>
-              Send mixed signals
+            <Button size="sm" onClick={() => void act(() => api.move({ days: 7 }, true))}>
+              Send both anyway
             </Button>
           </div>
         </div>
@@ -213,44 +191,19 @@ export function PolicyDesk() {
         </Button>
       </form>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3 py-2">
-        <label htmlFor="jump" className="sr-only">
-          How far to run the clock
-        </label>
-        <Select id="jump" value={jump} onChange={(event) => setJump(Number(event.target.value))}>
-          {JUMPS.map(([days, label]) => (
-            <option key={days} value={days}>
-              {label}
-            </option>
-          ))}
-          <option value={0}>To a date…</option>
-        </Select>
-        {jump === 0 && (
-          <label htmlFor="jump-date">
-            <span className="sr-only">Run to this date</span>
-            <Input
-              id="jump-date"
-              type="date"
-              className="w-36"
-              value={until}
-              min={today}
-              onChange={(event) => setUntil(event.target.value)}
-            />
-          </label>
-        )}
-        <div className="flex-1" />
+      <div className="flex items-center gap-2 border-t border-border bg-surface px-3 py-2">
+        <span className="min-w-0 flex-1 text-xs text-fg-muted">
+          {fresh > 0
+            ? 'Orders go out when you move time forward.'
+            : 'Move time forward with the date control.'}
+        </span>
         <Button
           variant="primary"
-          disabled={
-            running !== null || view?.campaign == null || span < 1 || span > MAX_ADVANCE_DAYS
-          }
-          title={
-            span > MAX_ADVANCE_DAYS ? 'The clock can run at most six months at once.' : undefined
-          }
-          onClick={() => void act(() => (fresh > 0 ? api.execute(false, span) : api.advance(span)))}
+          disabled={running !== null || view?.campaign == null}
+          onClick={() => setTimeOpen(true)}
         >
           {fresh > 0 ? <Play /> : <FastForward />}
-          {fresh > 0 ? `Execute ${fresh} ${fresh === 1 ? 'box' : 'boxes'}` : 'Advance'}
+          {fresh > 0 ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'}…` : 'Move time…'}
         </Button>
       </div>
     </div>

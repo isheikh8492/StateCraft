@@ -28,6 +28,7 @@ export default defineConfig({
       STATECRAFT_PORT: String(PORT),
       STATECRAFT_DATA: DATA_DIR,
       STATECRAFT_STANDIN_PORT: String(PORT + 1),
+      STATECRAFT_SEED: 'probe',
     },
   },
 });

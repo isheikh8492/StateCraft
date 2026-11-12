@@ -107,13 +107,28 @@ function PolicyPage({ policy: p, onBack }: { policy: PolicyView; onBack: () => v
             <p className="text-fg-muted">{p.funding}</p>
           </Section>
 
-          {p.report && (
-            <Section title="Ministry report">
-              <p className="prose-read text-fg">{p.report.status}</p>
-              <p className="prose-read mt-1 text-fg-muted">{p.report.effect}</p>
+          {(p.reactions.length > 0 || p.alsoNoted.length > 0) && (
+            <Section title="Reactions">
+              <ul className="flex flex-col gap-3">
+                {p.reactions.map((r) => (
+                  <li key={r.id}>
+                    <p className="text-xs font-medium text-fg">
+                      {r.actorName}
+                      {r.kind === 'action' && <span className="ml-2 text-warn">acted</span>}
+                    </p>
+                    <blockquote className="prose-read mt-1 border-l-2 border-accent pl-3 font-serif text-fg-muted">
+                      {r.text}
+                    </blockquote>
+                  </li>
+                ))}
+              </ul>
+              {p.alsoNoted.length > 0 && (
+                <p className="mt-2 text-xs text-fg-subtle">
+                  Also watching: {p.alsoNoted.join(', ')}.
+                </p>
+              )}
               <p className="mt-1 text-2xs text-fg-subtle">
-                Simulated · the ministry claims {p.report.attribution} of the change for this
-                policy.
+                Simulated. To hear more from any of them, ask them in the People window.
               </p>
             </Section>
           )}

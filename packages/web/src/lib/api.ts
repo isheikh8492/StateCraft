@@ -6,6 +6,7 @@ import {
   type ModelCheck,
   type ModelConfig,
   type ModelRole,
+  type MoveSpan,
   type ScenarioInfo,
   Session,
   type View,
@@ -89,6 +90,9 @@ export const api = {
   execute: (mixedSignals: boolean, days: number) =>
     post<View>('/api/execute', { mixedSignals, days }),
   advance: (days: number) => post<View>('/api/advance', { days }),
+  move: (span: MoveSpan, mixedSignals = false) => post<View>('/api/move', { span, mixedSignals }),
+  expandEntry: (id: string) => post<View>(`/api/entries/${encodeURIComponent(id)}/expand`),
+  ask: (actorId: string, question: string) => post<View>('/api/ask', { actorId, question }),
   cancel: () => post<View>('/api/cancel'),
   repeal: (id: string) => post<View>(`/api/policies/${encodeURIComponent(id)}/repeal`),
   rewind: (seq: number) => post<View>('/api/rewind', { seq }),

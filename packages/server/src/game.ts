@@ -56,7 +56,9 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
       settings: settingsFor,
       onCall: (record) => current.recordCall(record.id, record.resolution, record),
     });
-    director = createDirector({ ledger, harness });
+    // A fixed seed makes a campaign repeatable; the end-to-end tests set one.
+    const seed = process.env.STATECRAFT_SEED;
+    director = createDirector({ ledger, harness, ...(seed ? { newSeed: () => seed } : {}) });
   };
   open();
 

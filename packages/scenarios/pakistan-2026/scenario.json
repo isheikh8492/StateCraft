@@ -69,6 +69,245 @@
       "independence": 0.4
     }
   },
+  "cast": [
+    {
+      "id": "principal_secretary",
+      "name": "Your Principal Secretary",
+      "kind": "advisor",
+      "cares": {
+        "regions": [],
+        "instruments": [],
+        "authorities": []
+      },
+      "stance": "friendly",
+      "voice": "A career civil servant: precise, cautious, tells you what the file says and what it does not."
+    },
+    {
+      "id": "finance_minister",
+      "name": "The Finance Minister",
+      "kind": "advisor",
+      "cares": {
+        "regions": [],
+        "instruments": [
+          "fuel_subsidy_cut",
+          "subsidy_increase",
+          "sales_tax_rise",
+          "income_tax_cut",
+          "development_spending_rise",
+          "development_spending_cut",
+          "cash_transfer_expansion",
+          "defence_spending_change"
+        ],
+        "authorities": []
+      },
+      "stance": "friendly",
+      "voice": "A former banker: numbers first, wary of anything the IMF will dislike."
+    },
+    {
+      "id": "interior_minister",
+      "name": "The Interior Minister",
+      "kind": "advisor",
+      "cares": {
+        "regions": [],
+        "instruments": ["security_operation", "regional_settlement"],
+        "authorities": []
+      },
+      "stance": "friendly",
+      "voice": "Blunt, political, close to the security services."
+    },
+    {
+      "id": "army",
+      "name": "The Army high command",
+      "kind": "military",
+      "cares": {
+        "regions": [],
+        "instruments": ["security_operation", "regional_settlement", "defence_spending_change"],
+        "authorities": ["security"]
+      },
+      "stance": "wary",
+      "voice": "Formal, clipped, speaks through its press wing; never concedes that politicians decide security."
+    },
+    {
+      "id": "bla",
+      "name": "The Baloch Liberation Army",
+      "kind": "militant",
+      "cares": {
+        "regions": ["balochistan"],
+        "instruments": ["security_operation", "regional_settlement"],
+        "authorities": []
+      },
+      "stance": "hostile",
+      "voice": "Defiant communiques; frames everything as occupation and resistance.",
+      "unreachable": "There is no channel to them. They answer through what they do."
+    },
+    {
+      "id": "ttp",
+      "name": "Tehrik-i-Taliban Pakistan",
+      "kind": "militant",
+      "cares": {
+        "regions": ["kp"],
+        "instruments": ["security_operation", "regional_settlement"],
+        "authorities": []
+      },
+      "stance": "hostile",
+      "voice": "Religious, threatening, issued through spokesmen across the border.",
+      "unreachable": "There is no channel to them. They answer through what they do."
+    },
+    {
+      "id": "gov_balochistan",
+      "name": "The Government of Balochistan",
+      "kind": "province",
+      "cares": {
+        "regions": ["balochistan"],
+        "instruments": ["development_spending_rise", "development_spending_cut"],
+        "authorities": []
+      },
+      "stance": "friendly",
+      "voice": "Deferential to Islamabad in public, anxious about being bypassed."
+    },
+    {
+      "id": "gov_kp",
+      "name": "The Government of Khyber Pakhtunkhwa",
+      "kind": "province",
+      "cares": {
+        "regions": ["kp"],
+        "instruments": ["development_spending_rise", "development_spending_cut"],
+        "authorities": []
+      },
+      "stance": "hostile",
+      "voice": "Run by your opponents: combative, accuses the centre of starving the province."
+    },
+    {
+      "id": "ppp",
+      "name": "The Pakistan Peoples Party",
+      "kind": "ally",
+      "cares": {
+        "regions": ["sindh"],
+        "instruments": [
+          "fuel_subsidy_cut",
+          "subsidy_increase",
+          "sales_tax_rise",
+          "income_tax_cut",
+          "development_spending_rise",
+          "development_spending_cut",
+          "cash_transfer_expansion",
+          "defence_spending_change"
+        ],
+        "authorities": ["budget"]
+      },
+      "stance": "friendly",
+      "voice": "Your indispensable partner: supportive in public, always reminding you what its votes cost."
+    },
+    {
+      "id": "pti",
+      "name": "Pakistan Tehreek-e-Insaf",
+      "kind": "opposition",
+      "cares": {
+        "regions": [],
+        "instruments": [
+          "fuel_subsidy_cut",
+          "subsidy_increase",
+          "sales_tax_rise",
+          "income_tax_cut",
+          "development_spending_rise",
+          "development_spending_cut",
+          "cash_transfer_expansion",
+          "defence_spending_change",
+          "security_operation",
+          "regional_settlement"
+        ],
+        "authorities": ["budget", "security"]
+      },
+      "stance": "hostile",
+      "voice": "Angry, populist, calls the government illegitimate at every turn."
+    },
+    {
+      "id": "juif",
+      "name": "Jamiat Ulema-e-Islam (F)",
+      "kind": "religious",
+      "cares": {
+        "regions": ["kp", "balochistan"],
+        "instruments": ["security_operation", "regional_settlement"],
+        "authorities": []
+      },
+      "stance": "wary",
+      "voice": "Clerical, shrewd, offers itself as the go-between and names its price later."
+    },
+    {
+      "id": "fpcci",
+      "name": "The Federation of Pakistan Chambers of Commerce and Industry",
+      "kind": "business",
+      "cares": {
+        "regions": [],
+        "instruments": [
+          "sales_tax_rise",
+          "income_tax_cut",
+          "fuel_subsidy_cut",
+          "subsidy_increase",
+          "policy_rate_change"
+        ],
+        "authorities": []
+      },
+      "stance": "neutral",
+      "voice": "Polite, aggrieved, speaks of costs, exports and jobs."
+    },
+    {
+      "id": "imf",
+      "name": "The International Monetary Fund",
+      "kind": "lender",
+      "cares": {
+        "regions": [],
+        "instruments": [
+          "fuel_subsidy_cut",
+          "subsidy_increase",
+          "sales_tax_rise",
+          "income_tax_cut",
+          "cash_transfer_expansion",
+          "development_spending_rise",
+          "defence_spending_change"
+        ],
+        "authorities": []
+      },
+      "stance": "neutral",
+      "voice": "Dry staff-statement prose: programme targets, fiscal space, structural benchmarks."
+    },
+    {
+      "id": "afghanistan",
+      "name": "The Taliban administration in Kabul",
+      "kind": "foreign",
+      "cares": {
+        "regions": ["kp"],
+        "instruments": ["security_operation"],
+        "authorities": []
+      },
+      "stance": "wary",
+      "voice": "Denies harbouring anyone; warns against violations of Afghan soil."
+    },
+    {
+      "id": "china",
+      "name": "China's Foreign Ministry",
+      "kind": "foreign",
+      "cares": {
+        "regions": ["balochistan"],
+        "instruments": ["security_operation", "regional_settlement"],
+        "authorities": []
+      },
+      "stance": "friendly",
+      "voice": "Measured, formulaic, concerned above all for its nationals and projects."
+    },
+    {
+      "id": "india",
+      "name": "India's Ministry of External Affairs",
+      "kind": "foreign",
+      "cares": {
+        "regions": ["ajk"],
+        "instruments": ["security_operation", "regional_settlement", "defence_spending_change"],
+        "authorities": []
+      },
+      "stance": "hostile",
+      "voice": "Cold, legalistic, never misses a chance to note Pakistan's internal troubles."
+    }
+  ],
   "brief": "Pakistan, 1 November 2026. A federal parliamentary republic of about 247 million people with four provinces (Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan), the Islamabad Capital Territory, and the administered territories of Azad Jammu and Kashmir and Gilgit-Baltistan. Shehbaz Sharif is Prime Minister. The army is the most powerful institution outside the elected government. The economy is about 452 billion US dollars and grew 3.7% in the last fiscal year. Inflation is 10.3%, pushed up by oil above 100 dollars a barrel during the conflict between the United States, Israel and Iran, and by wheat prices. The State Bank raised its policy rate to 12% on 27 October 2026; its inflation target is 5 to 7%. Foreign reserves are about 21.5 billion dollars, three months of imports. Public debt is about 68.5% of GDP and interest takes more than a third of revenue. The government is in an IMF programme and ran a budget deficit of 2.6% of GDP last year. Unemployment is 7.1% and about 29% of people live in poverty. Khyber Pakhtunkhwa and Balochistan have active insurgencies; in parts of Balochistan the state's control is contested.",
   "economy": {
     "gdpUsdBn": 452,

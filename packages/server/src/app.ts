@@ -6,12 +6,14 @@ import { ENGINE_VERSION } from '@statecraft/engine';
 import { checkModel } from '@statecraft/models';
 import {
   AdvanceRequest,
+  AskRequest,
   CardPatch,
   CheckRequest,
   ExecuteRequest,
   type Health,
   MODEL_ROLES,
   ModelConfig,
+  MoveRequest,
   NewPolicyCard,
   type PolicyCard,
   RewindRequest,
@@ -148,10 +150,31 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       AdvanceRequest,
       request.body,
       reply,
-      'Time can be advanced by 1 to 183 days.',
+      'Time can be advanced by 1 to 366 days.',
     );
     if (!data) return reply;
     game.director().advance(data.days);
+    return reply.code(202).send(view());
+  });
+  app.post('/api/move', async (request, reply) => {
+    const data = body(
+      MoveRequest,
+      request.body,
+      reply,
+      'The clock can move one hour, one day to one year, or to the next event that matters.',
+    );
+    if (!data) return reply;
+    game.director().move(data.span, data.mixedSignals);
+    return reply.code(202).send(view());
+  });
+  app.post<{ Params: { id: string } }>('/api/entries/:id/expand', async (request, reply) => {
+    game.director().expandEntry(request.params.id);
+    return reply.code(202).send(view());
+  });
+  app.post('/api/ask', async (request, reply) => {
+    const data = body(AskRequest, request.body, reply, 'Choose someone and type a question.');
+    if (!data) return reply;
+    game.director().ask(data.actorId, data.question);
     return reply.code(202).send(view());
   });
   app.post('/api/cancel', async () => {
