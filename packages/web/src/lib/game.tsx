@@ -40,7 +40,7 @@ export function GameProvider({
   const [error, setError] = useState<string | null>(null);
   const [place, setPlace] = useState<string | null>(null);
   const [policy, setPolicy] = useState<string | null>(null);
-  const busy = view?.running != null || (view?.cards.some((c) => !c.reading) ?? false);
+  const busy = view?.running != null;
   const alive = useRef(true);
 
   const refresh = useCallback(async () => {

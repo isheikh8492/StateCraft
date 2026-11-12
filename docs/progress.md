@@ -56,6 +56,7 @@ These are in `docs/requirements.md` for M0 and are not built, or are built in a 
 - The cost of a slate that is not paid for is borrowed automatically and stated on the policy page.
 - With no model, the world's own events come from a small fixed deck (strikes, outages, rallies, attacks, floods) chosen by dice and tilted by the state of the country. A model writes richer and more specific ones.
 - Vote and court odds are placeholders: allies peel away from unpopular measures, and the courts stay a small share of executive orders.
+- The "Read as" line under a box comes from built-in keyword rules and never calls a model (a departure from REQ-POL-03 and the `policy.read` job, taken to avoid spending model calls on a hint). An order the rules do not recognise gets no reading; the model forms its own understanding once, at Execute.
 - A pinned box stays on the desk after it is executed and is not sent again until its wording changes.
 
 ## M1 to M4

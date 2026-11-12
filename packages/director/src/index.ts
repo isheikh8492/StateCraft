@@ -1294,36 +1294,31 @@ export function createDirector(options: DirectorOptions): Director {
     };
   }
 
-  // The reading arrives later; adding or editing a box never waits on a model (REQ-PERF-01).
-  const readLater = (cardId: string) =>
-    enqueue(1, async () => {
-      const { projection, world, scenario } = state();
-      const card = projection.cards.get(cardId);
-      if (!world || !scenario || !card) return;
-      const text = card.text;
-      const { output } = await harness.run(
-        policyRead,
-        {
-          card: { id: cardId, text },
-          office: scenario.office,
-          standing: [],
-          instruments: INSTRUMENT_REFS.map((i) => ({ id: i.id, label: i.label })),
-          regions: regionRefs(world),
-        },
-        { resolution: 'readings', brief: scenario.brief },
-      );
-      // Skip a reading of wording that has since been edited or deleted.
-      if (state().projection.cards.get(cardId)?.text !== text) return;
-      ledger.append({
-        type: 'card.read',
-        cardId,
-        reading: {
-          reading: output.reading,
-          instrument: output.instrument,
-          ...(output.question ? { question: output.question } : {}),
-        },
-      });
+  // A box's reading comes from the built-in rules, at once and for free. No model is called:
+  // the model's own understanding is formed once, when the boxes are executed.
+  const readNow = (cardId: string) => {
+    const { projection, world, scenario } = state();
+    const card = projection.cards.get(cardId);
+    if (!world || !scenario || !card) return;
+    const output = policyRead.fallback({
+      card: { id: cardId, text: card.text },
+      office: scenario.office,
+      standing: [],
+      instruments: INSTRUMENT_REFS.map((i) => ({ id: i.id, label: i.label })),
+      regions: regionRefs(world),
     });
+    // Say nothing rather than guess: an order the rules do not recognise gets no reading.
+    if (output.instrument === 'novel') return;
+    ledger.append({
+      type: 'card.read',
+      cardId,
+      reading: {
+        reading: output.reading,
+        instrument: output.instrument,
+        ...(output.question ? { question: output.question } : {}),
+      },
+    });
+  };
 
   let viewCache: { version: number; view: View } | undefined;
 
@@ -1355,7 +1350,7 @@ export function createDirector(options: DirectorOptions): Director {
     },
     addCard(card) {
       ledger.append({ type: 'card.created', card });
-      readLater(card.id);
+      readNow(card.id);
     },
     patchCard(id, patch) {
       const card = state().projection.cards.get(id);
@@ -1363,7 +1358,7 @@ export function createDirector(options: DirectorOptions): Director {
       requireQuiet();
       if (patch.text !== undefined && patch.text !== card.text) {
         ledger.append({ type: 'card.edited', cardId: id, text: patch.text });
-        readLater(id);
+        readNow(id);
       }
       if (patch.pinned !== undefined && patch.pinned !== (card.pinned ?? false)) {
         ledger.append({ type: 'card.pinned', cardId: id, pinned: patch.pinned });

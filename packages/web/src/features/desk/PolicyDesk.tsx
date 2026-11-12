@@ -102,19 +102,15 @@ export function PolicyDesk() {
                   previous={cards[index - 1]?.id}
                   afterNext={index < cards.length - 1 ? (cards[index + 2]?.id ?? null) : undefined}
                 />
-                <p
-                  data-testid="reading"
-                  className="mt-2 border-t border-border pt-2 text-xs text-fg-muted"
-                >
-                  {card.reading ? (
-                    <>
-                      <span className="label-caps mr-2 text-fg-subtle">Read as</span>
-                      {card.reading.reading}
-                    </>
-                  ) : (
-                    <span className="text-fg-subtle">Reading…</span>
-                  )}
-                </p>
+                {card.reading && card.reading.instrument !== 'unclear' && (
+                  <p
+                    data-testid="reading"
+                    className="mt-2 border-t border-border pt-2 text-xs text-fg-muted"
+                  >
+                    <span className="label-caps mr-2 text-fg-subtle">Read as</span>
+                    {card.reading.reading}
+                  </p>
+                )}
                 {(question.get(card.id) ?? card.reading?.question) && (
                   <p className="mt-1 text-xs text-warn">
                     {question.get(card.id) ?? card.reading?.question} Edit this box to say more.
