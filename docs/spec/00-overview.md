@@ -179,10 +179,11 @@ Failures are classified, because each class needs a different response:
 
 Decided in play-testing: cost is not the constraint, waiting is. The game is tuned for the shortest time between pressing a control and reading what happened.
 
-- **Results before prose.** As soon as the period has been judged and the engine has applied it, the turn commits: the date, the figures, the map and each order's outcome appear at once. The chronicle's written pieces and the ministry reports arrive afterwards, each as it finishes, while you carry on. A turn never waits for writing.
+- **Only two things run before a turn commits:** reading your boxes (when you sent any) and judging the period. Then the date, the figures, the map and each order's outcome appear at once.
+- **Depth is written when you ask for it.** Headlines arrive with the turn; the full piece on an event is written when you open it, and an explanation comes when you ask a person. Nothing long is written on the chance that you might read it.
 - **Writing arrives as it is written.** Long pieces stream onto the page word by word.
-- **Everything independent runs at once.** Each notable event is narrated by its own call; reactions from different actors are written side by side; reports run beside the chronicle. On a server that handles one request at a time these simply queue.
-- **Nothing is asked that rules can answer.** Adding or editing a box, routine notices, monthly summaries, and choosing where "to next major event" stops involve no model.
+- **Reactions run after the commit, side by side.** You are already reading results while they arrive. On a server that handles one request at a time they simply queue.
+- **Nothing is asked that rules can answer.** Adding or editing a box, routine notices, policy milestones, the judge's memory of earlier months, and choosing where "to next major event" stops involve no model.
 - **Short moves are instant.** A move of a day or less with nothing ordered is resolved by the engine and the dice-driven event deck alone. The judge runs when orders are sent, or when a week or more passes.
 - **Small prompts.** Each job is given a compact description of its output, not a full schema, and only the judge receives the world brief. Fixed text comes first so servers can reuse it.
 - **Short where it does not show.** Internal reasoning and structured fields are kept terse; length is spent only on prose the player reads.
@@ -635,18 +636,22 @@ Four mechanisms keep it together:
 
 ### The chronicle: one linear narrative
 
-**Length follows weight.** An entry is as long as its event deserves:
+**Short up front, long on demand.** Every notable event gets a headline and a sentence or two straight away, so you always know what happened. The full piece is written only when you open the entry: a dateline (place, date and hour), several paragraphs, quotes, and a short list where figures are best read as a list. It streams onto the page as it is written.
 
-| Event | Entry |
-| --- | --- |
-| Routine notice (an order announced, a law in force, monthly figures) | One line, in built-in wording. No model is called. |
-| Minor | Two or three sentences. |
-| Significant | A paragraph or two under a dateline: place, date and hour. |
-| Major | A full piece: dateline, several paragraphs, quotes, and a short list where figures are best read as a list. |
+| Event | Up front | When opened |
+| --- | --- | --- |
+| Routine notice (an order announced, a law in force, monthly figures, a policy milestone) | One line, in built-in wording. No model is called. | Nothing more to write |
+| Minor | Headline and a sentence | About 50 words |
+| Significant | Headline and two sentences | About 150 words |
+| Major | Headline and a short paragraph | About 400 words |
 
-**People speak.** An entry may quote the actors involved. Every quote belongs to a named member of the cast, is written to fit that actor's stance and voice, and is stored in the ledger as something that actor said, so it can be held against them later. Quotes are set apart visually and, like everything generated, marked as simulated. A real person is only ever quoted saying what their modelled position supports.
+- **Written once.** A full piece is saved the first time it is written. Opening it again shows the same text, and later entries stay consistent with it.
+- **Written from then, not now.** It is built from the events and state recorded at the time, so reading an old entry late in a campaign does not leak later knowledge into it.
+- **Why not write everything up front?** Most entries are never opened. Writing depth nobody reads made every turn slower.
 
-**Detail figures.** A story needs texture the engine does not hold: a share price, a crowd size, a vote in a committee. The narrator may supply such figures, on two conditions. Each one is declared alongside the text and stored in the ledger as a recorded detail, so later entries repeat it rather than contradict it. And none of them may restate or contradict a number the engine owns (inflation, reserves, seats, casualties the engine counted); those must still come from the input. Detail figures never feed back into the rules.
+**People speak.** A quote is something an actor actually said in response to an event, produced with their reaction, not decoration added to a story later. An entry may quote the actors involved. Every quote belongs to a named member of the cast, is written to fit that actor's stance and voice, and is stored in the ledger as something that actor said, so it can be held against them later. Quotes are set apart visually and, like everything generated, marked as simulated. A real person is only ever quoted saying what their modelled position supports.
+
+**Detail figures.** A full piece needs texture the engine does not hold: a share price, a crowd size, a vote in a committee. The narrator may supply such figures, on two conditions. Each one is declared alongside the text and stored in the ledger as a recorded detail, so later entries repeat it rather than contradict it. And none of them may restate or contradict a number the engine owns (inflation, reserves, seats, casualties the engine counted); those must still come from the input. Detail figures never feed back into the rules.
 
 Every input becomes a ledger event with an in-game timestamp and causal links: your policies, DMs, calls, meetings, events, intelligence and widget posts. At each world resolution the Director writes the **chronicle**, one concise narrative of what happened, why, and what it means for you.
 
@@ -679,13 +684,14 @@ Every policy you have ever set has its own page, and this is where you see wheth
 | What you ordered | Your original boxes, in your words, and how the game read them |
 | Where it stands | Announced, enacted, implemented or felt; who is carrying it out; what is blocking it |
 | What has happened because of it | Every later event that cites this policy as a cause, in order |
-| Measured effect | The numbers it was meant to move, before and since, with your government's estimate of how much of the change is due to the policy |
+| Measured effect | The numbers it was meant to move, before and since, taken straight from the engine |
 | Side effects | Things it changed that you did not intend: a group's approval, a neighbour's stance, a price |
 | Reactions | Who supported it, who opposed it, what they said and did |
 | Cost | Money, political capital and favours spent so far |
 
 - **Cause links make this possible.** Every state change already records the events that caused it, so the page is assembled from the ledger, not written from a model's impression.
-- **It is your government's report.** The estimate of effect comes from your own ministries and can be optimistic, more so if people fear you. Independent sources (the press, the ground view, foreign assessments) appear beside it when they disagree.
+- **No written ministry report.** Earlier drafts had each ministry write a status report every turn. It restated the figures in sentences and was rarely read, so it is gone. The page shows the engine's figures directly. When a policy reaches a milestone (it starts to bite, or has been in force long enough to be felt) that is recorded as one chronicle event in built-in wording, for example "Three months on: subsidy spending is down from 0.8% to 0.3% of GDP."
+- **For an account in someone's own voice, ask them.** A minister's view of their own policy, flattering or not, comes from asking the minister (see "Ask someone"), where their honesty and their fear of you shape the answer. Independent sources (the press, the ground view, foreign assessments) may tell it differently.
 - **A better estimate exists.** The game can replay the same period several times without the policy and compare the spread of results with what happened. Each dice roll keeps its own seed, so removing the policy does not disturb unrelated rolls, but the model is asked again and answers differently each time. This "what if you had not" analysis is therefore an estimate with a range, not an exact figure, and it costs extra model calls. It is shown at the end of the campaign by default, and an assist setting makes it available during play.
 
 ### 3. Ask someone

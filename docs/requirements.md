@@ -126,8 +126,8 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-JOB-11 | Events of size major and significant proposed in one resolution must stay within the surprise budget.                                                                              | M0  | J turn.adjudicate; E Guardrails | CHECK         |
 | REQ-JOB-12 | A proposed major event or novel policy must pass `turn.review`; an item that fails twice must be dropped.                                                                          | M0  | J turn.review                   | CHECK         |
 | REQ-JOB-13 | `chronicle.write` must cite at least one event per entry, cite every significant and major event, keep time order, and never narrate an effect before its cause.                   | M0  | J chronicle.write               | CHECK         |
-| REQ-JOB-14 | `policy.report` must write in the slant the engine chose and use the figures the engine supplied; the true figures must remain in the ledger.                                      | M0  | J policy.report                 | CHECK         |
-| REQ-JOB-15 | `memory.digest` must keep every pinned entry retrievable.                                                                                                                          | M0  | J memory.digest                 | CHECK         |
+| REQ-JOB-14 | **Withdrawn.** No ministry report is written; see REQ-READ-17 and REQ-READ-18. | M0  | J policy.report                 | CHECK         |
+| REQ-JOB-15 | `memory.digest` must keep every pinned entry retrievable. It is internal memory for the judge and is not shown to the player. | M0  | J memory.digest                 | CHECK         |
 | REQ-JOB-16 | `actor.reply` must concede only what appears in the engine-supplied `mayConcede` list; with an empty list the character must not give ground.                                      | M1  | J actor.reply                   | CHECK, BENCH  |
 | REQ-JOB-17 | `actor.reply` must reveal only facts in the character's `knows` list.                                                                                                              | M1  | J actor.reply                   | CHECK         |
 | REQ-JOB-18 | `talk.extract` must name the levers a speaker used and must not score how persuasive they were.                                                                                    | M1  | J talk.extract; E Conversation  | REVIEW        |
@@ -137,7 +137,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-JOB-22 | `intel.report` must contain no fact beyond the items the engine supplied; errors in a report are decided by the engine.                                                            | M2  | J Later jobs                    | CHECK         |
 | REQ-JOB-23 | `scene.write` must never be called when the victim is a real, living person.                                                                                                       | M3  | J Later jobs; P Lethal          | CHECK         |
 | REQ-JOB-24 | A chronicle entry may introduce figures the engine does not hold only by declaring each as a detail; details must be stored, reused on the same thread, and must never restate or contradict an engine-owned quantity. | M1 | J chronicle.write | CHECK |
-| REQ-JOB-25 | A chronicle entry's length must follow its event's weight: one built-in line for routine notices, and about 50, 150 and 400 words for minor, significant and major events. | M1 | J chronicle.write | CHECK |
+| REQ-JOB-25 | Up front, a notable event must get only a headline and one or two sentences; its full piece (about 50, 150 or 400 words for minor, significant and major) must be written only when the player opens the entry. | M1 | J chronicle.write | CHECK |
 | REQ-JOB-26 | A quote in the chronicle must belong to an actor listed as a speaker for that event, must be stored as that actor's utterance, and must be shown set apart and marked simulated. | M1 | J chronicle.write | CHECK, E2E |
 
 ## 7. Policy desk (POL)
@@ -180,7 +180,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------ | ----------- |
 | REQ-READ-01 | After each resolution the player must receive a chronicle in time order that tells each event once.                                                                              | M0  | O Consistency      | E2E         |
 | REQ-READ-02 | Every chronicle entry must link to the events it summarises.                                                                                                                     | M0  | O Consistency      | E2E         |
-| REQ-READ-03 | Every policy must have a page showing what was ordered, its stage, the events it caused, target figures before and since, side effects, reactions and cost.                      | M0  | O Knowing          | E2E         |
+| REQ-READ-03 | Every policy must have a page showing what was ordered, its stage, the events it caused, target figures before and since taken from the engine, side effects, reactions and cost. | M0  | O Knowing          | E2E         |
 | REQ-READ-04 | A policy page must be assembled from cause links in the ledger, not from a model's impression.                                                                                   | M0  | O Knowing          | REVIEW      |
 | REQ-READ-05 | The player must have a world briefing that can be filtered by place, subject and time, and a digest of what changed since they last looked.                                      | M0  | O Knowing          | E2E         |
 | REQ-READ-06 | The player must have a timeline of the whole campaign; selecting a point must show the map, figures and news as they were.                                                       | M0  | O Knowing          | E2E         |
@@ -194,6 +194,8 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-READ-14 | History must be viewable by turn (the player's move followed by the world's response), by time, and by story thread. | M1 | O History | E2E |
 | REQ-READ-15 | While the player views a past turn, the map and figures must show that moment, the desk must be disabled, and one control must return to the present; viewing must not create a branch. | M1 | O History | E2E |
 | REQ-READ-16 | The chronicle must be exportable to a file. | M1 | O History | E2E |
+| REQ-READ-17 | A policy reaching a milestone (starting to take effect, or having been felt) must be recorded as one chronicle event in built-in wording with the engine's figures, without a model call. | M0 | O Policy ledger | INV |
+| REQ-READ-18 | Content written on demand (a full chronicle piece, a person's answer) must be saved when first written, shown unchanged afterwards, and built from the state recorded at the time of the event. | M1 | O The chronicle | INV, E2E |
 
 ## 10. User interface (UI)
 
@@ -227,7 +229,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-PERF-12 | The first words of a character's reply should appear within 2 s hosted, 5 s local (target).                                                                                       | M1  | O Responsiveness    | MANUAL      |
 | REQ-PERF-13 | M0 must include a resolution inspector showing every model call with its input, output, checks and cost, and a cost meter totalling tokens per resolution.                        | M0  | O Roadmap; R 13, 20 | E2E         |
 | REQ-PERF-14 | The Director must fit each resolution inside a token budget, activating fewer actors when needed.                                                                                 | M2  | R 13                | INV         |
-| REQ-PERF-15 | Independent model work in a turn (one call per notable event, reactions from different actors, reports) must be issued concurrently. | M1 | O Speed | REVIEW |
+| REQ-PERF-15 | Before a turn commits, the only model work may be reading the boxes and judging the period. Reactions and brief chronicle entries must run after the commit, concurrently where the server allows. | M1 | O Speed | REVIEW |
 | REQ-PERF-16 | Long written entries must stream to the screen as they are produced. | M1 | O Speed | E2E |
 | REQ-PERF-17 | A move of a day or less with nothing ordered must be resolved without any model call. | M0 | O Speed | INV |
 | REQ-PERF-18 | Adding or editing a box, routine notices and monthly summaries must make no model call. | M0 | O Speed | INV |
@@ -452,7 +454,7 @@ These are named in the spec but not specified well enough to test:
 | JOB       | 26           |
 | POL       | 11           |
 | CLK       | 13           |
-| READ      | 16           |
+| READ      | 18           |
 | UI        | 9            |
 | PERF      | 20           |
 | MAP       | 13           |
@@ -466,6 +468,6 @@ These are named in the spec but not specified well enough to test:
 | TEST      | 14           |
 | MEM       | 8            |
 | OPEN      | 8            |
-| **Total** | **301**      |
+| **Total** | **303**      |
 
-The total includes two withdrawn requirements (REQ-JOB-06 and REQ-POL-03), which keep their ids.
+The total includes three withdrawn requirements (REQ-JOB-06, REQ-JOB-14 and REQ-POL-03), which keep their ids.

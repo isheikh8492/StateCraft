@@ -65,8 +65,9 @@ Decided in play-testing on 12 November 2026 and written into the spec and requir
 
 - The time control: a date pill, a forward panel (to next major event, one hour to one year, a specific time) and a back arrow to history.
 - History by turn (your move, world response), by time and by story; read-only viewing; export.
-- Chronicle entries whose length follows weight, with quotes from the cast and declared detail figures.
-- Speed: commit results before prose, stream writing, run independent calls at once, no model for short moves or routine notices.
+- Chronicle: a headline and a sentence or two up front; the full piece, with quotes and declared detail figures, written only when you open the entry, then saved.
+- No ministry reports and no monthly summaries to read: the policy page shows engine figures, milestones are built-in chronicle events, and an account in someone's voice comes from asking them.
+- Speed: only reading the boxes and judging run before a turn commits; reactions and headlines follow; no model for short moves, routine notices or box edits.
 
 ## M1 to M4
 

@@ -55,8 +55,8 @@ type Size = "colour" | "minor" | "significant" | "major";
 | `turn.adjudicate` | Adjudicator | Each world resolution | M0 |
 | `turn.review` | Adjudicator | A major event or novel policy was proposed | M0 |
 | `chronicle.write` | Narrator | After each resolution is committed | M0 |
-| `policy.report` | Narrator | After each resolution, for policies that moved | M0 |
-| `memory.digest` | Extractor | Month and year boundaries | M0 |
+| `policy.report` | Narrator | Retired: the policy page shows engine figures; ask the minister for an account | none |
+| `memory.digest` | Extractor | Internal only: the judge's memory of earlier months. Built by rules from headlines; a model writes it only if long campaigns show the judge losing the thread | later |
 | `actor.reply` | Actor | A character speaks in any conversation | M1 |
 | `talk.extract` | Extractor | After every exchange | M1 |
 | `actor.decide` | Actor | An activated actor or mandate holder acts | M1 |
@@ -217,12 +217,13 @@ interface Out {
 
 **Changed after play-testing** (see "The chronicle" and "Speed" in the overview). The points below override the shapes and limits further down where they differ:
 
-- **One call per notable event or thread,** run side by side, instead of one call for the whole period. Routine notices are never sent.
-- **Length follows weight.** The input carries `weight: "minor" | "significant" | "major"`, and the limits are about 50, 150 and 400 words. A significant or major entry opens with a dateline (place, date, hour).
+- **Two modes.** `brief` runs after a turn commits and returns only a headline and one or two sentences per notable event, all events in one call. `full` runs when the player opens an entry and writes that one entry at length. Routine notices are never sent to either.
+- **Length follows weight, in `full` mode.** The input carries `weight: "minor" | "significant" | "major"`, and the limits are about 50, 150 and 400 words. A significant or major piece opens with a dateline (place, date, hour).
+- **Saved once.** A `full` piece is stored when written and never regenerated. Its input is the events and state recorded at the time, not the present.
 - **Quotes.** The input lists the actors who may speak: `speakers: { id, name, role, stance, voice }[]`. The output may include `quotes: { speaker: Id; text: string }[]`, each also appearing in the body. A quote from anyone not in `speakers` fails the check. Each quote is stored as an utterance by that actor.
 - **Detail figures.** The output carries `details: { label: string; value: string }[]` for every figure in the text that is not in the input. A figure that appears in the text and in neither the input nor `details` fails the check, and so does a detail that restates a quantity the engine owns. The input carries earlier `details` on the same thread, which must be reused, not changed.
 - **Streaming.** The body is streamed to the screen as it is written; the checks run when it is complete, and an entry that fails is replaced by its repair or by built-in wording.
-- **Never blocks the turn.** It runs after the turn has committed.
+- **Never blocks the turn.** `brief` runs after the turn has committed; `full` runs only on request.
 
 Writes the story of a resolved period from committed events. It adds nothing that is not in its input.
 
@@ -263,6 +264,8 @@ interface Out {
 
 ### `policy.report`
 
+**Retired.** No ministry report is written. The policy page is assembled from the ledger, policy milestones are chronicle events in built-in wording, and an account in a minister's own voice comes from asking the minister (`actor.reply`).
+
 Writes the status section of policy ledger pages, in the voice of the ministry responsible. One call covers every policy that moved this period.
 
 ```ts
@@ -295,6 +298,8 @@ interface Out {
 - **Fallback:** a table of the figures with no prose.
 
 ### `memory.digest`
+
+**Not shown to the player.** Monthly summaries are no longer something you read; history by time and by story covers that. This job exists only to give the judge a memory of a long campaign. For now that memory is the list of significant headlines, built by rules with no model call.
 
 Rolls history up a level: resolutions into a month, months into a year.
 
@@ -495,7 +500,7 @@ These are design targets, set so the smallest supported local model (an 8,000-to
 
 A model with a larger context window gets more history and more memories in the same layout.
 
-**Calls per resolution.** In M0 a typical resolution is four calls (adding a box makes none): `policy.compile`, `turn.adjudicate`, `chronicle.write` and `policy.report`, plus `turn.review` when something major happens and `memory.digest` at a month boundary. `policy.read` runs once per box as you type. From M1, each activated actor adds one `actor.decide`, and each line of conversation is one `actor.reply` plus one `talk.extract`.
+**Calls per turn.** Two before the turn commits: `policy.compile` (when orders were sent) and `turn.adjudicate` (when orders were sent or a week or more passes). After the commit: one `chronicle.write` in `brief` mode if anything notable happened, up to three `policy.react` per order from M1, and `turn.review` only for a major event. A move of a day or less with nothing ordered makes none. Everything else waits for the player to open or ask.
 
 ## How to build from this tab
 
