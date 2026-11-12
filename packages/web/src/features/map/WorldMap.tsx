@@ -50,14 +50,14 @@ function stripes(base: string, stripe: string): ImageData {
  * unrest has gone.
  */
 export function WorldMap() {
-  const { view, place, setPlace } = useGame();
+  const { view, world, place, setPlace } = useGame();
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const markers = useRef(new Map<string, HTMLButtonElement>());
   const outlines = useRef<FeatureCollection | null>(null);
   const [ready, setReady] = useState(false);
   const scenarioId = view?.campaign?.scenarioId;
-  const regions = view?.world?.regions;
+  const regions = world?.regions;
   const pick = useRef(setPlace);
   pick.current = setPlace;
   const selected = useRef(place);

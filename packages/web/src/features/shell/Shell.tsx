@@ -74,6 +74,7 @@ function Desktop({ windows }: { windows: ReturnType<typeof useWindowLayout> }) {
   const [confirmNew, setConfirmNew] = useState(false);
   const topZ = Math.max(...Object.values(layout).map((f) => f.z));
   const campaign = view?.campaign ?? null;
+  const unread = (view?.cast ?? []).reduce((sum, c) => sum + c.unread, 0);
   const events = health?.events;
   useEffect(() => {
     api.health().then(setHealth, () => setHealth(null));
@@ -103,6 +104,7 @@ function Desktop({ windows }: { windows: ReturnType<typeof useWindowLayout> }) {
               <Button key={id} variant="ghost" size="sm" onClick={() => open(id)}>
                 <Icon />
                 {title}
+                {id === 'people' && unread > 0 && <Badge tone="accent">{unread}</Badge>}
               </Button>
             ),
           )}

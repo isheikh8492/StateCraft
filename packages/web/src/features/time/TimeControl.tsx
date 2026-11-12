@@ -25,11 +25,11 @@ const clock = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
  * forward, the left arrow opens history. Moving forward sends whatever is on the desk first.
  */
 export function TimeControl() {
-  const { view, act, timeOpen, setTimeOpen, openWindow } = useGame();
+  const { view, act, timeOpen, setTimeOpen, openWindow, moment } = useGame();
   const [until, setUntil] = useState('');
   const campaign = view?.campaign;
   if (!view || !campaign) return null;
-  const busy = view.running !== null;
+  const busy = view.running !== null || moment !== null;
   const waiting = view.cards.filter((c) => !c.sent).length;
   const daysUntil =
     until === '' ? 0 : Math.round((Date.parse(until) - Date.parse(campaign.date)) / 86_400_000);

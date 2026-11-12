@@ -803,12 +803,20 @@ export interface ReplyIn {
   policies: string[];
   earlier: { question: string; reply: string }[];
 }
-const ReplyOut = z.object({ why: z.string(), reply: z.string().min(1), ...ext });
+const ReplyOut = z.object({
+  why: z.string(),
+  reply: z.string().min(1),
+  /** What the asker put on the table, if anything. The engine holds them to an offer. */
+  lever: z
+    .object({ kind: z.enum(['offer', 'threat', 'none']), claim: z.string().default('') })
+    .default({ kind: 'none', claim: '' }),
+  ...ext,
+});
 export type ReplyOut = z.infer<typeof ReplyOut>;
 
 export const actorReply: Job<ReplyIn, ReplyOut> = {
   name: 'actor.reply',
-  shape: '{"why":string,"reply":string}',
+  shape: '{"why":string,"reply":string,"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
   usesBrief: true,
   repairs: 1,
   version: 1,
@@ -818,7 +826,8 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
 - Answer in the first person, in that actor's voice, from its interests and its stance toward the asker. An adviser is candid; a rival is guarded or sharp; an official of another country is diplomatic.
 - Use only what is in "knows", "state", "policies" and the world brief. If you do not know, say so in character. Never invent events, decisions or figures.
 - Give a view, not a list: what this means, what worries you, what you would do. You may disagree with the asker.
-- At most 120 words. No stage directions, no narration, just what is said.`,
+- At most 120 words. No stage directions, no narration, just what is said.
+- "lever": did the asker put something on the table? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments and questions are "none". An offer does not change your position by itself: say what you would need to see.`,
   output: ReplyOut,
   check(input, out) {
     const problems: string[] = [];
@@ -830,7 +839,26 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
   },
   fallback(input) {
     const recent = input.knows.slice(-3).map((k) => k.summary);
+    const said = input.question.toLowerCase();
+    const offer =
+      /\b(i will|we will|i promise|i can offer|in return|i am prepared to|you have my word)\b/.test(
+        said,
+      );
+    const threat =
+      /\b(or else|you will regret|consequences|i will have you|i will remove you|i will crush)\b/.test(
+        said,
+      );
+    if (offer || threat) {
+      return {
+        why: 'No model: keyword rules.',
+        reply: threat
+          ? 'That is noted, and it will not be forgotten.'
+          : 'I have heard what you undertake. I will judge it by what follows.',
+        lever: { kind: threat ? 'threat' : 'offer', claim: input.question.slice(0, 200) },
+      };
+    }
     return {
+      lever: { kind: 'none' as const, claim: '' },
       why: 'No model: the record only.',
       reply:
         recent.length > 0

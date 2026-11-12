@@ -50,6 +50,10 @@ test('a policy box keeps your words, survives a reload, and can be edited, moved
   await addBox(page, 'Cut the fuel subsidy sharply');
   await expect(boxes(page)).toHaveCount(1);
   await expect(page.getByLabel(composer)).toHaveValue('');
+  // Your own office has a word before you send it. No model is asked for this.
+  await expect(boxes(page).first().getByTestId('advice').first()).toContainText(
+    'This will need a vote in the National Assembly.',
+  );
 
   // Enter adds a box; Shift+Enter makes a new line inside one.
   await page.getByLabel(composer).fill('Open talks with the port union');
@@ -95,6 +99,30 @@ test('moving time sends your orders; the world answers, and each order has a pag
   await expect(chronicle.getByTestId('quote').first()).toBeVisible();
   await expect(chronicle.getByText('Pakistan Tehreek-e-Insaf acted')).toBeVisible();
   await expect(chronicle.getByText('Simulated').first()).toBeVisible();
+
+  // The same record by story: an order and everything that followed from it.
+  await chronicle.getByRole('tab', { name: 'By story' }).click();
+  await expect(
+    chronicle.getByRole('region', { name: 'Cut fuel or power subsidies' }),
+  ).toBeVisible();
+  await chronicle.getByRole('tab', { name: 'By turn' }).click();
+
+  // Looking back shows the world as it was; nothing can be ordered from the past.
+  await chronicle.getByRole('button', { name: 'See the world at this point' }).first().click();
+  await expect(win(page, 'Policy desk').getByText('You are looking at the past')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Move time forward' })).toBeDisabled();
+  await win(page, 'Policy desk').getByRole('button', { name: 'Return to the present' }).click();
+  await expect(win(page, 'Policy desk').getByText('You are looking at the past')).toBeHidden();
+
+  // The chronicle can be taken away as a file.
+  const download = page.waitForEvent('download');
+  await chronicle.getByRole('button', { name: 'Export' }).click();
+  expect((await download).suggestedFilename()).toMatch(/^statecraft-chronicle-.*\.md$/);
+
+  // Those the order cuts against write to you unasked.
+  await expect(
+    page.getByRole('navigation', { name: 'Windows' }).getByRole('button', { name: /People/ }),
+  ).toContainText(/[1-9]/);
 
   // An order's page is built from the record: your words, the cost, and who reacted.
   await chronicle.getByRole('button', { name: 'Cut fuel or power subsidies' }).first().click();
@@ -185,6 +213,20 @@ test('people can be asked, and some cannot be reached', async ({ page }) => {
   const thread = people.getByRole('list', { name: 'Conversation' });
   await expect(thread).toContainText('What has the subsidy cut done so far?');
   await expect(thread.locator('blockquote')).toContainText('on the record');
+
+  // Something put on the table is remembered, and you are held to it.
+  await people.getByRole('button', { name: /The Pakistan Peoples Party/ }).click();
+  await expect(thread).toContainText('They wrote to you');
+  await people
+    .getByLabel('Your question')
+    .fill('In return for your votes I will expand cash transfers in Sindh.');
+  await people.getByRole('button', { name: 'Ask' }).click();
+  await expect(people.getByRole('list', { name: 'What you have undertaken' })).toContainText(
+    'You said:',
+  );
+  await expect(people.getByRole('list', { name: 'What you have undertaken' })).toContainText(
+    'due by',
+  );
 
   await people.getByRole('button', { name: 'The Baloch Liberation Army' }).click();
   await expect(people.getByText('There is no channel to them')).toBeVisible();

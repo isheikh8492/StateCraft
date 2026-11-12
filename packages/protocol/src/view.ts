@@ -9,6 +9,8 @@ export interface CardView {
   pinned?: boolean;
   /** Already executed in its current wording; it will not be sent again until edited. */
   sent?: boolean;
+  /** A word from your own staff before you send it. Built by rules; no model is asked. */
+  advice?: { from: string; text: string }[];
 }
 
 /** A figure before and since. Moods and unrest are given in words, never as numbers. */
@@ -45,6 +47,8 @@ export interface ChronicleEntry {
   headline: string;
   cites: string[];
   place?: string;
+  /** The running story this belongs to. */
+  story: { id: string; title: string };
   /** For a reaction: who spoke, and what they said. */
   speaker?: string;
   quote?: string;
@@ -69,6 +73,12 @@ export interface CastMember {
   kind: string;
   /** How they stand toward you, in a word. */
   stance: string;
+  /** Which way they have moved since your last turn. */
+  trend: 'warming' | 'cooling' | 'steady';
+  /** Messages from them you have not answered or opened since they arrived. */
+  unread: number;
+  /** Things you have told them you will do, and what became of each. */
+  undertakings: { text: string; state: 'open' | 'kept' | 'broken'; by: string }[];
   /** Whether you can put a question to them. */
   askable: boolean;
   /** Why not, when you cannot. */
@@ -78,7 +88,10 @@ export interface CastMember {
 export interface TalkTurn {
   id: string;
   date: string;
+  /** What you said. Empty when they wrote to you first. */
   question: string;
+  /** True when this is a message they sent unasked. */
+  incoming?: boolean;
   /** Missing while the answer is being written. */
   reply?: string;
 }
@@ -191,7 +204,11 @@ export interface View {
   /** Conversations, by actor id. */
   talks: Record<string, TalkTurn[]>;
   /** Work still arriving after the last turn committed. */
-  arriving: { reactions: boolean; entries: string[] };
+  arriving: {
+    reactions: boolean;
+    entries: string[] /** Responses written but not yet due: they land in the coming hours. */;
+    later: number;
+  };
   lastResolution: null | {
     id: string;
     calls: number;
@@ -216,4 +233,11 @@ export interface ScenarioInfo {
   office: string;
   holder: string;
   brief: string;
+}
+
+/** The world as it stood when a past turn ended, for looking back without rewinding. */
+export interface Moment {
+  turn: string;
+  date: string;
+  world: WorldView;
 }

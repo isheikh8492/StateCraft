@@ -105,6 +105,15 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     body: z.string(),
     via: z.string(),
   }),
+  /** A message a member of the cast sends unasked. */
+  z.object({
+    type: z.literal('talk.incoming'),
+    id: z.string(),
+    actorId: z.string(),
+    text: z.string(),
+    day: z.number().int(),
+  }),
+  z.object({ type: z.literal('talk.read'), actorId: z.string() }),
   z.object({
     type: z.literal('talk.asked'),
     id: z.string(),
@@ -112,7 +121,14 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     question: z.string().min(1).max(1000),
     day: z.number().int(),
   }),
-  z.object({ type: z.literal('talk.replied'), id: z.string(), reply: z.string(), via: z.string() }),
+  z.object({
+    type: z.literal('talk.replied'),
+    id: z.string(),
+    reply: z.string(),
+    via: z.string(),
+    /** What the player put on the table, as the engine will hold them to it. */
+    lever: z.object({ kind: z.enum(['offer', 'threat', 'none']), claim: z.string() }).optional(),
+  }),
   z.object({ type: z.literal('resolution.cancelled'), id: z.string() }),
   z.object({ type: z.literal('policy.repealed'), policyId: z.string(), day: z.number().int() }),
   z.object({ type: z.literal('digest.written'), month: z.string(), text: z.string() }),

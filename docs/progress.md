@@ -75,19 +75,31 @@ The speed slice and the first part of M1, built together.
 | Asking people | The People window: put a question to any reachable member of the cast and get an answer in their voice, from what they could know. Armed groups cannot be reached. |
 | Removed | Ministry reports, monthly summaries, the "Read as" line. Policy milestones are chronicle events in built-in wording. |
 
+## Built after that, on request
+
+| Area | State |
+| --- | --- |
+| Conversations that change minds | Each member of the cast has a hidden standing toward you. It moves through recorded causes only: orders they like or dislike, undertakings you give them in conversation (credit now), keeping one (noticed) or letting its 45 days lapse (said in public, and costs more than keeping earns), and threats. You see it as a stance word and a trend (warming, cooling). A party leader's standing sways its bloc's votes in the legislature. Words of friendship alone move nobody. |
+| People reaching out | Members of the cast write to you unasked: a partner an order cuts against, an actor whose undertaking was kept or broken, your Finance Minister on a crisis line, your Interior Minister when a region worsens, your Principal Secretary on a lost vote or a court stay. Unread counts show on the People button. "To next major event" stops when someone writes. |
+| Advice before you act | Under each unsent box, a line from your own office, by rules and with no model: what your office cannot order, what needs a vote, and who is known to object. |
+| Hours | After an order sent with a one-hour move, answers reach you one at a time over the day (after one, three and six hours). A longer move brings them all. |
+| History by story | The chronicle grouped into running stories: an order and everything that followed from it, dealings with one actor, the economy, one place. |
+| Looking back | "See the world at this point" on any turn shows the map and briefing as they stood. The desk and the clock are disabled until you return to the present; nothing is rewound. |
+| Export | The chronicle, turn by turn, as a Markdown file. |
+| Late reactions | Fixed: a move made while reactions are still arriving starts once they have landed. |
+
 ## Still not built from that spec
 
 | Item | State |
 | --- | --- |
-| Streaming of long pieces (REQ-PERF-16) | Not built. A full account appears when it is finished, with a "Writing…" state meanwhile. |
+| Streaming of long pieces (REQ-PERF-16) | Dropped: not needed. A full account appears when it is finished. |
 | Brief model-written headlines | Not built, deliberately: an event's own one-line summary is the headline, so no call is made. |
-| History by story, read-only viewing of a past turn with the map as it was, export (REQ-READ-14 to 16) | Not built. |
-| Time of day beyond the hour hand (REQ-CLK-12) | Partly. The clock shows an hour and an hour's move leaves the engine's day untouched; messages do not yet arrive by the hour. |
-| Quotes stored as utterances, declared detail figures kept across entries (REQ-JOB-24, 26) | Partly. Reactions are stored and quoted; detail figures are checked when written but not yet carried into later entries. |
-| Conversation that changes positions (pressure, levers, persuasion) | Not built. Asking gets you information and a view; it does not yet move anyone. |
-| Advisors warning you before you act; people reaching out to you unasked | Not built. |
-| Reactions when you move before the last ones have arrived | Known gap: rewinding to a date inside the following turn can drop those late reactions. |
+| The full persuasion model (REQ-ACT-12 to 15): seven kinds of lever, openness, trust, belief against interest, thresholds per stance | Reduced to offers and threats, one standing number per actor, and undertakings checked against later orders. An undertaking counts as kept when you issue an order of a kind that actor wants, not when you do the specific thing you said. |
+| Personas with traits and motives; plots and betrayal | Not built. An actor has interests, a stance and a voice. |
+| Messages written by a model | Not built. Unasked messages use built-in wording, so they cost nothing and read plainly. |
+| Detail figures carried into later entries (REQ-JOB-24) | Checked when written; not yet carried forward. |
 | The judge's memory of earlier months | Not wired. It sees the last eight events only. |
+| A move of hours with nothing pending | Changes the clock and nothing else. |
 
 ## M1 to M4
 

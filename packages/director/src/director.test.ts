@@ -298,6 +298,83 @@ describe('director', () => {
   });
 });
 
+describe('people', () => {
+  it('holds you to your word: an undertaking earns credit, keeping it is noticed, breaking it costs more', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    const cast = (id: string) => director.view().cast.find((c) => c.id === id);
+
+    // Your own office warns you before an order goes out, without a model.
+    add('Raise the sales tax.');
+    expect(director.view().cards[0]?.advice?.map((a) => a.text)).toEqual([
+      'This will need a vote in the National Assembly.',
+      'Expect objections from The Pakistan Peoples Party, Pakistan Tehreek-e-Insaf and The Federation of Pakistan Chambers of Commerce and Industry.',
+    ]);
+    director.deleteCard(director.view().cards[0]?.id ?? '');
+
+    // Words of friendship move nobody. Something put on the table does.
+    director.ask('ppp', 'We have always valued your party.');
+    await director.idle();
+    expect(cast('ppp')).toMatchObject({ trend: 'steady', undertakings: [] });
+    director.ask('ppp', 'In return for your votes I will expand cash transfers in Sindh.');
+    director.ask('juif', 'You have my word: I will open talks, not send troops.');
+    await director.idle();
+    expect(cast('ppp')).toMatchObject({ trend: 'warming', undertakings: [{ state: 'open' }] });
+
+    // Keeping it: the order is noticed, and they write to say so.
+    add('Expand cash transfers to poor households.');
+    director.move({ days: 7 }, false);
+    await director.idle();
+    expect(cast('ppp')?.undertakings[0]?.state).toBe('kept');
+    expect(director.view().talks.ppp?.at(-1)).toMatchObject({
+      incoming: true,
+      reply: expect.stringMatching(/did what you said/),
+    });
+    expect(cast('ppp')?.unread).toBe(1);
+    director.markRead('ppp');
+    expect(cast('ppp')?.unread).toBe(0);
+
+    // Breaking it: the deadline passes, it is said in public, and the standing falls.
+    director.move({ days: 45 }, false);
+    await director.idle();
+    expect(cast('juif')).toMatchObject({ trend: 'cooling', undertakings: [{ state: 'broken' }] });
+    const broken = director
+      .view()
+      .chronicle.find((e) => e.headline.includes('gone back on an undertaking'));
+    expect(broken?.story).toEqual({
+      id: 'actor:juif',
+      title: 'Dealings with Jamiat Ulema-e-Islam (F)',
+    });
+  });
+
+  it('lets answers come in by the hour, and lets you look back at how things stood', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    add('Launch a security operation in Khyber Pakhtunkhwa.');
+    director.move({ hours: 1 }, false);
+    await director.idle();
+    // An hour after the order: the first answer is in, two more are on their way.
+    expect(director.view().policies[0]?.reactions).toHaveLength(1);
+    expect(director.view().arriving.later).toBe(2);
+    director.move({ hours: 1 }, false);
+    await director.idle();
+    director.move({ hours: 1 }, false);
+    await director.idle();
+    expect(director.view().policies[0]?.reactions).toHaveLength(2);
+    director.move({ days: 1 }, false);
+    await director.idle();
+    expect(director.view().policies[0]?.reactions).toHaveLength(3);
+    expect(director.view().arriving.later).toBe(0);
+
+    // Looking back shows the world as it was, without rewinding anything.
+    const first = director.view().turns.at(-1);
+    const moment = director.moment(first?.id ?? '');
+    expect(moment).toMatchObject({ date: '2026-11-01' });
+    expect(moment.world.regions.find((r) => r.id === 'balochistan')?.status).toBe('contested');
+    expect(director.view().branches).toHaveLength(1);
+  });
+});
+
 describe('desk and time', () => {
   it('lets boxes be edited, reordered and pinned as standing instructions', async () => {
     const { director, add } = open(null);

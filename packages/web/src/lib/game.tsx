@@ -1,4 +1,4 @@
-import type { View } from '@statecraft/protocol';
+import type { Moment, View, WorldView } from '@statecraft/protocol';
 import {
   createContext,
   type ReactNode,
@@ -28,6 +28,11 @@ interface Game {
   timeOpen: boolean;
   setTimeOpen: (open: boolean) => void;
   openWindow: (id: string) => void;
+  /** The past turn being looked at, if any. Looking back changes nothing. */
+  moment: Moment | null;
+  lookAt: (turnId: string | null) => void;
+  /** The world to draw: as it was at the moment being looked at, otherwise as it is now. */
+  world: WorldView | null;
 }
 
 const GameContext = createContext<Game | null>(null);
@@ -45,6 +50,7 @@ export function GameProvider({
   const [place, setPlace] = useState<string | null>(null);
   const [policy, setPolicy] = useState<string | null>(null);
   const [timeOpen, setTimeOpen] = useState(false);
+  const [moment, setMoment] = useState<Moment | null>(null);
   const busy =
     view?.running != null ||
     view?.arriving.reactions === true ||
@@ -106,8 +112,14 @@ export function GameProvider({
       timeOpen,
       setTimeOpen,
       openWindow: (id) => onOpenWindow?.(id),
+      moment,
+      lookAt: (turnId) => {
+        if (turnId === null) setMoment(null);
+        else api.moment(turnId).then(setMoment, () => setMoment(null));
+      },
+      world: moment?.world ?? view?.world ?? null,
     }),
-    [view, error, act, place, policy, timeOpen, onOpenWindow],
+    [view, error, act, place, policy, timeOpen, moment, onOpenWindow],
   );
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }

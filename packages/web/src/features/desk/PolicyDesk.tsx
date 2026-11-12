@@ -30,7 +30,7 @@ const STEP_LABEL: Record<string, string> = {
 
 /** Where policy is set: type what you want to do, press +, and it becomes a box. */
 export function PolicyDesk() {
-  const { view, act, error, clearError, setTimeOpen } = useGame();
+  const { view, act, error, clearError, setTimeOpen, moment, lookAt } = useGame();
   const [draft, setDraft] = useState('');
   const cards = view?.cards ?? [];
   const fresh = cards.filter((c) => !c.sent).length;
@@ -84,6 +84,16 @@ export function PolicyDesk() {
                   previous={cards[index - 1]?.id}
                   afterNext={index < cards.length - 1 ? (cards[index + 2]?.id ?? null) : undefined}
                 />
+                {card.advice?.map((a) => (
+                  <p
+                    key={a.text}
+                    data-testid="advice"
+                    className="mt-2 border-t border-border pt-2 text-xs text-fg-muted"
+                  >
+                    <span className="label-caps mr-2 text-fg-subtle">{a.from}</span>
+                    {a.text}
+                  </p>
+                ))}
               </li>
             ))}
           </ul>
@@ -163,6 +173,19 @@ export function PolicyDesk() {
         </section>
       )}
 
+      {moment && (
+        <div
+          role="status"
+          className="flex items-center gap-2 border-t border-accent/40 bg-accent-soft px-3 py-2 text-accent"
+        >
+          <span className="flex-1 text-xs">
+            You are looking at the past. Orders can only be given in the present.
+          </span>
+          <Button size="sm" onClick={() => lookAt(null)}>
+            Return to the present
+          </Button>
+        </div>
+      )}
       <form
         onSubmit={onSubmit}
         className="flex items-end gap-2 border-t border-border bg-surface-2 p-3"
@@ -185,7 +208,7 @@ export function PolicyDesk() {
           size="icon"
           className="size-8"
           aria-label="Add policy box"
-          disabled={draft.trim() === '' || view?.campaign == null}
+          disabled={draft.trim() === '' || view?.campaign == null || moment !== null}
         >
           <Plus />
         </Button>
@@ -199,7 +222,7 @@ export function PolicyDesk() {
         </span>
         <Button
           variant="primary"
-          disabled={running !== null || view?.campaign == null}
+          disabled={running !== null || view?.campaign == null || moment !== null}
           onClick={() => setTimeOpen(true)}
         >
           {fresh > 0 ? <Play /> : <FastForward />}

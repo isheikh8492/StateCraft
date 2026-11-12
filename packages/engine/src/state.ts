@@ -188,6 +188,11 @@ export const ScenarioSchema = z.object({
           authorities: z.array(z.string()).default([]),
         }),
         stance: z.enum(['hostile', 'wary', 'neutral', 'friendly']),
+        /** Kinds of policy that raise or lower this actor's standing toward the player. */
+        likes: z.array(z.string()).default([]),
+        dislikes: z.array(z.string()).default([]),
+        /** The bloc in the legislature this actor leads, if any: its standing sways that bloc's votes. */
+        bloc: z.string().optional(),
         /** How they talk, in a phrase, for whoever writes their words. */
         voice: z.string().default(''),
         /** Whether the player can put a question to them, and if not, why. */

@@ -125,7 +125,9 @@
         "authorities": ["security"]
       },
       "stance": "wary",
-      "voice": "Formal, clipped, speaks through its press wing; never concedes that politicians decide security."
+      "voice": "Formal, clipped, speaks through its press wing; never concedes that politicians decide security.",
+      "likes": ["security_operation"],
+      "dislikes": ["regional_settlement"]
     },
     {
       "id": "bla",
@@ -138,7 +140,9 @@
       },
       "stance": "hostile",
       "voice": "Defiant communiques; frames everything as occupation and resistance.",
-      "unreachable": "There is no channel to them. They answer through what they do."
+      "unreachable": "There is no channel to them. They answer through what they do.",
+      "likes": [],
+      "dislikes": ["security_operation"]
     },
     {
       "id": "ttp",
@@ -151,7 +155,9 @@
       },
       "stance": "hostile",
       "voice": "Religious, threatening, issued through spokesmen across the border.",
-      "unreachable": "There is no channel to them. They answer through what they do."
+      "unreachable": "There is no channel to them. They answer through what they do.",
+      "likes": [],
+      "dislikes": ["security_operation"]
     },
     {
       "id": "gov_balochistan",
@@ -163,7 +169,9 @@
         "authorities": []
       },
       "stance": "friendly",
-      "voice": "Deferential to Islamabad in public, anxious about being bypassed."
+      "voice": "Deferential to Islamabad in public, anxious about being bypassed.",
+      "likes": ["development_spending_rise", "regional_settlement"],
+      "dislikes": ["development_spending_cut"]
     },
     {
       "id": "gov_kp",
@@ -175,7 +183,9 @@
         "authorities": []
       },
       "stance": "hostile",
-      "voice": "Run by your opponents: combative, accuses the centre of starving the province."
+      "voice": "Run by your opponents: combative, accuses the centre of starving the province.",
+      "likes": ["development_spending_rise", "regional_settlement"],
+      "dislikes": ["security_operation", "development_spending_cut"]
     },
     {
       "id": "ppp",
@@ -196,7 +206,10 @@
         "authorities": ["budget"]
       },
       "stance": "friendly",
-      "voice": "Your indispensable partner: supportive in public, always reminding you what its votes cost."
+      "voice": "Your indispensable partner: supportive in public, always reminding you what its votes cost.",
+      "likes": ["cash_transfer_expansion", "subsidy_increase", "development_spending_rise"],
+      "dislikes": ["fuel_subsidy_cut", "sales_tax_rise"],
+      "bloc": "ppp"
     },
     {
       "id": "pti",
@@ -219,7 +232,15 @@
         "authorities": ["budget", "security"]
       },
       "stance": "hostile",
-      "voice": "Angry, populist, calls the government illegitimate at every turn."
+      "voice": "Angry, populist, calls the government illegitimate at every turn.",
+      "likes": [],
+      "dislikes": [
+        "fuel_subsidy_cut",
+        "sales_tax_rise",
+        "development_spending_cut",
+        "security_operation"
+      ],
+      "bloc": "pti"
     },
     {
       "id": "juif",
@@ -231,7 +252,10 @@
         "authorities": []
       },
       "stance": "wary",
-      "voice": "Clerical, shrewd, offers itself as the go-between and names its price later."
+      "voice": "Clerical, shrewd, offers itself as the go-between and names its price later.",
+      "likes": ["regional_settlement"],
+      "dislikes": ["security_operation"],
+      "bloc": "juif"
     },
     {
       "id": "fpcci",
@@ -249,7 +273,9 @@
         "authorities": []
       },
       "stance": "neutral",
-      "voice": "Polite, aggrieved, speaks of costs, exports and jobs."
+      "voice": "Polite, aggrieved, speaks of costs, exports and jobs.",
+      "likes": ["income_tax_cut", "subsidy_increase"],
+      "dislikes": ["sales_tax_rise", "fuel_subsidy_cut"]
     },
     {
       "id": "imf",
@@ -269,7 +295,14 @@
         "authorities": []
       },
       "stance": "neutral",
-      "voice": "Dry staff-statement prose: programme targets, fiscal space, structural benchmarks."
+      "voice": "Dry staff-statement prose: programme targets, fiscal space, structural benchmarks.",
+      "likes": ["fuel_subsidy_cut", "sales_tax_rise", "development_spending_cut"],
+      "dislikes": [
+        "subsidy_increase",
+        "income_tax_cut",
+        "cash_transfer_expansion",
+        "development_spending_rise"
+      ]
     },
     {
       "id": "afghanistan",
@@ -281,7 +314,9 @@
         "authorities": []
       },
       "stance": "wary",
-      "voice": "Denies harbouring anyone; warns against violations of Afghan soil."
+      "voice": "Denies harbouring anyone; warns against violations of Afghan soil.",
+      "likes": ["regional_settlement"],
+      "dislikes": ["security_operation"]
     },
     {
       "id": "china",
@@ -293,7 +328,9 @@
         "authorities": []
       },
       "stance": "friendly",
-      "voice": "Measured, formulaic, concerned above all for its nationals and projects."
+      "voice": "Measured, formulaic, concerned above all for its nationals and projects.",
+      "likes": ["security_operation", "development_spending_rise"],
+      "dislikes": []
     },
     {
       "id": "india",
@@ -305,7 +342,9 @@
         "authorities": []
       },
       "stance": "hostile",
-      "voice": "Cold, legalistic, never misses a chance to note Pakistan's internal troubles."
+      "voice": "Cold, legalistic, never misses a chance to note Pakistan's internal troubles.",
+      "likes": [],
+      "dislikes": ["defence_spending_change"]
     }
   ],
   "brief": "Pakistan, 1 November 2026. A federal parliamentary republic of about 247 million people with four provinces (Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan), the Islamabad Capital Territory, and the administered territories of Azad Jammu and Kashmir and Gilgit-Baltistan. Shehbaz Sharif is Prime Minister. The army is the most powerful institution outside the elected government. The economy is about 452 billion US dollars and grew 3.7% in the last fiscal year. Inflation is 10.3%, pushed up by oil above 100 dollars a barrel during the conflict between the United States, Israel and Iran, and by wheat prices. The State Bank raised its policy rate to 12% on 27 October 2026; its inflation target is 5 to 7%. Foreign reserves are about 21.5 billion dollars, three months of imports. Public debt is about 68.5% of GDP and interest takes more than a third of revenue. The government is in an IMF programme and ran a budget deficit of 2.6% of GDP last year. Unemployment is 7.1% and about 29% of people live in poverty. Khyber Pakhtunkhwa and Balochistan have active insurgencies; in parts of Balochistan the state's control is contested.",

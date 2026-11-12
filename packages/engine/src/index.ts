@@ -31,6 +31,7 @@ export {
 } from './government.ts';
 export { DT, PARAMS } from './params.ts';
 export { roll, rollInt } from './rng.ts';
+export { clampStanding, orderEffect, STANDING, type Stance, stanceOf } from './standing.ts';
 export {
   type ControlStatus,
   createWorld,

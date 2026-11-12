@@ -9,6 +9,7 @@ import {
   addEffects,
   CATALOGUE,
   checkFunding,
+  clampStanding,
   courtStays,
   createWorld,
   type Effect,
@@ -19,12 +20,15 @@ import {
   NOVEL_LIMITS,
   narrow,
   nationalApproval,
+  orderEffect,
   PROCEDURE_DAYS,
   removeEffects,
   resolveInstrument,
   resolveNovel,
   roll,
   type Scenario,
+  STANDING,
+  stanceOf,
   stepDay,
   touchedBy,
   type World,
@@ -38,6 +42,7 @@ import {
   chronicleWrite,
   type Harness,
   INSTRUMENT_REFS,
+  matchInstrument,
   policyCompile,
   policyReact,
   REACTION_OPTIONS,
@@ -51,6 +56,7 @@ import {
   type ChronicleEntry,
   type Figure,
   MAX_ADVANCE_DAYS,
+  type Moment,
   type MoveSpan,
   type PolicyCard,
   type PolicyView,
@@ -60,6 +66,7 @@ import {
   type StoredEvent,
   type View,
   type WorldEventView,
+  type WorldView,
 } from '@statecraft/protocol';
 import {
   loadOutlines,
@@ -130,6 +137,8 @@ interface AdjudicateData {
   }[];
 }
 interface ApplyData {
+  /** Messages members of the cast send the player unasked, delivered when the turn commits. */
+  messages?: { actor: string; text: string; day: number }[];
   /** Policies that did not survive a vote or a court, with the reason. */
   stopped?: Record<string, string>;
   world: World;
@@ -146,6 +155,17 @@ interface ReactionRecord {
   policy: string;
   kind: 'statement' | 'action' | 'silence';
   text: string;
+  /** When word of it reaches the player. After a move of hours, answers come in one by one. */
+  dueDay?: number;
+  dueHour?: number;
+}
+interface TalkRecord {
+  id: string;
+  day: number;
+  question: string;
+  reply?: string;
+  incoming?: boolean;
+  lever?: { kind: 'offer' | 'threat' | 'none'; claim: string };
 }
 /** A follow-up the dice will decide on its day. */
 interface Beat {
@@ -194,7 +214,9 @@ interface Projection {
   repealed: Set<string>;
   digests: { month: string; text: string }[];
   expanded: Map<string, { body: string; via: string }>;
-  talks: Map<string, { id: string; day: number; question: string; reply?: string }[]>;
+  talks: Map<string, TalkRecord[]>;
+  /** How many incoming messages from each actor the player has seen. */
+  seen: Map<string, number>;
 }
 
 function project(events: readonly StoredEvent[]): Projection {
@@ -205,6 +227,7 @@ function project(events: readonly StoredEvent[]): Projection {
     digests: [],
     expanded: new Map(),
     talks: new Map(),
+    seen: new Map(),
   };
   const byId = new Map<string, Resolution>();
   for (const { seq, event } of events) {
@@ -330,8 +353,29 @@ function project(events: readonly StoredEvent[]): Projection {
       case 'talk.replied':
         for (const thread of p.talks.values()) {
           const turn = thread.find((t) => t.id === event.id);
-          if (turn) turn.reply = event.reply;
+          if (turn) {
+            turn.reply = event.reply;
+            if (event.lever) turn.lever = event.lever;
+          }
         }
+        break;
+      case 'talk.incoming': {
+        const thread = p.talks.get(event.actorId) ?? [];
+        thread.push({
+          id: event.id,
+          day: event.day,
+          question: '',
+          reply: event.text,
+          incoming: true,
+        });
+        p.talks.set(event.actorId, thread);
+        break;
+      }
+      case 'talk.read':
+        p.seen.set(
+          event.actorId,
+          (p.talks.get(event.actorId) ?? []).filter((t) => t.incoming).length,
+        );
         break;
       case 'policy.repealed':
         p.repealed.add(event.policyId);
@@ -413,6 +457,10 @@ export interface Director {
   move(span: MoveSpan, mixedSignals: boolean): void;
   /** Write the full piece on one event, the first time its entry is opened. */
   expandEntry(eventId: string): void;
+  /** The world as it stood when a past turn ended, for looking back without rewinding. */
+  moment(turnId: string): Moment;
+  /** Mark an actor's messages as seen. */
+  markRead(actorId: string): void;
   /** Put a question to a member of the cast. The answer arrives later. */
   ask(actorId: string, question: string): void;
   rewind(seq: number): void;
@@ -451,6 +499,8 @@ export function createDirector(options: DirectorOptions): Director {
   let cancelRequested: string | undefined;
   /** True while the cast's answers to the last turn are still being written. */
   let arrivingReactions = false;
+  /** True from the moment a move is asked for until its turn has started. */
+  let queuedMove = false;
   /** Entries whose full piece is being written right now. */
   const writing = new Set<string>();
   const pump = () => {
@@ -483,7 +533,7 @@ export function createDirector(options: DirectorOptions): Director {
       throw new DirectorError('busy', 'Reactions to your last move are still arriving.');
   };
   const requireQuiet = () => {
-    if (running()) throw new DirectorError('busy', 'A resolution is still running.');
+    if (running() || queuedMove) throw new DirectorError('busy', 'A turn is still running.');
   };
   const regionRefs = (world: World) => {
     const listed = state().scenario?.regions ?? [];
@@ -498,10 +548,95 @@ export function createDirector(options: DirectorOptions): Director {
     p.resolutions
       .filter((r) => r.status === 'committed')
       .flatMap((r) => (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r })));
+  const currentHour = (p: Projection) =>
+    [...p.resolutions].reverse().find((r) => r.status === 'committed' && r.hour !== undefined)
+      ?.hour ?? 9;
+  const currentDay = (p: Projection) =>
+    p.resolutions.filter((r) => r.status === 'committed').at(-1)?.apply?.toDay ?? 0;
+
+  /** Whether word of a reaction has reached the player yet. */
+  const landed = (x: ReactionRecord, p: Projection) =>
+    x.dueDay === undefined ||
+    currentDay(p) > x.dueDay ||
+    (currentDay(p) === x.dueDay && currentHour(p) >= (x.dueHour ?? 0));
+  const landedReactions = (r: Resolution, p: Projection) =>
+    (r.reactions?.reactions ?? []).filter((x) => landed(x, p));
+
   const allEvents = (p: Projection): WorldEventView[] =>
     p.resolutions
       .filter((r) => r.status === 'committed')
-      .flatMap((r) => [...(r.apply?.events ?? []), ...(r.reactions?.events ?? [])]);
+      .flatMap((r) => {
+        const here = new Set(landedReactions(r, p).map((x) => x.id));
+        return [
+          ...(r.apply?.events ?? []),
+          ...(r.reactions?.events ?? []).filter((e) => here.has(e.id)),
+        ];
+      });
+
+  // ------------------------------------------------------------------------------- standing
+
+  /** Undertakings the player has given in conversation, which the engine holds them to. */
+  const undertakings = (p: Projection, scenario: Scenario) =>
+    [...p.talks].flatMap(([actorId, thread]) => {
+      const actor = scenario.cast.find((c) => c.id === actorId);
+      // Only something the actor actually wants can be owed to it.
+      if (!actor || actor.likes.length === 0) return [];
+      return thread
+        .filter((t) => t.lever?.kind === 'offer')
+        .map((t) => ({
+          id: t.id,
+          actor,
+          text: t.lever?.claim ?? '',
+          madeDay: t.day,
+          dueDay: t.day + STANDING.graceDays,
+        }));
+    });
+  const outcomeOf = (id: string, events: readonly WorldEventView[]): 'kept' | 'broken' | 'open' => {
+    const event = events.find((e) => e.causes.includes(id) && e.kind.startsWith('commitment.'));
+    return event ? (event.kind === 'commitment.kept' ? 'kept' : 'broken') : 'open';
+  };
+
+  /**
+   * How every member of the cast stands toward the player, before a given day. Built only
+   * from recorded causes: orders they like or dislike, undertakings given, kept or broken,
+   * and threats made.
+   */
+  function standings(
+    p: Projection,
+    scenario: Scenario,
+    beforeDay = Number.POSITIVE_INFINITY,
+  ): Map<string, number> {
+    const events = allEvents(p);
+    const orders = committedPolicies(p).filter(
+      ({ policy, resolution }) => !refusalOf(policy, resolution) && policy.announcedDay < beforeDay,
+    );
+    return new Map(
+      scenario.cast.map((actor) => {
+        let value: number = STANDING.start[actor.stance];
+        for (const { policy } of orders) value += orderEffect(actor, policy.instrument);
+        for (const t of p.talks.get(actor.id) ?? []) {
+          if (t.day >= beforeDay) continue;
+          if (t.lever?.kind === 'threat') value += STANDING.threat;
+          if (t.lever?.kind === 'offer' && actor.likes.length > 0) value += STANDING.undertaking;
+        }
+        for (const e of events) {
+          if (e.day >= beforeDay || !e.causes.includes(`actor:${actor.id}`)) continue;
+          if (e.kind === 'commitment.kept') value += STANDING.kept;
+          if (e.kind === 'commitment.broken') value += STANDING.broken;
+        }
+        return [actor.id, clampStanding(value)];
+      }),
+    );
+  }
+
+  /** The adviser to hear from on a subject: whoever among the player's office covers it. */
+  const adviserFor = (scenario: Scenario, instrument?: string) => {
+    const advisers = scenario.cast.filter((c) => c.kind === 'advisor');
+    return (
+      (instrument ? advisers.find((c) => c.cares.instruments.includes(instrument)) : undefined) ??
+      advisers[0]
+    );
+  };
 
   const saveStep = (id: string, step: ResolutionStep, data: unknown) =>
     ledger.append({ type: 'resolution.step', id, step, data });
@@ -786,6 +921,13 @@ export function createDirector(options: DirectorOptions): Director {
     const baseline: ApplyData['baseline'] = {};
     const pendingEnact: PolicyRecord[] = [];
     const stopped: Record<string, string> = {};
+    const standingNow = standings(p, scenario);
+    const messages: NonNullable<ApplyData['messages']> = [];
+    const write = (actorId: string | undefined, text: string, day: number) => {
+      const actor = scenario.cast.find((c) => c.id === actorId);
+      if (actor && !actor.unreachable) messages.push({ actor: actor.id, text, day });
+    };
+    const secretary = adviserFor(scenario)?.id;
     for (const policy of compile.policies) {
       if (policy.vague) {
         emit(
@@ -822,10 +964,20 @@ export function createDirector(options: DirectorOptions): Director {
         const vote = legislatureVote(world.seed, `vote:${policy.id}`, government.legislature, {
           popularity,
           nationalApproval: nationalApproval(world),
+          standing: Object.fromEntries(
+            scenario.cast
+              .filter((c) => c.bloc)
+              .map((c) => [c.bloc ?? '', standingNow.get(c.id) ?? 0]),
+          ),
         });
         const tally = `${vote.yes} votes to ${vote.no}`;
         if (!vote.passed) {
           stopped[policy.id] = `The ${government.legislature.name} voted it down, ${tally}.`;
+          write(
+            secretary,
+            `The ${government.legislature.name} has voted down "${policy.title}", ${tally}. Our partners did not hold. If you want it passed, they will need something first.`,
+            r.fromDay,
+          );
           emit(
             r.fromDay,
             'legislature.vote',
@@ -850,6 +1002,11 @@ export function createDirector(options: DirectorOptions): Director {
       ) {
         const court = government.court.name;
         stopped[policy.id] = `${court[0]?.toUpperCase()}${court.slice(1)} stayed the order.`;
+        write(
+          secretary,
+          `A petition against "${policy.title}" has succeeded: ${court} have stayed it. It cannot be carried out while the stay stands.`,
+          r.fromDay,
+        );
         emit(
           r.fromDay,
           'court.stay',
@@ -894,6 +1051,42 @@ export function createDirector(options: DirectorOptions): Director {
         policy.region ? { place: policy.region } : {},
       );
       pendingEnact.push(policy);
+      // Those whose support you rely on tell you privately when an order cuts against them.
+      for (const actor of scenario.cast) {
+        if (
+          orderEffect(actor, policy.instrument) < 0 &&
+          ['ally', 'military', 'lender', 'province'].includes(actor.kind) &&
+          (actor.cares.regions.length === 0 ||
+            policy.region === undefined ||
+            actor.cares.regions.includes(policy.region))
+        ) {
+          write(
+            actor.id,
+            `We were not consulted on "${policy.title}", and it cuts against us. Do not take our support as given.`,
+            r.fromDay,
+          );
+        }
+      }
+    }
+    // Undertakings: an order of the kind that was promised keeps the player's word.
+    const owed = undertakings(p, scenario).filter(
+      (u) => outcomeOf(u.id, [...allEvents(p), ...events]) === 'open',
+    );
+    for (const u of owed) {
+      const made = pendingEnact.find((x) => u.actor.likes.includes(x.instrument));
+      if (!made) continue;
+      emit(
+        r.fromDay,
+        'commitment.kept',
+        'minor',
+        `${u.actor.name} acknowledged that the ${scenario.office.title} had done as undertaken.`,
+        [`actor:${u.actor.id}`, u.id, made.id],
+      );
+      write(
+        u.actor.id,
+        'You did what you said you would. That counts for something with us.',
+        r.fromDay,
+      );
     }
 
     const planned = judged.events
@@ -982,6 +1175,18 @@ export function createDirector(options: DirectorOptions): Director {
           );
         }
       }
+      for (const u of owed.filter(
+        (x) => x.dueDay === world.day && outcomeOf(x.id, events) === 'open',
+      )) {
+        emit(
+          world.day,
+          'commitment.broken',
+          'significant',
+          `${u.actor.name} said the ${scenario.office.title} had gone back on an undertaking: "${u.text}"`,
+          [`actor:${u.actor.id}`, u.id],
+        );
+        write(u.actor.id, 'You gave your word and did not keep it. Do not expect ours.', world.day);
+      }
       // Follow-ups set up by earlier reactions come due: the dice decide which way each goes.
       for (const beat of beats.filter((b) => b.dueDay === world.day)) {
         const yes = roll(world.seed, `beat:${beat.id}`) < 0.5;
@@ -1006,7 +1211,14 @@ export function createDirector(options: DirectorOptions): Director {
             ? `Unrest in ${region} escalated from ${e.from} to ${e.to}.`
             : `Unrest in ${region} eased from ${e.from} to ${e.to}.`;
           emit(world.day, e.type, size, text, e.causes, { place: e.region });
-          if (up && e.to !== 'protest') stoppedEarly = `Unrest in ${region} escalated.`;
+          if (up && e.to !== 'protest') {
+            stoppedEarly = `Unrest in ${region} escalated.`;
+            write(
+              adviserFor(scenario, 'security_operation')?.id,
+              `${region} has worsened: it has gone from ${e.from} to ${e.to}. I need your instructions before this spreads.`,
+              world.day,
+            );
+          }
         } else if (e.type === 'control.status') {
           const region = world.regions.find((x) => x.id === e.region)?.name ?? e.region;
           const text =
@@ -1023,7 +1235,14 @@ export function createDirector(options: DirectorOptions): Director {
             FLAG_TEXT[e.flag]?.[e.type === 'threshold.raised' ? 0 : 1] ?? e.flag,
             e.causes,
           );
-          if (e.type === 'threshold.raised') stoppedEarly = 'A crisis line was crossed.';
+          if (e.type === 'threshold.raised') {
+            stoppedEarly = 'A crisis line was crossed.';
+            write(
+              adviserFor(scenario, 'sales_tax_rise')?.id,
+              `${FLAG_TEXT[e.flag]?.[0] ?? 'A crisis line has been crossed.'} We have to decide what gives: spending, the currency, or our standing with the lenders. I would rather choose than have it chosen for us.`,
+              world.day,
+            );
+          }
         }
       }
       const month = monthOf(dateOf(world.startDate, world.day));
@@ -1078,9 +1297,12 @@ export function createDirector(options: DirectorOptions): Director {
           .slice(seen)
           .find((e) => !isRoutine(e) && (e.size === 'significant' || e.size === 'major'));
         if (notable) stoppedEarly = notable.summary;
+        else if (messages.some((m) => m.day === world.day))
+          stoppedEarly = 'Someone has written to you.';
       }
     }
     return {
+      ...(messages.length > 0 ? { messages } : {}),
       ...(Object.keys(stopped).length > 0 ? { stopped } : {}),
       world,
       toDay: world.day,
@@ -1111,10 +1333,6 @@ export function createDirector(options: DirectorOptions): Director {
     if (day < first) return 'enacted';
     return day < first + 30 ? 'implemented' : 'felt';
   }
-
-  const currentHour = (p: Projection) =>
-    [...p.resolutions].reverse().find((r) => r.status === 'committed' && r.hour !== undefined)
-      ?.hour ?? 9;
 
   /** Runs a turn from wherever it stopped. Finished steps are read back, not redone. */
   async function runResolution(id: string): Promise<void> {
@@ -1156,6 +1374,15 @@ export function createDirector(options: DirectorOptions): Director {
       r.apply.toDay,
       r.apply.world,
     );
+    for (const [n, message] of (r.apply.messages ?? []).entries()) {
+      ledger.append({
+        type: 'talk.incoming',
+        id: `${id}-m${n + 1}`,
+        actorId: message.actor,
+        text: message.text,
+        day: message.day,
+      });
+    }
     arrivingReactions = true;
     enqueue(0, () =>
       aftermath(id).finally(() => {
@@ -1184,6 +1411,13 @@ export function createDirector(options: DirectorOptions): Director {
     if (orders.length === 0) return;
 
     const context = { resolution: id, brief: scenario.brief };
+    const standingNow = standings(p, scenario);
+    // After a move of hours, answers reach the player one at a time over the day.
+    const startHour = (r.hour ?? currentHour(p)) - (r.hours ?? 0);
+    const dueAt = (n: number) => {
+      const hour = startHour + ([1, 3, 6][n % 3] ?? 6) + 3 * Math.floor(n / 3);
+      return { dueDay: r.fromDay + Math.floor(hour / 24), dueHour: hour % 24 };
+    };
     const stateNow = Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage]));
     const recent = allEvents(p)
       .slice(-6)
@@ -1220,7 +1454,7 @@ export function createDirector(options: DirectorOptions): Director {
               id: actor.id,
               name: actor.name,
               kind: actor.kind,
-              stance: actor.stance,
+              stance: stanceOf(standingNow.get(actor.id) ?? 0),
               voice: actor.voice,
             },
             options: (REACTION_OPTIONS[actor.kind] ?? []).map((o) => ({
@@ -1267,6 +1501,7 @@ export function createDirector(options: DirectorOptions): Director {
         policy: policy.id,
         kind: out.kind,
         text: out.text,
+        ...dueAt(n),
       });
       data.events.push({
         id: eventId,
@@ -1300,20 +1535,32 @@ export function createDirector(options: DirectorOptions): Director {
     mixedSignals: boolean,
     extra: { hours?: number; untilMajor?: boolean } = {},
   ) => {
-    const { world } = requireCampaign();
+    requireCampaign();
     requireQuiet();
-    const id = `r${ledger.count() + 1}`;
-    ledger.append({
-      type: 'resolution.started',
-      id,
-      kind,
-      fromDay: world.day,
-      days,
-      cardIds,
-      mixedSignals,
-      ...extra,
+    if (queuedMove) throw new DirectorError('busy', 'A move is already waiting to start.');
+    const start = () => {
+      const now = state().world;
+      if (!now) return Promise.resolve();
+      const id = `r${ledger.count() + 1}`;
+      ledger.append({
+        type: 'resolution.started',
+        id,
+        kind,
+        fromDay: now.day,
+        days,
+        cardIds,
+        mixedSignals,
+        ...extra,
+      });
+      return runResolution(id);
+    };
+    // A move made while reactions to the last one are still arriving starts once they have
+    // landed, so the record keeps its order.
+    queuedMove = true;
+    enqueue(0, () => {
+      queuedMove = false;
+      return start();
     });
-    enqueue(0, () => runResolution(id));
   };
 
   // A turn that was running when the server stopped picks up where it left off, and so do
@@ -1337,6 +1584,68 @@ export function createDirector(options: DirectorOptions): Director {
     friendly: 'on your side',
   } as const;
 
+  const worldView = (world: World): WorldView => ({
+    economy: economyRows(world),
+    groups: world.groups.map((g) => ({ id: g.id, name: g.name, mood: mood(g.approval) })),
+    regions: world.regions.map((x) => ({
+      id: x.id,
+      name: x.name,
+      stage: x.stage,
+      status: x.status,
+      owner: x.owner,
+      controller: x.controller,
+    })),
+    flags: world.flags,
+  });
+
+  /**
+   * A word from the player's own office before an order goes out. Rules only: what the
+   * office cannot order, what must pass a vote, and who is known to dislike this kind of
+   * measure. No model is asked.
+   */
+  function adviceOn(
+    text: string,
+    world: World,
+    scenario: Scenario,
+  ): { from: string; text: string }[] {
+    const match = matchInstrument(text, regionRefs(world));
+    if (match === undefined || match === 'novel') return [];
+    const instrument = CATALOGUE.find((c) => c.id === match.instrument);
+    if (!instrument) return [];
+    const advice: { from: string; text: string }[] = [];
+    const general = adviserFor(scenario)?.name ?? 'Your office';
+    if (!(scenario.office.powers as string[]).includes(instrument.authority)) {
+      return [
+        {
+          from: general,
+          text: scenario.office.limits[instrument.authority] ?? 'This is not within your powers.',
+        },
+      ];
+    }
+    if (instrument.authority === 'budget' && scenario.government)
+      advice.push({
+        from: general,
+        text: `This will need a vote in the ${scenario.government.legislature.name}.`,
+      });
+    const against = scenario.cast
+      .filter(
+        (c) =>
+          c.kind !== 'advisor' &&
+          c.dislikes.includes(match.instrument) &&
+          (c.cares.regions.length === 0 ||
+            match.region === undefined ||
+            c.cares.regions.includes(match.region)),
+      )
+      .slice(0, 3)
+      .map((c) => c.name);
+    if (against.length > 0)
+      advice.push({
+        from: adviserFor(scenario, match.instrument)?.name ?? general,
+        text: `Expect objections from ${against.join(', ').replace(/, ([^,]*)$/, ' and $1')}.`,
+      });
+    return advice;
+  }
+
   function buildView(): View {
     const { projection: p, world, scenario } = state();
     const active = running();
@@ -1346,8 +1655,30 @@ export function createDirector(options: DirectorOptions): Director {
     const lastCommitted = committed.at(-1);
     const lastCalls = lastCommitted ? (ledger.calls(lastCommitted.id) as CallView[]) : [];
     const reactions = new Map(
-      committed.flatMap((r) => (r.reactions?.reactions ?? []).map((x) => [x.id, x] as const)),
+      committed.flatMap((r) => landedReactions(r, p).map((x) => [x.id, x] as const)),
     );
+    const now = scenario ? standings(p, scenario) : undefined;
+    const before = scenario ? standings(p, scenario, committed.at(-1)?.fromDay ?? 0) : undefined;
+    const owed = scenario ? undertakings(p, scenario) : [];
+    const titles = new Map(committedPolicies(p).map(({ policy }) => [policy.id, policy.title]));
+    // The running story an event belongs to: an order and everything that followed from it,
+    // dealings with one actor, the economy, or one place.
+    const storyOf = (e: WorldEventView): { id: string; title: string } => {
+      const order = e.causes.find((c) => titles.has(c));
+      if (order) return { id: order, title: titles.get(order) ?? '' };
+      const actor = scenario?.cast.find((c) => e.causes.includes(`actor:${c.id}`));
+      if (actor) return { id: `actor:${actor.id}`, title: `Dealings with ${actor.name}` };
+      if (
+        e.kind.startsWith('figures') ||
+        e.kind.startsWith('threshold') ||
+        e.kind === 'prices' ||
+        e.kind === 'economy'
+      )
+        return { id: 'economy', title: 'The economy' };
+      const region = world?.regions.find((x) => x.id === e.place);
+      if (region) return { id: `place:${region.id}`, title: region.name };
+      return { id: 'country', title: 'Around the country' };
+    };
     const turnOf = new Map(
       committed.flatMap((r) =>
         [...(r.apply?.events ?? []), ...(r.reactions?.events ?? [])].map(
@@ -1392,7 +1723,7 @@ export function createDirector(options: DirectorOptions): Director {
               until: e.endDay === null ? null : dateOf(world.startDate, e.endDay),
             })),
             targets: figuresFor(policy, resolution, world),
-            reactions: (resolution.reactions?.reactions ?? [])
+            reactions: landedReactions(resolution, p)
               .filter((x) => x.policy === policy.id)
               .map((x) => ({
                 id: x.id,
@@ -1421,6 +1752,7 @@ export function createDirector(options: DirectorOptions): Director {
           date: e.date,
           size: e.size,
           routine: isRoutine(e),
+          story: storyOf(e),
           headline: said
             ? `${said.actorName} ${said.kind === 'action' ? 'acted' : said.kind === 'silence' ? 'stayed silent' : 'responded'}`
             : e.summary,
@@ -1453,7 +1785,10 @@ export function createDirector(options: DirectorOptions): Director {
               branch: ledger.currentBranch(),
             }
           : null,
-      cards: [...p.cards.values()],
+      cards: [...p.cards.values()].map((card) => {
+        const advice = world && scenario && !card.sent ? adviceOn(card.text, world, scenario) : [];
+        return advice.length > 0 ? { ...card, advice } : card;
+      }),
       running: active
         ? {
             id: active.id,
@@ -1461,24 +1796,12 @@ export function createDirector(options: DirectorOptions): Director {
             step: RESOLUTION_STEPS.find((x) => active[x] === undefined) ?? 'commit',
             done: RESOLUTION_STEPS.filter((x) => active[x] !== undefined),
           }
-        : null,
+        : queuedMove
+          ? { id: 'queued', kind: 'advance', step: 'compile', done: [] }
+          : null,
       blocked:
         lastExecute?.status === 'blocked' && lastExecute.blocked ? lastExecute.blocked : null,
-      world: world
-        ? {
-            economy: economyRows(world),
-            groups: world.groups.map((g) => ({ id: g.id, name: g.name, mood: mood(g.approval) })),
-            regions: world.regions.map((x) => ({
-              id: x.id,
-              name: x.name,
-              stage: x.stage,
-              status: x.status,
-              owner: x.owner,
-              controller: x.controller,
-            })),
-            flags: world.flags,
-          }
-        : null,
+      world: world ? worldView(world) : null,
       policies: policies.reverse(),
       chronicle,
       events,
@@ -1513,14 +1836,33 @@ export function createDirector(options: DirectorOptions): Director {
             }))
             .reverse()
         : [],
-      cast: (scenario?.cast ?? []).map((c) => ({
-        id: c.id,
-        name: c.name,
-        kind: c.kind,
-        stance: STANCE_WORD[c.stance],
-        askable: c.unreachable === undefined,
-        ...(c.unreachable ? { unreachable: c.unreachable } : {}),
-      })),
+      cast: (scenario?.cast ?? []).map((c) => {
+        const value = now?.get(c.id) ?? 0;
+        const change = value - (before?.get(c.id) ?? value);
+        const thread = p.talks.get(c.id) ?? [];
+        return {
+          id: c.id,
+          name: c.name,
+          kind: c.kind,
+          stance: STANCE_WORD[stanceOf(value)],
+          trend:
+            change > 2
+              ? ('warming' as const)
+              : change < -2
+                ? ('cooling' as const)
+                : ('steady' as const),
+          unread: Math.max(0, thread.filter((t) => t.incoming).length - (p.seen.get(c.id) ?? 0)),
+          undertakings: owed
+            .filter((u) => u.actor.id === c.id)
+            .map((u) => ({
+              text: u.text,
+              state: outcomeOf(u.id, events),
+              by: world ? dateOf(world.startDate, u.dueDay) : '',
+            })),
+          askable: c.unreachable === undefined,
+          ...(c.unreachable ? { unreachable: c.unreachable } : {}),
+        };
+      }),
       talks: world
         ? Object.fromEntries(
             [...p.talks].map(([actor, thread]) => [
@@ -1529,12 +1871,20 @@ export function createDirector(options: DirectorOptions): Director {
                 id: t.id,
                 date: dateOf(world.startDate, t.day),
                 question: t.question,
+                ...(t.incoming ? { incoming: true } : {}),
                 ...(t.reply !== undefined ? { reply: t.reply } : {}),
               })),
             ]),
           )
         : {},
-      arriving: { reactions: arrivingReactions, entries: [...writing] },
+      arriving: {
+        reactions: arrivingReactions,
+        entries: [...writing],
+        later: committed.reduce(
+          (sum, r) => sum + (r.reactions?.reactions.length ?? 0) - landedReactions(r, p).length,
+          0,
+        ),
+      },
       lastResolution: lastCommitted
         ? {
             id: lastCommitted.id,
@@ -1563,12 +1913,13 @@ export function createDirector(options: DirectorOptions): Director {
       : `${ran[0]?.toUpperCase()}${ran.slice(1)}`;
   };
 
-  let viewCache: { version: number; view: View } | undefined;
+  let viewCache: { key: string; view: View } | undefined;
 
   return {
     view() {
-      if (!viewCache || viewCache.version !== ledger.version())
-        viewCache = { version: ledger.version(), view: buildView() };
+      // The view depends on the ledger and on what is still in flight.
+      const key = `${ledger.version()}|${arrivingReactions}|${queuedMove}|${[...writing].join()}`;
+      if (viewCache?.key !== key) viewCache = { key, view: buildView() };
       return viewCache.view;
     },
     scenarios: () =>
@@ -1771,7 +2122,13 @@ export function createDirector(options: DirectorOptions): Director {
           },
           { resolution: 'talks', brief: scenario.brief },
         );
-        ledger.append({ type: 'talk.replied', id, reply: output.reply, via });
+        ledger.append({
+          type: 'talk.replied',
+          id,
+          reply: output.reply,
+          via,
+          ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
+        });
       });
     },
     cancel() {
@@ -1850,6 +2207,23 @@ export function createDirector(options: DirectorOptions): Director {
         apply.toDay,
         apply.world,
       );
+    },
+    moment(turnId) {
+      const { projection, world } = requireCampaign();
+      const turn = projection.resolutions.find((r) => r.id === turnId && r.status === 'committed');
+      const snapshot = turn?.commitSeq ? ledger.snapshotAt(turn.commitSeq) : undefined;
+      if (!turn || !snapshot) throw new DirectorError('not_found', 'No such turn.');
+      return {
+        turn: turnId,
+        date: dateOf(world.startDate, snapshot.day),
+        world: worldView(snapshot.world as World),
+      };
+    },
+    markRead(actorId) {
+      const { projection } = requireCampaign();
+      const incoming = (projection.talks.get(actorId) ?? []).filter((t) => t.incoming).length;
+      if (incoming > (projection.seen.get(actorId) ?? 0))
+        ledger.append({ type: 'talk.read', actorId });
     },
     calls: (resolution) => ledger.calls(resolution) as CallView[],
     mapData() {

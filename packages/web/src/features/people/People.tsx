@@ -1,5 +1,5 @@
 import { Users } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDate, useGame } from '@/lib/game';
@@ -34,6 +34,11 @@ export function People() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const person = cast.find((c) => c.id === chosen) ?? cast[0];
+  const unread = person?.unread ?? 0;
+  const personId = person?.id;
+  useEffect(() => {
+    if (unread > 0 && personId) void api.markRead(personId);
+  }, [unread, personId]);
   if (!person) {
     return (
       <EmptyState icon={Users} title="Nobody here yet">
@@ -67,11 +72,12 @@ export function People() {
                   aria-current={c.id === person.id}
                   onClick={() => setChosen(c.id)}
                   className={cn(
-                    'block w-full px-3 py-1 text-left text-xs hover:bg-raised',
+                    'flex w-full items-center gap-2 px-3 py-1 text-left text-xs hover:bg-raised',
                     c.id === person.id ? 'bg-accent-soft text-fg' : 'text-fg-muted',
                   )}
                 >
-                  {c.name}
+                  <span className="min-w-0 flex-1">{c.name}</span>
+                  {c.unread > 0 && <Badge tone="accent">{c.unread} new</Badge>}
                 </button>
               ))}
           </div>
@@ -80,13 +86,33 @@ export function People() {
       <section aria-label={person.name} className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b border-border px-4 py-2">
           <h3 className="min-w-0 flex-1 truncate font-semibold">{person.name}</h3>
+          {person.trend !== 'steady' && (
+            <span className={cn('text-2xs', person.trend === 'warming' ? 'text-good' : 'text-bad')}>
+              {person.trend}
+            </span>
+          )}
           <Badge tone={STANCE_TONE[person.stance] ?? 'neutral'}>{person.stance}</Badge>
         </header>
+        {person.undertakings.length > 0 && (
+          <ul
+            aria-label="What you have undertaken"
+            className="border-b border-border bg-surface-2 px-4 py-2 text-xs"
+          >
+            {person.undertakings.map((u) => (
+              <li key={u.text} className="flex items-baseline gap-2 text-fg-muted">
+                <Badge tone={u.state === 'kept' ? 'good' : u.state === 'broken' ? 'bad' : 'warn'}>
+                  {u.state === 'open' ? `due by ${formatDate(u.by)}` : u.state}
+                </Badge>
+                <span className="min-w-0 flex-1">You said: {u.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
         <ol aria-label="Conversation" className="min-h-0 flex-1 overflow-auto p-4">
           {thread.length === 0 && (
             <li className="text-fg-muted">
               {person.askable
-                ? 'Ask what they make of something. They answer from what they know and where they stand, and they may not tell you everything.'
+                ? 'Ask what they make of something, or put something on the table. An undertaking you give is remembered and you will be held to it.'
                 : person.unreachable}
             </li>
           )}
@@ -96,7 +122,11 @@ export function People() {
                 <span className="tabular mr-2 text-2xs text-fg-subtle">
                   {formatDate(turn.date)}
                 </span>
-                {turn.question}
+                {turn.incoming ? (
+                  <span className="label-caps text-accent">They wrote to you</span>
+                ) : (
+                  turn.question
+                )}
               </p>
               {turn.reply === undefined ? (
                 <p className="mt-1 text-fg-subtle">Waiting for an answer…</p>

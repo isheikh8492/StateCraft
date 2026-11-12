@@ -171,6 +171,13 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     game.director().expandEntry(request.params.id);
     return reply.code(202).send(view());
   });
+  app.get<{ Params: { id: string } }>('/api/moment/:id', async (request) =>
+    game.director().moment(request.params.id),
+  );
+  app.post<{ Params: { id: string } }>('/api/people/:id/read', async (request) => {
+    game.director().markRead(request.params.id);
+    return view();
+  });
   app.post('/api/ask', async (request, reply) => {
     const data = body(AskRequest, request.body, reply, 'Choose someone and type a question.');
     if (!data) return reply;

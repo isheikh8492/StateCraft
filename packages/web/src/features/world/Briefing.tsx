@@ -1,6 +1,6 @@
 import { Globe } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useGame } from '@/lib/game';
+import { formatDate, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { EmptyState } from '@/ui/empty-state';
 
@@ -19,8 +19,7 @@ const FLAGS: Record<string, string> = {
 
 /** The state of play on one page: the figures, the public mood, each region, and the risks. */
 export function Briefing() {
-  const { view, place, setPlace } = useGame();
-  const world = view?.world;
+  const { view, world, moment, place, setPlace } = useGame();
   if (!world) {
     return (
       <EmptyState icon={Globe} title="No campaign yet">
@@ -39,6 +38,11 @@ export function Briefing() {
 
   return (
     <div className="h-full overflow-auto p-4">
+      {moment && (
+        <p className="mb-3 rounded-control border border-accent/40 bg-accent-soft px-2 py-1 text-xs text-accent">
+          As things stood on {formatDate(moment.date, true)}.
+        </p>
+      )}
       <section aria-labelledby="b-risks">
         <h3 id="b-risks" className="label-caps text-fg-subtle">
           State of play
