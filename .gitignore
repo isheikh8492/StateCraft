@@ -1,0 +1,15 @@
+node_modules/
+dist/
+data/
+*.statecraft
+*.statecraft-wal
+*.statecraft-shm
+.env
+.env.*
+!.env.example
+test-results/
+playwright-report/
+.vite/
+*.log
+.DS_Store
+_to_delete/
