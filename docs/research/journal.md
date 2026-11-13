@@ -3,6 +3,68 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 1 continued: a year and a half on a real model, and the M0 gate
+
+**Played.** Eighteen in-game months on `openai/gpt-oss-20b`, on the build with the month's
+fixes, from `plans/year-1.json`: 12 orders, 7 questions, 4 full accounts, moves from an hour
+to a month and one "to next major event", and a rewind. No step failed. Transcript and
+numbers: `sessions/2026-11-12-year-1.md` and `.json`.
+
+**Measured.**
+
+| | |
+| --- | --- |
+| Model calls | 69 |
+| First try / second try / fell back | 65 / 3 / 1 |
+| Held to the schema | 69 of 69 |
+| Put right locally | 13 |
+| Wait for a turn with orders | 37 s on average, 78 s at worst |
+| Time to first token / generation speed | 3.6 s / 19.6 tokens a second |
+| Tokens in / out / thinking | 99,363 / 20,901 / 6,047 |
+| Events recorded / unprompted moves | 199 / 26 |
+
+Second tries fell from 4 in 21 calls to 3 in 69. The judge needed none in 17 turns; in the
+month it needed 2 in 5.
+
+**The M0 gate is passed:** a term of more than a year played end to end on a local model.
+
+**Learned.**
+
+1. *Every order landed "partial".* All twelve. The judge is told that most large changes
+   land partially and never picks anything else. Nothing ever goes as intended, stalls or
+   backfires, so issuing an order has no suspense.
+2. *"To next major event" ran for five and a half months.* It looked only at what the engine
+   did after the day's planned events, so nothing the judge or the cast did could stop it.
+3. *A second opinion ran on 14 of 17 judged turns* at 6.7 s each, as a third call before the
+   commit.
+4. *Follow-ups lost their subject.* A later beat is printed weeks afterwards as news of its
+   own, and several read "It may intensify insurgent activities" or "They launch
+   coordinated ambushes".
+5. *The judge's events repeat and flatten.* Fourteen in a row sized "significant"; "Sindh
+   farmers protest over wheat prices" and "a brief riot in Islamabad central market" came
+   back almost word for word the next month. With the budget raised, "significant" stopped
+   meaning anything.
+6. *The order reader still wasted calls:* twice it left the region off an order that named
+   one, and once it filed a card in two places three times running and fell back.
+7. *Notes for the record carried invented figures:* "Development spending cut by 19% of GDP"
+   for an order to cut it by a fifth.
+8. *A year has no stakes.* The army warned of "a more decisive intervention" and the
+   opposition demanded the Prime Minister's dismissal, and neither can happen. There is no
+   way to lose.
+9. *A reply mislabelled as a threat:* the Finance Minister was asked a plain question and the
+   model filed a "threat" lever, which costs standing. Seen once; watch for it.
+
+**Decided.**
+
+- Fixed now: "to next major event" stops on anything notable that day; no second opinion
+  before the commit (decision record 0010); a follow-up is given its subject back and the
+  writer is told how it will be printed; a card filed twice keeps its policy; a region named
+  in the order is used; a note with invented figures is replaced with plain wording; an
+  account's undeclared figure is taken out instead of asked for again.
+- Next, in this order: the dice decide how an order lands and the model words it (finding
+  1); freedom of action (the catalogue and novel orders); ways to lose office (finding 8);
+  events of the world's own drawn by the engine (finding 5).
+
 ## 2026-11-12, pass 1: the first month on a real model
 
 **Played.** One in-game month as Prime Minister of Pakistan on `openai/gpt-oss-20b` in LM

@@ -283,6 +283,23 @@ export const policyCompile: Job<CompileIn, CompileOut> = {
       policy.region = region;
       fixes.push(`policies[${i}].region: read as "${region}" from the order's own words`);
     }
+    // A card turned into a policy and also filed as a duplicate, a conflict or a question:
+    // the policy stands and the other filing is dropped. A card filed twice among those
+    // keeps its first filing.
+    const taken = new Set(out.policies.flatMap((policy) => policy.fromCards));
+    const once = <T>(list: T[], cardsOf: (item: T) => string[], name: string): T[] =>
+      list.filter((item) => {
+        const cards = cardsOf(item);
+        if (cards.some((card) => taken.has(card))) {
+          fixes.push(`${name}: dropped a second filing of a card already accounted for`);
+          return false;
+        }
+        for (const card of cards) taken.add(card);
+        return true;
+      });
+    out.duplicates = once(out.duplicates, (d) => [d.card], 'duplicates');
+    out.conflicts = once(out.conflicts, (c) => c.cards, 'conflicts');
+    out.needsDetail = once(out.needsDetail, (n) => [n.card], 'needsDetail');
     return fixes;
   },
   check(input, out) {
@@ -432,6 +449,12 @@ const AdjudicateOut = z.object({
 export type AdjudicateOut = z.infer<typeof AdjudicateOut>;
 
 const MAX_EVENTS = 8;
+const PLAIN_NOTE = {
+  as_intended: 'Carried out as ordered.',
+  partial: 'Carried out in part, with the usual friction.',
+  stalled: 'Announced, but it has not moved.',
+  backfired: 'Carried out, and it has turned against the government.',
+} as const;
 
 export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
   name: 'turn.adjudicate',
@@ -500,6 +523,15 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     // The engine holds the budget for grave events, so an event too many is taken down a
     // size here instead of costing a second call: the event still happens, as lesser news.
     const fixes: string[] = [];
+    // The engine works out what an order moved, and the policy page shows it. A note that
+    // quotes figures of its own ("cut by 19% of GDP") is replaced with plain wording.
+    for (const [id, outcome] of Object.entries(out.outcomes)) {
+      if (inventedNumbers(outcome.note, input).length === 0) continue;
+      outcome.note = PLAIN_NOTE[outcome.result];
+      fixes.push(
+        `outcomes.${id}.note: replaced, since it stated figures that are not in the input`,
+      );
+    }
     let major = input.surpriseBudget.major;
     let significant = input.surpriseBudget.significant;
     for (const [i, e] of out.events.entries()) {
@@ -714,11 +746,19 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
       details: list(obj({ label: str(60), value: str(60) }), 8),
     }),
   mend(input, out) {
+    const fixes: string[] = [];
+    const sound = dropInvented(out.body, [input, out.details]);
+    if (sound && sound.dropped > 0) {
+      out.body = sound.text;
+      fixes.push(`body: took out ${sound.dropped} sentence(s) stating figures it did not declare`);
+    }
     // A piece that overran is trimmed here. Asking for it again costs a whole second call.
-    if (words(out.body) <= Math.round(input.words * 1.2)) return [];
-    const before = words(out.body);
-    out.body = clipWords(out.body, input.words);
-    return [`body: trimmed from ${before} to ${words(out.body)} words`];
+    if (words(out.body) > Math.round(input.words * 1.2)) {
+      const before = words(out.body);
+      out.body = clipWords(out.body, input.words);
+      fixes.push(`body: trimmed from ${before} to ${words(out.body)} words`);
+    }
+    return fixes;
   },
   check(input, out) {
     const problems: string[] = [];
@@ -782,7 +822,7 @@ const REACT_RULES = `You voice one actor in a political simulation answering an 
 - Respond to what the order actually says ("order.text"), not to a generic policy.
 - "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
 - "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
-- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens.
+- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...".
 - Stay within what this actor could really do. Use no figures that are not in the input.`;
 
 const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>

@@ -7,9 +7,13 @@ If you are picking this project up cold, read this section, then the tables belo
 - **What exists:** a playable slice. You are Prime Minister of Pakistan from November 2026: write orders, move time, see who answers, ask people, give undertakings, look back, rewind.
 - **The standing brief is `docs/GOAL.md`.** Work follows its loop. The comparison with Modern Day 2026 is `docs/research/scorecard.md`; what each pass played, measured and decided is `docs/research/journal.md`.
 - **Verified on a real model (2026-11-12):** one in-game month on `openai/gpt-oss-20b` in LM Studio, on Windows. 21 model calls, none fell back to built-in wording, 4 needed a second try, all 21 held to the schema by the server. A turn with orders took 33 s on average and 71 s at worst; about 19 tokens a second. Transcript: `docs/research/sessions/2026-11-12-month-1.md`. `npm run check` passes on Windows.
-- **Not verified:** a full year on a real model (in progress; the M0 gate stays open until it is recorded); CI has not run since the map moved to MapLibre; the Anthropic and Gemini adapters have never made a real call.
+- **The M0 gate passed on 2026-11-12:** eighteen in-game months on the local model with no failed step (see step 8 in the table below). M1 is the current milestone.
+- **Not verified:** CI has not run since the map moved to MapLibre; the Anthropic and Gemini adapters have never made a real call; no hosted model has been measured.
 - **Next, in order:**
-  1. Play a year on a real local model through LM Studio and record the numbers the Inspector now shows (time to first token, tokens a second, how often the schema was enforced, how often the fallback was used).
+  1. Let the dice decide how an order lands (as intended, in part, stalled, backfired) so that not every order ends "partial", as all twelve did in the year played; the model then words it.
+  1a. Freedom of action: a wider catalogue, and orders outside it with consequences that fit what was ordered.
+  1b. Ways to lose office, so that a year has stakes.
+  1c. Events of the world's own drawn by the engine from the cast and the state of the country, in place of the judge's free-hand one-liners.
   2. Check that an undertaking was kept by its specifics, not just by the kind of order issued.
   3. Give the judge a memory beyond the last eight events, and carry detail figures forward (same mechanism).
   4. Personas, plots and betrayal: actors with traits and private motives. The cast already acts first (decision record 0009), but from the state of the country, not from a character. With it, ways to lose office (a confidence vote, a coup, an election), so there is something to scheme for.
@@ -40,13 +44,15 @@ Scope: one country (Pakistan), one position (head of government), policy only. G
 | 5. Reading the world | Done in part (see below) | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, MapLibre map of regions with no tile service. See gaps. |
 | 6. Saves and branches | Done | Snapshot at every commit, rewind to any saved point or any date onto a new branch, old line kept. Decision record 0006. |
 | 7. Developer tools | Done | Inspector with every model call and a cost meter: per call, the time to the first token, tokens a second, thinking tokens, whether the server enforced the schema, and what was put right locally. True numbers behind a developer switch. |
-| 8. Gate | **Not passed** | A one-year term plays end to end on the scripted stand-in and on no model at all (tested). It has not been run on a real model: no local or hosted model was available where this was built. |
+| 8. Gate | **Passed 2026-11-12** | Eighteen in-game months (1 November 2026 to 26 April 2028) played end to end on `openai/gpt-oss-20b` in LM Studio on Windows, through the real server: 12 orders, 7 questions to the cast, 4 full accounts, a rewind onto a new branch, no failed step. 69 model calls: 65 answered first try, 3 after a second try, 1 fell back to built-in wording; all 69 held to the schema by the server; 13 small mistakes put right locally. A turn with orders took 37 s on average and 78 s at worst; 19.6 tokens a second; 3.6 s to the first token; 99,363 tokens in and 20,901 out. Transcript and numbers: `docs/research/sessions/2026-11-12-year-1.md` and `.json`. Run on the build before the fixes that session led to. |
 
-## What must happen before M0 is called finished
+## What is left of M0
 
-1. **Play a year on a real local model** through LM Studio and read the Inspector: how often it falls back, how often the schema is enforced, the time to the first token, the tokens a second, how long a resolution takes, how many tokens it uses. Record the numbers here. Everything in decision record 0008 was built for this run and has not yet met a real model.
-2. **Run `npm run check` on Windows.** Everything so far was verified on Linux only.
-3. **Try the Anthropic and Gemini adapters with real keys.** They follow the published wire formats but have never made a real call.
+The gate has passed. These remain open and do not block M1:
+
+1. **Try the Anthropic and Gemini adapters with real keys.** They follow the published wire formats but have never made a real call. Needs keys from the owner.
+2. **CI has not run since the map moved to MapLibre.**
+3. The requirements listed below as reduced or not built.
 
 ## M0 requirements not met yet
 

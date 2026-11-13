@@ -51,7 +51,6 @@ import {
   type Size,
   turnAdjudicate,
   turnReactions,
-  turnReview,
 } from '@statecraft/models';
 import {
   type CallView,
@@ -419,6 +418,13 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
     'The premium on government debt eased.',
   ],
 };
+/**
+ * A follow-up is reported weeks later as news on its own, so "It steps up attacks" has lost
+ * whoever "it" was. The sentence is given its subject back.
+ */
+const named = (sentence: string, name: string) =>
+  sentence.replace(/^(It|They|The group|The party)\b/, name);
+
 /** How many actors answer one order in full; the rest are noted by name. */
 const MAX_REACTIONS = 3;
 /** And how many answer in a whole turn, however much was ordered. */
@@ -939,29 +945,9 @@ export function createDirector(options: DirectorOptions): Director {
       })),
     };
 
-    // A second opinion, for major events only (REQ-JOB-12). Orders outside the catalogue do
-    // not need one: the engine already holds their effects to small amounts.
-    const major = data.events.filter((e) => e.size === 'major');
-    if (major.length > 0) {
-      const items = major.map((e, index) => ({
-        index,
-        summary: e.summary,
-        causes: e.causes.map((id) => ({
-          id,
-          summary: input.recent.find((x) => x.id === id)?.summary ?? id,
-        })),
-        actorPowers: [],
-      }));
-      const review = await harness.run(turnReview, { items }, context);
-      const failed = new Set(
-        Object.entries(review.output.verdicts)
-          .filter(([, v]) => !(v.plausible && v.caused && v.withinPower))
-          .map(([index]) => Number(index)),
-      );
-      data.events = data.events.filter(
-        (e) => !(e.size === 'major' && failed.has(major.indexOf(e))),
-      );
-    }
+    // No second opinion is asked for before the turn commits (decision record 0010): the
+    // schema and the mender already hold a grave event to the budget and to a cited cause,
+    // and a third call was costing every long turn seven seconds or more.
     return data;
   }
 
@@ -1197,6 +1183,8 @@ export function createDirector(options: DirectorOptions): Director {
     ];
 
     for (let i = 0; i < days && !stoppedEarly; i++) {
+      // Everything from here on happened today, whoever caused it.
+      const dayStart = events.length;
       for (const policy of pendingEnact.filter(
         (x) => x.enactDay === world.day && x.enactDay !== r.fromDay,
       )) {
@@ -1278,7 +1266,6 @@ export function createDirector(options: DirectorOptions): Director {
           beat.place ? { place: beat.place } : {},
         );
       }
-      const seen = events.length;
       const stepped = stepDay(world);
       world = stepped.world;
       for (const e of stepped.events) {
@@ -1373,7 +1360,7 @@ export function createDirector(options: DirectorOptions): Director {
       // "To the next event that matters": stop the day something notable happens.
       if (r.untilMajor && !stoppedEarly) {
         const notable = events
-          .slice(seen)
+          .slice(dayStart)
           .find((e) => !isRoutine(e) && (e.size === 'significant' || e.size === 'major'));
         if (notable) stoppedEarly = notable.summary;
         else if (messages.some((m) => m.day === world.day))
@@ -1742,8 +1729,8 @@ export function createDirector(options: DirectorOptions): Director {
           dueDay: world.day + out.later.inDays,
           policy: cause,
           ...(where ? { place: where } : {}),
-          ifYes: out.later.ifYes,
-          ifNo: out.later.ifNo,
+          ifYes: named(out.later.ifYes, actor.name),
+          ifNo: named(out.later.ifNo, actor.name),
         });
       }
     }
