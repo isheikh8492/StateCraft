@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react';
+import { Check, Plus, Users } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -40,33 +40,48 @@ function Reply({ id, reply }: { id: string; reply: string | undefined }) {
   );
 }
 
-/** Orders an adviser drafted: each can be put on the desk as written, to edit or send. */
-function DraftOrders({ orders }: { orders: string[] }) {
-  const { act, openWindow } = useGame();
-  const [added, setAdded] = useState<string[]>([]);
+/**
+ * Orders an adviser suggested, as boxes. The plus copies one to the policy desk as written.
+ * The mark follows the desk itself, not the click: a tick while a box with those words is
+ * on the desk or has been sent as an order, and a plus again if the box is removed.
+ */
+function Suggestions({ orders }: { orders: string[] }) {
+  const { view, act } = useGame();
+  const onDesk = new Set((view?.cards ?? []).map((card) => card.text.trim()));
+  const sent = new Set((view?.policies ?? []).flatMap((p) => p.orders.map((o) => o.trim())));
   return (
-    <ul aria-label="Draft orders" className="mt-2 flex flex-col gap-1.5">
-      {orders.map((order) => (
-        <li
-          key={order}
-          className="flex items-start gap-2 rounded-control border border-border bg-surface-2 px-2 py-1.5"
-        >
-          <span className="min-w-0 flex-1 text-xs text-fg">{order}</span>
-          <Button
-            size="sm"
-            disabled={added.includes(order)}
-            onClick={() =>
-              void act(() => api.addCard(order)).then((ok) => {
-                if (!ok) return;
-                setAdded((all) => [...all, order]);
-                openWindow('desk');
-              })
-            }
+    <ul aria-label="Suggested orders" className="mt-2 flex flex-col gap-1.5">
+      {orders.map((order) => {
+        const text = order.trim();
+        const taken = onDesk.has(text) || sent.has(text);
+        const state = sent.has(text) && !onDesk.has(text) ? 'Sent as an order' : 'On your desk';
+        return (
+          <li
+            key={order}
+            className={cn(
+              'flex items-center gap-2 rounded-control border px-2 py-1.5',
+              taken ? 'border-good/50 bg-surface-2' : 'border-border bg-surface-2',
+            )}
           >
-            {added.includes(order) ? 'On your desk' : 'Put on desk'}
-          </Button>
-        </li>
-      ))}
+            <span className="min-w-0 flex-1 text-xs text-fg">{order}</span>
+            <button
+              type="button"
+              disabled={taken}
+              aria-label={taken ? `${state}: ${order}` : `Copy to the policy desk: ${order}`}
+              title={taken ? state : 'Copy to the policy desk'}
+              onClick={() => void act(() => api.addCard(text))}
+              className={cn(
+                'flex size-6 shrink-0 items-center justify-center rounded-control border',
+                taken
+                  ? 'border-good/50 text-good'
+                  : 'border-border text-fg-muted hover:border-accent hover:text-accent',
+              )}
+            >
+              {taken ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -173,7 +188,7 @@ export function People() {
                 )}
               </p>
               <Reply id={turn.id} reply={turn.reply} />
-              {turn.orders && turn.orders.length > 0 && <DraftOrders orders={turn.orders} />}
+              {turn.orders && turn.orders.length > 0 && <Suggestions orders={turn.orders} />}
             </li>
           ))}
         </ol>
