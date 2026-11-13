@@ -143,7 +143,8 @@ export function createHarness(options: HarnessOptions): Harness {
           turns: [{ role: 'user', content: '{}' }],
           schema: WARM_SCHEMA,
           schemaName: 'warm_up',
-          maxTokens: 16,
+          // Room for a model that thinks before it answers, however briefly.
+          maxTokens: 200,
           signal: AbortSignal.timeout(Math.min(timeoutMs, 120_000)),
         });
         // The warm-up doubles as the schema test, so the first real call already runs with

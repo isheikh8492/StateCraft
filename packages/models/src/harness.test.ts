@@ -5,6 +5,7 @@ import { adapterFor } from './adapters.ts';
 import { createHarness, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
+  dropInvented,
   INSTRUMENT_REFS,
   policyReact,
   policyRead,
@@ -13,7 +14,7 @@ import {
   turnReactions,
 } from './jobs.ts';
 import { partialStrings } from './partial.ts';
-import { mend } from './shape.ts';
+import { clipWords, mend } from './shape.ts';
 import { startStandIn } from './standin.ts';
 
 /**
@@ -291,5 +292,54 @@ describe('a per-call schema', () => {
     ]);
     expect(out).toMatchObject({ kind: 'statement' });
     expect(out.option).toBeUndefined();
+  });
+
+  // Each of these cost a whole second call in the first month played on a real local model.
+  it('takes out a sentence resting on an invented figure, and keeps the rest', () => {
+    const known = { state: { inflation: 10.3 } };
+    const text =
+      'Prices are rising at 10.3% a year. Fares will jump by 30% within a month. "We warned them," he said.';
+    expect(dropInvented(text, known)).toEqual({
+      text: 'Prices are rising at 10.3% a year. "We warned them," he said.',
+      dropped: 1,
+    });
+    expect(dropInvented('Nothing to see.', known)).toEqual({ text: 'Nothing to see.', dropped: 0 });
+    // With nothing sound left, the reply has to be asked for again.
+    expect(dropInvented('Fares will jump by 30%.', known)).toBeUndefined();
+  });
+
+  it('takes a grave event the budget does not allow down a size, and offers no size it rules out', () => {
+    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
+    const schema = turnAdjudicate.schema(input) as any;
+    expect(schema.properties.events.items.properties.size.enum).toEqual([
+      'colour',
+      'minor',
+      'significant',
+    ]);
+    const event = (size: 'major' | 'significant', causes: string[]) => ({
+      kind: 'strike',
+      size,
+      summary: 'A strike.',
+      inDays: 2,
+      effects: {},
+      causes,
+    });
+    const out = {
+      why: '',
+      outcomes: turnAdjudicate.fallback(input).outcomes,
+      events: [event('major', ['e1']), event('significant', []), event('significant', [])],
+    };
+    expect(turnAdjudicate.mend?.(input, out)).toHaveLength(3);
+    expect(out.events.map((e) => e.size)).toEqual(['significant', 'minor', 'minor']);
+    expect(turnAdjudicate.check(input, out)).toEqual([]);
+  });
+
+  it('trims prose at a sentence end without flattening its paragraphs', () => {
+    const text = 'One two three four. Five six seven eight.\n\nNine ten eleven twelve. Thirteen.';
+    expect(clipWords(text, 13)).toBe(text);
+    expect(clipWords(text, 12)).toBe(
+      'One two three four. Five six seven eight.\n\nNine ten eleven twelve.',
+    );
+    expect(clipWords('One two three four five six seven', 4)).toBe('One two three four…');
   });
 });

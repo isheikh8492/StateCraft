@@ -1534,8 +1534,13 @@ export function createDirector(options: DirectorOptions): Director {
       // Three answers to an order, and no more than five in a turn however much was
       // ordered: past that the wait grows and nobody reads them all (spec: Speed).
       const room = Math.max(0, Math.min(MAX_REACTIONS, REACTIONS_PER_TURN - asked.length));
-      others[policy.id] = touched.slice(room).map((t) => t.actor.name);
-      for (const { actor } of touched.slice(0, room)) asked.push({ policy, actor });
+      // Nobody answers twice in one turn: whoever has spoken on one order is only named on
+      // the next, so the same party is not heard saying much the same thing again.
+      const spoken = new Set(asked.map((a) => a.actor.id));
+      const fresh = touched.filter((t) => !spoken.has(t.actor.id));
+      const chosen = new Set(fresh.slice(0, room).map((t) => t.actor.id));
+      others[policy.id] = touched.filter((t) => !chosen.has(t.actor.id)).map((t) => t.actor.name);
+      for (const { actor } of fresh.slice(0, room)) asked.push({ policy, actor });
     }
     const answering = asked.length;
     if (moves > 0) {
@@ -2235,10 +2240,11 @@ export function createDirector(options: DirectorOptions): Director {
               ...(speakers.has(e.id) ? { speaker: speakers.get(e.id) ?? '' } : {}),
             }));
           const place = world.regions.find((x) => x.id === event.place);
+          // What somebody said or did is never a footnote: it gets a full paragraph at least.
           const weight =
             event.size === 'major'
               ? 'major'
-              : event.size === 'significant'
+              : event.size === 'significant' || speakers.has(event.id)
                 ? 'significant'
                 : 'minor';
           const { output, via } = await harness.run(

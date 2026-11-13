@@ -506,12 +506,11 @@ describe('writing', () => {
     const full = director.view().chronicle.find((e) => e.id === entry?.id)?.full ?? '';
     const account = seen.get(entry?.id ?? '')?.filter((t): t is string => !!t) ?? [];
     expect(account.length).toBeGreaterThan(1);
-    // This one ran past its length, so what is saved is what was watched arriving, cut at
-    // the end of a sentence with its paragraphs intact.
+    // What somebody said is given a full paragraph's room, so what is saved is what was
+    // watched arriving, paragraphs intact.
     expect(full.length).toBeGreaterThan(100);
     expect(full).toContain('\n\n');
-    expect(account.at(-1)?.startsWith(full)).toBe(true);
-    expect(account.at(-1)).not.toBe(full);
+    expect(account.at(-1)).toBe(full);
 
     // Answers due over the coming hours are not shown early.
     seen.clear();

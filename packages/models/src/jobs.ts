@@ -1,6 +1,6 @@
 import { CATALOGUE, type Direction, type Scale } from '@statecraft/engine';
 import { z } from 'zod';
-import { matchInstrument, OPPOSITES, type Ref } from './match.ts';
+import { findRegion, matchInstrument, OPPOSITES, type Ref } from './match.ts';
 import {
   bool,
   clipWords,
@@ -267,6 +267,24 @@ export const policyCompile: Job<CompileIn, CompileOut> = {
       needsDetail: list(obj({ card, question: str(160) }), n),
     });
   },
+  mend(input, out) {
+    // A policy that needs a place and was given none: if the player's own words name a
+    // region, that is the place, and it is not worth a second call to be told so.
+    const fixes: string[] = [];
+    for (const [i, policy] of out.policies.entries()) {
+      const needs = input.instruments.find((x) => x.id === policy.instrument)?.needsRegion;
+      if (!needs || policy.region !== undefined) continue;
+      const words = input.cards
+        .filter((c) => policy.fromCards.includes(c.id))
+        .map((c) => c.text)
+        .join(' ');
+      const region = findRegion(words, input.regions);
+      if (!region) continue;
+      policy.region = region;
+      fixes.push(`policies[${i}].region: read as "${region}" from the order's own words`);
+    }
+    return fixes;
+  },
   check(input, out) {
     const problems: string[] = [];
     const cards = new Set(input.cards.map((c) => c.id));
@@ -433,6 +451,7 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
 - Each event needs a "kind", a "size", a one-sentence "summary" (at most 200 characters) that names who did what and where, "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "outcomes" where one of them really led to it, otherwise an empty list. An event of size "major" must cite a cause.
 - Event "effects" may name only the variables in "eventLimits", each between minus and plus its limit. Give effects to events that would really move something; leave the object empty otherwise.
 - Stay inside "surpriseBudget" for events of size major and significant.
+- Keep to the calendar. "period" gives the dates: write what fits that month and season in this country, and nothing that belongs to another time of year.
 - "place" is a region id from the list. Use ids only. State what happens; do not comment on whether it is right or wrong.`,
   output: AdjudicateOut,
   schema(input) {
@@ -463,7 +482,8 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         obj(
           {
             kind: str(40),
-            size: pick(SIZES),
+            // A size the budget rules out is not offered at all.
+            size: pick(SIZES.filter((size) => size !== 'major' || input.surpriseBudget.major > 0)),
             summary: str(200),
             place: pick(regions),
             inDays: int(0, Math.max(input.period.days, 0)),
@@ -475,6 +495,28 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         MAX_EVENTS,
       ),
     });
+  },
+  mend(input, out) {
+    // The engine holds the budget for grave events, so an event too many is taken down a
+    // size here instead of costing a second call: the event still happens, as lesser news.
+    const fixes: string[] = [];
+    let major = input.surpriseBudget.major;
+    let significant = input.surpriseBudget.significant;
+    for (const [i, e] of out.events.entries()) {
+      if (e.size === 'major' && (major <= 0 || e.causes.length === 0)) {
+        e.size = 'significant';
+        fixes.push(`events[${i}].size: major taken down to significant, the budget allows no more`);
+      } else if (e.size === 'major') major--;
+      if (e.size === 'significant') {
+        if (significant <= 0) {
+          e.size = 'minor';
+          fixes.push(
+            `events[${i}].size: significant taken down to minor, the budget allows no more`,
+          );
+        } else significant--;
+      }
+    }
+    return fixes;
   },
   check(input, out) {
     const problems: string[] = [];
@@ -759,11 +801,58 @@ const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
     ['option', 'later'],
   );
 
-/** An answer whose choice of action does not hold up is simply read as a statement. */
-function mendAnswer(answer: Answer, options: readonly Ref[], wordLimit: number): string[] {
+/**
+ * Takes out the sentences that state a figure found nowhere in the input. A model that adds
+ * "a 30% rise" to an otherwise sound paragraph has made one mistake with one obvious
+ * correction, and on a local model asking for the paragraph again costs as long as it took
+ * to write. Returns nothing when no sentence would be left: that reply is asked for again.
+ */
+export function dropInvented(
+  text: string,
+  known: unknown,
+): { text: string; dropped: number } | undefined {
+  if (inventedNumbers(text, known).length === 0) return { text, dropped: 0 };
+  const sentences = text.split(/(?<=[.!?]["'”’)]*)(\s+)/);
+  const kept: string[] = [];
+  let dropped = 0;
+  for (let i = 0; i < sentences.length; i += 2) {
+    const sentence = sentences[i] ?? '';
+    if (inventedNumbers(sentence, known).length > 0) dropped++;
+    else kept.push(sentence + (sentences[i + 1] ?? ''));
+  }
+  const rest = kept.join('').trim();
+  return rest === '' || inventedNumbers(rest, known).length > 0
+    ? undefined
+    : { text: rest, dropped };
+}
+
+/**
+ * An answer whose choice of action does not hold up is simply read as a statement, and a
+ * sentence resting on a figure nobody gave it is taken out.
+ */
+function mendAnswer(
+  answer: Answer,
+  options: readonly Ref[],
+  wordLimit: number,
+  known: unknown,
+): string[] {
   const fixes: string[] = [];
-  const known = options.some((o) => o.id === answer.option);
-  if (answer.kind === 'action' && !known) {
+  const sound = dropInvented(answer.text, known);
+  if (sound && sound.dropped > 0) {
+    answer.text = sound.text;
+    fixes.push(
+      `text: took out ${sound.dropped} sentence(s) stating figures that are not in the input`,
+    );
+  }
+  if (
+    answer.later &&
+    inventedNumbers(`${answer.later.ifYes} ${answer.later.ifNo}`, known).length > 0
+  ) {
+    delete answer.later;
+    fixes.push('later: dropped, since it stated figures that are not in the input');
+  }
+  const offered = options.some((o) => o.id === answer.option);
+  if (answer.kind === 'action' && !offered) {
     fixes.push(
       answer.option === undefined
         ? 'kind: read as a statement, since no action was named'
@@ -801,7 +890,7 @@ export const policyReact: Job<ReactIn, ReactOut> = {
     };
     return obj({ why: WHY, ...answer.properties }, ['option', 'later']);
   },
-  mend: (input, out) => mendAnswer(out, input.options, input.words),
+  mend: (input, out) => mendAnswer(out, input.options, input.words, input),
   check(input, out) {
     const invented = inventedNumbers(
       `${out.text} ${out.later?.ifYes ?? ''} ${out.later?.ifNo ?? ''}`,
@@ -884,7 +973,11 @@ An item with a "motive" and no "order" is not an answer to anything. That actor 
         answer.kind = 'statement';
         fixes.push(`${item.key}.kind: read as a statement, since a move cannot be silence`);
       }
-      for (const fix of mendAnswer(answer, item.options, input.words))
+      for (const fix of mendAnswer(answer, item.options, input.words, [
+        item,
+        input.state,
+        input.recent,
+      ]))
         fixes.push(`${item.key}.${fix}`);
     }
     return fixes;
@@ -1207,11 +1300,19 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
       reply: str(roomFor(REPLY_WORDS)),
       lever: obj({ kind: pick(LEVERS), claim: str(200) }),
     }),
-  mend(_input, out) {
-    if (words(out.reply) <= 150) return [];
-    const before = words(out.reply);
-    out.reply = clipWords(out.reply, REPLY_WORDS);
-    return [`reply: trimmed from ${before} to ${words(out.reply)} words`];
+  mend(input, out) {
+    const fixes: string[] = [];
+    const sound = dropInvented(out.reply, input);
+    if (sound && sound.dropped > 0) {
+      out.reply = sound.text;
+      fixes.push(`reply: took out ${sound.dropped} sentence(s) stating figures it was not given`);
+    }
+    if (words(out.reply) > 150) {
+      const before = words(out.reply);
+      out.reply = clipWords(out.reply, REPLY_WORDS);
+      fixes.push(`reply: trimmed from ${before} to ${words(out.reply)} words`);
+    }
+    return fixes;
   },
   check(input, out) {
     const invented = inventedNumbers(out.reply, input);

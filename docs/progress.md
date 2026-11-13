@@ -5,7 +5,9 @@
 If you are picking this project up cold, read this section, then the tables below.
 
 - **What exists:** a playable slice. You are Prime Minister of Pakistan from November 2026: write orders, move time, see who answers, ask people, give undertakings, look back, rewind.
-- **Not verified:** nothing has been run on Windows by the author of the code; CI has not run since the map moved to MapLibre; a full session on a real model has not been recorded. The M0 gate is still open for that reason.
+- **The standing brief is `docs/GOAL.md`.** Work follows its loop. The comparison with Modern Day 2026 is `docs/research/scorecard.md`; what each pass played, measured and decided is `docs/research/journal.md`.
+- **Verified on a real model (2026-11-12):** one in-game month on `openai/gpt-oss-20b` in LM Studio, on Windows. 21 model calls, none fell back to built-in wording, 4 needed a second try, all 21 held to the schema by the server. A turn with orders took 33 s on average and 71 s at worst; about 19 tokens a second. Transcript: `docs/research/sessions/2026-11-12-month-1.md`. `npm run check` passes on Windows.
+- **Not verified:** a full year on a real model (in progress; the M0 gate stays open until it is recorded); CI has not run since the map moved to MapLibre; the Anthropic and Gemini adapters have never made a real call.
 - **Next, in order:**
   1. Play a year on a real local model through LM Studio and record the numbers the Inspector now shows (time to first token, tokens a second, how often the schema was enforced, how often the fallback was used).
   2. Check that an undertaking was kept by its specifics, not just by the kind of order issued.

@@ -1,0 +1,59 @@
+[
+  {
+    "order": "Cut the fuel subsidy by a third and use half of the savings for cash transfers to the poorest households."
+  },
+  { "move": { "days": 7 } },
+  { "ask": ["finance_minister", "What is the single biggest risk to the budget this quarter?"] },
+  {
+    "order": "Offer the Baloch insurgents a ninety-day ceasefire and talks in Quetta, mediated by tribal elders."
+  },
+  { "move": { "days": 14 } },
+  { "open": "speaker" },
+  {
+    "ask": [
+      "ppp",
+      "I need your votes on the budget. In return I will expand cash transfers in Sindh. Will you back me?"
+    ]
+  },
+  { "move": { "days": 14 } },
+  {
+    "order": "Expand cash transfers to poor households in Sindh, as I told the Peoples Party I would."
+  },
+  { "move": { "days": 30 } },
+  { "open": "move" },
+  { "order": "Raise the sales tax by one point to narrow the deficit." },
+  { "order": "Increase development spending on roads and power lines in Balochistan." },
+  { "move": { "days": 30 } },
+  { "ask": ["army", "Will the army hold back in Balochistan while talks continue?"] },
+  { "move": { "days": 1 } },
+  { "move": { "hours": 1 } },
+  { "move": { "days": 30 } },
+  { "order": "Launch a security operation against the Tehrik-i-Taliban in Khyber Pakhtunkhwa." },
+  { "move": { "days": 14 } },
+  { "open": "first" },
+  { "ask": ["interior_minister", "How is the operation in Khyber Pakhtunkhwa going, honestly?"] },
+  { "move": { "days": 30 } },
+  {
+    "order": "Invite the opposition to a national dialogue on election reform and release detained party workers."
+  },
+  { "move": { "days": 30 } },
+  { "ask": ["pti", "What would it take for you to end the protests and join a dialogue?"] },
+  { "move": { "untilMajor": true } },
+  { "order": "Ask the central bank to lower the interest rate by two points." },
+  { "order": "Cut income tax for salaried workers." },
+  { "move": { "days": 30 } },
+  { "open": "speaker" },
+  { "move": { "days": 30 } },
+  { "order": "Cut development spending by a fifth to meet the lender's targets." },
+  { "move": { "days": 30 } },
+  { "ask": ["imf", "Are we on track for the next review?"] },
+  { "move": { "days": 30 } },
+  { "rewind": 1 },
+  { "order": "Double the subsidy on wheat flour before the election season." },
+  { "move": { "days": 30 } },
+  { "move": { "days": 30 } },
+  {
+    "ask": ["principal_secretary", "Looking back over the year, where did we lose the most ground?"]
+  },
+  { "move": { "days": 30 } }
+]
