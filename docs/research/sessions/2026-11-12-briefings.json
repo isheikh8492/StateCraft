@@ -1,0 +1,294 @@
+{
+ "summary": {
+  "model": "openai/gpt-oss-20b",
+  "finalDate": "2026-11-01",
+  "calls": 8,
+  "firstTry": 8,
+  "repaired": 0,
+  "fellBack": 0,
+  "schemaEnforced": 8,
+  "fixedLocally": 2,
+  "tokensIn": 15374,
+  "tokensOut": 2871,
+  "thinkingTokens": 350,
+  "meanFirstTokenMs": 4424.1,
+  "meanTokensPerSecond": 19.3,
+  "meanTurnWaitS": 18,
+  "maxTurnWaitS": 17.96,
+  "meanSettledS": 35.9,
+  "perJob": {
+   "policy.compile v2": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 10816,
+    "meanOut": 139
+   },
+   "turn.adjudicate v5": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 6936,
+    "meanOut": 95
+   },
+   "turn.reactions v2": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 17841,
+    "meanOut": 276
+   },
+   "actor.reply v4": {
+    "calls": 5,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 29845.4,
+    "meanOut": 472.2
+   }
+  },
+  "events": 2,
+  "moves": 0,
+  "failedSteps": 0
+ },
+ "model": "openai/gpt-oss-20b",
+ "steps": [
+  {
+   "label": "2. {\"move\":{\"next\":true}}",
+   "date": "2026-11-01",
+   "committedMs": 17960,
+   "settledMs": 35880,
+   "calls": [
+    "d93609a5-cf35-40f4-8dad-770bab27fc40",
+    "1e803adc-9c98-4ed0-902a-0b93e7be52fb",
+    "4548e369-8d13-467e-96ea-00e6353bd5f9"
+   ]
+  },
+  {
+   "label": "3. {\"ask\":[\"principal_secretary\",\"connect me with the Army Chief\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 26136,
+   "calls": [
+    "57ba43bb-6b3e-435e-9eb9-99213c38f39e"
+   ]
+  },
+  {
+   "label": "4. {\"ask\":[\"principal_secretary\",\"Religious parties are protesting on Constitution Avenue. Should I ask the Supreme Court to restrict the protests?\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 33701,
+   "calls": [
+    "e25c708b-1cfc-4523-b1b4-d3868a332233"
+   ]
+  },
+  {
+   "label": "5. {\"ask\":[\"principal_secretary\",\"Doctors in Sindh have halted work over pay. We need to put pressure on the Sindh government. How?\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 28607,
+   "calls": [
+    "b8993d9f-6cbc-4d35-8c08-b8ceecc5f916"
+   ]
+  },
+  {
+   "label": "6. {\"ask\":[\"interior_minister\",\"I want to say in public that I am prepared to withdraw troops from Khyber Pakhtunkhwa if attacks stop. Help me do it well.\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 40308,
+   "calls": [
+    "58b6ada5-2991-4ab7-81e4-6789cb91e367"
+   ]
+  },
+  {
+   "label": "7. {\"ask\":[\"principal_secretary\",\"Who exactly should I call first about the court, and what do I say?\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 21469,
+   "calls": [
+    "006786d5-0e44-4f4d-9a0c-8d51a331f5d5"
+   ]
+  }
+ ],
+ "calls": [
+  {
+   "step": "2. {\"move\":{\"next\":true}}",
+   "id": "d93609a5-cf35-40f4-8dad-770bab27fc40",
+   "resolution": "r3",
+   "job": "policy.compile v2",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1002,
+   "tokensOut": 139,
+   "reasoningTokens": 24,
+   "ms": 10816,
+   "promptHash": "613dfb6324179e2d",
+   "ttftMs": 3893,
+   "tokensPerSecond": 20.1,
+   "inputChars": 2278,
+   "outputChars": 381
+  },
+  {
+   "step": "2. {\"move\":{\"next\":true}}",
+   "id": "1e803adc-9c98-4ed0-902a-0b93e7be52fb",
+   "resolution": "r3",
+   "job": "turn.adjudicate v5",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1254,
+   "tokensOut": 95,
+   "reasoningTokens": 20,
+   "ms": 6936,
+   "promptHash": "23d1fa2e747574a7",
+   "ttftMs": 2080,
+   "tokensPerSecond": 19.6,
+   "inputChars": 1305,
+   "outputChars": 235
+  },
+  {
+   "step": "2. {\"move\":{\"next\":true}}",
+   "id": "4548e369-8d13-467e-96ea-00e6353bd5f9",
+   "resolution": "r3",
+   "job": "turn.reactions v2",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1515,
+   "tokensOut": 276,
+   "reasoningTokens": 63,
+   "ms": 17841,
+   "promptHash": "e8afc3b93d1c63aa",
+   "ttftMs": 3214,
+   "tokensPerSecond": 18.9,
+   "inputChars": 2088,
+   "outputChars": 919
+  },
+  {
+   "step": "3. {\"ask\":[\"principal_secretary\",\"connect me with the Army Chief\"]}",
+   "id": "57ba43bb-6b3e-435e-9eb9-99213c38f39e",
+   "resolution": "talks",
+   "job": "actor.reply v4",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2092,
+   "tokensOut": 312,
+   "reasoningTokens": 35,
+   "ms": 26011,
+   "promptHash": "f0f3ca056fada561",
+   "ttftMs": 9236,
+   "tokensPerSecond": 18.6,
+   "inputChars": 2673,
+   "outputChars": 1254
+  },
+  {
+   "step": "4. {\"ask\":[\"principal_secretary\",\"Religious parties are protesting on Constitution Avenue. Should I ask the Supreme Court to restrict the protests?\"]}",
+   "id": "e25c708b-1cfc-4523-b1b4-d3868a332233",
+   "resolution": "talks",
+   "job": "actor.reply v4",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2265,
+   "tokensOut": 577,
+   "reasoningTokens": 103,
+   "ms": 33415,
+   "promptHash": "e3a37dcf79afca9d",
+   "ttftMs": 3683,
+   "tokensPerSecond": 19.4,
+   "inputChars": 3515,
+   "outputChars": 2470
+  },
+  {
+   "step": "5. {\"ask\":[\"principal_secretary\",\"Doctors in Sindh have halted work over pay. We need to put pressure on the Sindh government. How?\"]}",
+   "id": "b8993d9f-6cbc-4d35-8c08-b8ceecc5f916",
+   "resolution": "talks",
+   "job": "actor.reply v4",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2456,
+   "tokensOut": 457,
+   "reasoningTokens": 41,
+   "ms": 28386,
+   "promptHash": "a3abd854a21adf27",
+   "ttftMs": 4486,
+   "tokensPerSecond": 19.1,
+   "inputChars": 4469,
+   "outputChars": 2108
+  },
+  {
+   "step": "6. {\"ask\":[\"interior_minister\",\"I want to say in public that I am prepared to withdraw troops from Khyber Pakhtunkhwa if attacks stop. Help me do it well.\"]}",
+   "id": "58b6ada5-2991-4ab7-81e4-6789cb91e367",
+   "resolution": "talks",
+   "job": "actor.reply v4",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "reply: cut where it ran on into its other fields"
+   ],
+   "tokensIn": 2135,
+   "tokensOut": 709,
+   "reasoningTokens": 4,
+   "ms": 40168,
+   "promptHash": "b7eb4aa4a4c4e211",
+   "ttftMs": 3462,
+   "tokensPerSecond": 19.3,
+   "inputChars": 2840,
+   "outputChars": 3109
+  },
+  {
+   "step": "7. {\"ask\":[\"principal_secretary\",\"Who exactly should I call first about the court, and what do I say?\"]}",
+   "id": "006786d5-0e44-4f4d-9a0c-8d51a331f5d5",
+   "resolution": "talks",
+   "job": "actor.reply v4",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "details: dropped 2 already on record"
+   ],
+   "tokensIn": 2655,
+   "tokensOut": 306,
+   "reasoningTokens": 60,
+   "ms": 21247,
+   "promptHash": "824750f82c6c2a68",
+   "ttftMs": 5339,
+   "tokensPerSecond": 19.2,
+   "inputChars": 5401,
+   "outputChars": 1085
+  }
+ ]
+}

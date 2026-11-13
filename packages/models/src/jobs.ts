@@ -1344,11 +1344,28 @@ export interface ReplyIn {
    * that advice can end in something that can be done.
    */
   canOrder?: { instruments: string[]; regions: string[] };
+  /** Who is who: the people and bodies of the country, so that advice can name them. */
+  people?: string[];
+  /**
+   * Details already established in this campaign: a name given to an office holder, a
+   * venue, a programme. Whoever writes next uses them as they stand (decision record 0014).
+   */
+  canon?: Detail[];
 }
+/** A detail of texture: what it is, and the name or value it was given. */
+export interface Detail {
+  label: string;
+  value: string;
+}
+const Details = z
+  .array(z.object({ label: z.string().min(1).max(80), value: z.string().min(1).max(160) }))
+  .default([]);
 const LEVERS = ['offer', 'threat', 'none'] as const;
 const ReplyOut = z.object({
   why: z.string().default(''),
   reply: z.string().min(1),
+  /** Names and other details this reply introduced, to be kept the same from now on. */
+  details: Details,
   /**
    * From an adviser: orders the asker could issue to do what was discussed, in the asker's
    * own voice. They are drafts: nothing happens until the player puts one on the desk.
@@ -1402,28 +1419,33 @@ export function renumber(text: string): string {
 export const actorReply: Job<ReplyIn, ReplyOut> = {
   name: 'actor.reply',
   shape:
-    '{"why":string,"reply":string,"orders":string[],"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
+    '{"why":string,"reply":string,"details":[{"label":string,"value":string}],"orders":string[],"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 3,
+  version: 4,
   role: 'narrator',
-  maxTokens: 2000,
+  maxTokens: 3500,
   rules: `You speak as one person or body in a political simulation, answering the head of government ("asker").
 - Answer in the first person, in that actor's voice, from its interests and its stance toward the asker. A rival is guarded or sharp; an official of another country is diplomatic.
 - Answer what was just asked. Read "question" again before you write: if it asks for a plan, give a plan; if it asks how, say how; if it asks whether something exists, say yes or no first.
+- Fit the length to the question. A simple question (who, whether something exists, how do I reach someone, what does this mean) gets two or three short paragraphs and no headings. "Should I...?" about a serious step, a request for a plan, or "how do we...?" is a judgment call: it gets a full briefing that uses the room in "words". Never pad, and never cut a real answer short.
+- Be specific, always. Name the person, the office, the city, the law and its article, the date, the amount. "Engage tribal leaders" is useless; "send the Interior Minister to Quetta on Thursday to meet the Sarawan and Jhalawan sardars" is advice. Use the names in "people", the world brief and "canon".
+- "details" comes first, before you write. Settle there every name you are going to use that nobody has given you: who holds an office, where a meeting is held, what a body or a programme is called. Make up a plausible one for this country and list it as { "label": the office or thing, "value": the name }, in the form { "label": "Mayor of the capital", "value": "<a name>" }. Every person you then name who is not in "people", the world brief or "canon" must be in "details". A detail in "canon" is already settled: use it exactly, never rename or contradict it, and do not list it again.
+- What you may not make up: the figures in "state" (the economy, the public mood, unrest, who controls what), how a vote went, and whether something happened. Those come only from "state", "knows" and "policies". If you do not know whether something happened, say so in character.
 - Never repeat yourself. "earlier" holds what you have already said to the asker. Do not reuse a sentence, a recommendation or a warning from it: the asker has read it. Every reply must say something new.
-- Use only what is in "knows", "state", "policies" and the world brief. If you do not know, say so in character. Never invent events, decisions or figures.
-- If "actor.kind" is "advisor", you work for the asker and your job is to get done what they have decided, not to talk them out of it. Give a concrete way to do it: the steps in order, who must be squared first, what to say in public, and how to guard against the one thing most likely to go wrong. Mention a risk once, in a clause, and move on. If the asker has heard your objection and still wants it done, drop the objection completely and help. Be candid, brief and practical, like a senior official who wants the boss to succeed.
+- If "actor.kind" is "advisor", you work for the asker, like a senior official who wants the boss to succeed and tells them the truth. For a serious question write a briefing in headed sections that fit it, such as: what you are really asking; what will actually happen if you do it, and who will do what; what I would do instead, or how to do it well; my advice in two sentences. Say plainly when a step is a mistake and why, then show the better way to the same end. If the asker has heard your objection and still wants it done, drop it and give the best way to do it.
 - Otherwise, give a view, not a list: what this means to you, what you want, what you would need to see. You may disagree with the asker.
-- Up to "words" words. No stage directions, no narration, just what is said. Plain text only: no asterisks, no headings. Numbered steps, each on its own line, are fine.
-- "orders": only if "actor.kind" is "advisor" and something can be done: up to three orders the asker could issue to carry out what was discussed, each one sentence in the asker's own voice as an instruction ("Announce that...", "Offer...", "Withdraw..."), specific about what and where, and of a kind listed in "canOrder" where one fits. Whenever your reply sets out steps, put the ones the asker can issue themselves here. They are drafts for the asker to use or ignore. Otherwise an empty list.
+- Layout: plain paragraphs. A section starts with a line "## Heading". A list item starts with "- " or "1. ". Put "**" around the few words that carry a point. Nothing else: no tables, no code, no stage directions, no narration. "reply" holds only what you say: the orders go in "orders", never in a section of the reply.
+- "orders": only if "actor.kind" is "advisor" and something can be done: up to five orders the asker could issue to carry out what was discussed, each one sentence in the asker's own voice as an instruction ("Announce that...", "Send...", "Offer..."), saying who, what, where and by when, and of a kind listed in "canOrder" where one fits. They are drafts for the asker to use or ignore. Otherwise an empty list.
 - "lever": did the asker put something on the table for you? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments, questions, and anything said to their own adviser are "none". An offer does not change your position by itself: say what you would need to see.`,
   output: ReplyOut,
   schema: (input) =>
     obj({
       why: WHY,
+      // Names are settled before the writing starts, so that what is written uses them.
+      details: list(obj({ label: str(80), value: str(160) }), 10),
       reply: str(roomFor(input.words)),
-      orders: list(str(240), 3),
+      orders: list(str(280), 5),
       lever: obj({ kind: pick(LEVERS), claim: str(200) }),
     }),
   mend(input, out) {
@@ -1438,20 +1460,24 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
       fixes.push(`reply: took out ${fresh.dropped} sentence(s) it had already said word for word`);
     }
     // A reply that runs on into the fields that should have followed it is cut where they begin.
-    const spill = out.reply.search(/\s*"?\b(orders|lever)"?\s*:\s*[[{]/);
-    if (spill > 0) {
+    // Either as raw fields, or dressed up as sections headed "Orders" or "Lever".
+    const spill = [
+      out.reply.search(/\s*"?\b(orders|lever|details)"?\s*:\s*[[{]/),
+      out.reply.search(/\n\s*#{1,4}\s*(draft\s+|suggested\s+)?(orders?|lever|details)\b/i),
+    ]
+      .filter((at) => at > 0)
+      .sort((a, b) => a - b)[0];
+    if (spill !== undefined) {
       out.reply = out.reply.slice(0, spill).trimEnd();
       fixes.push('reply: cut where it ran on into its other fields');
     }
-    // No screen here renders markup, so emphasis marks are taken out rather than shown raw.
-    if (/\*\*|__|^#+ /m.test(out.reply)) {
-      out.reply = out.reply.replace(/\*\*|__/g, '').replace(/^#+ /gm, '');
-      fixes.push('reply: took out formatting marks');
-    }
-    const sound = dropInvented(out.reply, input, true);
-    if (sound && sound.dropped > 0) {
-      out.reply = sound.text;
-      fixes.push(`reply: took out ${sound.dropped} sentence(s) stating figures it was not given`);
+    // A detail already settled keeps the name it has: one declared again under the same
+    // label is dropped, so that the record never holds two Chief Justices.
+    const settled = new Set((input.canon ?? []).map((d) => d.label.trim().toLowerCase()));
+    const fresh2 = out.details.filter((d) => !settled.has(d.label.trim().toLowerCase()));
+    if (fresh2.length !== out.details.length) {
+      fixes.push(`details: dropped ${out.details.length - fresh2.length} already on record`);
+      out.details = fresh2;
     }
     if (words(out.reply) > Math.round(input.words * 1.25)) {
       const before = words(out.reply);
@@ -1476,10 +1502,10 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
     return fixes;
   },
   check(input, out) {
+    // Figures are no longer policed here (decision record 0014): advice that may not name a
+    // date, an amount or an article is advice with nothing in it. The world's own figures
+    // are kept honest by what the actor is given, and what it invents is put on record.
     const problems: string[] = [];
-    const invented = inventedNumbers(out.reply.replace(PROPOSED, ''), input);
-    if (invented.length > 0)
-      problems.push(`The figures ${invented.join(', ')} are not in what you know.`);
     const earlier = input.earlier.map((turn) => turn.reply);
     if (earlier.length > 0 && dropRepeated(out.reply, earlier) === undefined)
       problems.push(
@@ -1504,12 +1530,14 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
         reply: threat
           ? 'That is noted, and it will not be forgotten.'
           : 'I have heard what you undertake. I will judge it by what follows.',
+        details: [],
         orders: [],
         lever: { kind: threat ? 'threat' : 'offer', claim: input.question.slice(0, 200) },
       };
     }
     return {
       lever: { kind: 'none' as const, claim: '' },
+      details: [],
       orders: [],
       why: 'No model: the record only.',
       reply:

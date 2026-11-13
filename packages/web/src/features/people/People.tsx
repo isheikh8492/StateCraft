@@ -6,8 +6,8 @@ import { formatDate, useDraft, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
+import { Prose } from '@/ui/prose';
 import { Textarea } from '@/ui/textarea';
-import { Writing } from '@/ui/writing';
 
 const KIND_LABEL: Record<string, string> = {
   advisor: 'Your office',
@@ -33,9 +33,18 @@ function Reply({ id, reply }: { id: string; reply: string | undefined }) {
   const draft = useDraft(id);
   if (reply === undefined && !draft)
     return <p className="mt-1 text-fg-subtle">Waiting for an answer…</p>;
+  // Laid out as written, headings and lists included, and the same way while it arrives.
   return (
-    <blockquote className="prose-read mt-1 max-w-none border-l-2 border-accent pl-3 whitespace-pre-wrap text-fg-muted">
-      {reply ?? <Writing text={draft ?? ''} />}
+    <blockquote
+      aria-busy={reply === undefined}
+      className="prose-read mt-1 max-w-[110ch] border-l-2 border-accent pl-3 text-fg-muted"
+    >
+      <Prose text={reply ?? draft ?? ''} />
+      {reply === undefined && (
+        <span aria-hidden="true" className="animate-pulse text-accent">
+          ▍
+        </span>
+      )}
     </blockquote>
   );
 }

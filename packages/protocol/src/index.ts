@@ -119,6 +119,16 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     id: z.string(),
     lines: z.record(z.string(), z.string().max(400)),
   }),
+  /**
+   * Details of texture a model introduced and the game now holds it to: the name given to an
+   * office holder, a venue, a programme. Never a figure of the world's own state.
+   */
+  z.object({
+    type: z.literal('canon.added'),
+    items: z
+      .array(z.object({ label: z.string().min(1).max(80), value: z.string().min(1).max(160) }))
+      .max(12),
+  }),
   /** A message a member of the cast sends unasked. */
   z.object({
     type: z.literal('talk.incoming'),
@@ -143,7 +153,7 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     /** What the player put on the table, as the engine will hold them to it. */
     lever: z.object({ kind: z.enum(['offer', 'threat', 'none']), claim: z.string() }).optional(),
     /** Orders an adviser drafted for the player to use or ignore. */
-    orders: z.array(z.string().max(2000)).max(3).optional(),
+    orders: z.array(z.string().max(2000)).max(5).optional(),
   }),
   z.object({ type: z.literal('resolution.cancelled'), id: z.string() }),
   z.object({ type: z.literal('policy.repealed'), policyId: z.string(), day: z.number().int() }),

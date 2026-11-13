@@ -141,8 +141,9 @@ The speed slice and the first part of M1, built together.
 
 | Area | State |
 | --- | --- |
-| Advice | Your own office is told to get done what you have decided: steps, who to square, how to guard against the main risk, and no repeating an objection you have heard. Answers run to 90, 160 or 260 words by the Detail setting. |
-| Draft orders | An adviser can draft up to three orders in your voice. Each shows under the answer with "Put on desk", which adds it as a box to edit or send. |
+| Advice | Your own office is told to get done what you have decided, and to say plainly when a step is a mistake and show the better way. A serious question gets a briefing in headed sections, up to 250, 500 or 900 words by the Detail setting; a simple one gets a short answer. Others speak at ordinary length. |
+| Specifics, and made-up detail on record | Advice names the person, office, city, law, date and amount. Names nobody supplied are made up, declared, stored and reused, so a thing keeps the name it was first given (decision record 0014). The world's own figures still come only from the engine. Reactions, news and full accounts still follow the stricter rule. |
+| Draft orders | An adviser can draft up to five orders in your voice. Each shows under the answer with "Put on desk", which adds it as a box to edit or send. |
 | No repetition | Any actor's sentence already said word for word is taken out; an answer that only repeats is asked for again. |
 | Verified | On the owner's own six questions, on the local model: `docs/research/sessions/2026-11-12-adviser.md`. Checked in a browser. |
 

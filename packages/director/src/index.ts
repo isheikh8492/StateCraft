@@ -242,6 +242,8 @@ interface Projection {
   seen: Map<string, number>;
   /** News first recorded in its plain line and worded properly afterwards, by event id. */
   worded: Map<string, string>;
+  /** Details of texture established so far, oldest first: once named, a thing keeps its name. */
+  canon: { label: string; value: string }[];
 }
 
 function project(events: readonly StoredEvent[]): Projection {
@@ -254,6 +256,7 @@ function project(events: readonly StoredEvent[]): Projection {
     talks: new Map(),
     seen: new Map(),
     worded: new Map(),
+    canon: [],
   };
   const byId = new Map<string, Resolution>();
   for (const { seq, event } of events) {
@@ -374,6 +377,12 @@ function project(events: readonly StoredEvent[]): Projection {
       case 'news.worded':
         for (const [eventId, line] of Object.entries(event.lines)) p.worded.set(eventId, line);
         break;
+      case 'canon.added':
+        // The first name a thing is given is the one it keeps.
+        for (const item of event.items)
+          if (!p.canon.some((d) => d.label.toLowerCase() === item.label.toLowerCase()))
+            p.canon.push(item);
+        break;
       case 'talk.asked': {
         const thread = p.talks.get(event.actorId) ?? [];
         thread.push({ id: event.id, day: event.day, question: event.question });
@@ -470,7 +479,7 @@ const MOVE_REST_DAYS = 14;
 /** Words a reaction may run to, and how far a full account is stretched, at each detail level. */
 const REACTION_WORDS = { brief: 60, standard: 150, rich: 250 } as const;
 /** Words an answer in conversation may run to. An adviser asked for a plan needs the room. */
-const REPLY_WORDS = { brief: 90, standard: 160, rich: 260 } as const;
+const REPLY_WORDS = { brief: 250, standard: 500, rich: 900 } as const;
 const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
 const ACCOUNT_WORDS = { minor: 50, significant: 150, major: 400 } as const;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
@@ -1646,6 +1655,18 @@ export function createDirector(options: DirectorOptions): Director {
       }),
     );
   }
+  /**
+   * Puts on record the details a piece of writing introduced, so that whoever writes next
+   * uses the same names. What is already on record under that label is left as it is.
+   */
+  const record = (details: readonly { label: string; value: string }[]) => {
+    const known = new Set(state().projection.canon.map((d) => d.label.toLowerCase()));
+    const items = details
+      .map((d) => ({ label: d.label.trim().slice(0, 80), value: d.value.trim().slice(0, 160) }))
+      .filter((d) => d.label !== '' && d.value !== '' && !known.has(d.label.toLowerCase()))
+      .slice(0, 12);
+    if (items.length > 0) ledger.append({ type: 'canon.added', items });
+  };
   /** Work under way that nothing waits for, kept so that `idle` can tell when it is over. */
   const background = new Set<Promise<void>>();
 
@@ -2649,11 +2670,19 @@ export function createDirector(options: DirectorOptions): Director {
                   !refusalOf(policy, resolution) && !now.projection.repealed.has(policy.id),
               )
               .map(({ policy }) => policy.title),
+            // Earlier answers are given in brief: enough to know what has been said, without
+            // a long briefing crowding the next one out of a small model's memory.
             earlier: thread
               .filter((t) => t.id !== id && t.reply !== undefined)
-              .slice(-4)
-              .map((t) => ({ question: t.question, reply: t.reply ?? '' })),
-            words: REPLY_WORDS[detail()],
+              .slice(-3)
+              .map((t) => ({ question: t.question, reply: (t.reply ?? '').slice(0, 700) })),
+            // An adviser has room for a briefing; anyone else speaks at ordinary length.
+            words: Math.round(REPLY_WORDS[detail()] * (insider ? 1 : 0.4)),
+            people: [
+              `${scenario.headOfGovernment.name}, ${scenario.headOfGovernment.office} (the asker)`,
+              ...scenario.cast.map((c) => `${c.name} (${c.kind})`),
+            ],
+            canon: now.projection.canon.slice(-60),
             ...(insider
               ? {
                   canOrder: {
@@ -2672,8 +2701,9 @@ export function createDirector(options: DirectorOptions): Director {
           reply: output.reply,
           via,
           ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
-          ...(output.orders.length > 0 ? { orders: output.orders.slice(0, 3) } : {}),
+          ...(output.orders.length > 0 ? { orders: output.orders.slice(0, 5) } : {}),
         });
+        record(output.details);
         setDraft(id, null);
       });
     },

@@ -1,0 +1,29 @@
+[
+  { "order": "Declare a ceasefire in Balochistan and offer talks through tribal elders." },
+  { "move": { "next": true } },
+  { "ask": ["principal_secretary", "connect me with the Army Chief"] },
+  {
+    "ask": [
+      "principal_secretary",
+      "Religious parties are protesting on Constitution Avenue. Should I ask the Supreme Court to restrict the protests?"
+    ]
+  },
+  {
+    "ask": [
+      "principal_secretary",
+      "Doctors in Sindh have halted work over pay. We need to put pressure on the Sindh government. How?"
+    ]
+  },
+  {
+    "ask": [
+      "interior_minister",
+      "I want to say in public that I am prepared to withdraw troops from Khyber Pakhtunkhwa if attacks stop. Help me do it well."
+    ]
+  },
+  {
+    "ask": [
+      "principal_secretary",
+      "Who exactly should I call first about the court, and what do I say?"
+    ]
+  }
+]

@@ -3,6 +3,45 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 6: briefings, and invented detail on record
+
+**From the owner,** with screenshots side by side: talking to advisers has no richness and
+their suggestions are not specific, where the other game's adviser writes 900 words in
+headed sections with named people, dates and amounts, and its chronicle entries carry
+datelines, figures and quotes. Also: the other game makes names up, and its answers are
+short when the question is simple.
+
+**Built.** Decision record 0014. Advice may make up texture (names, venues, dates and
+amounts proposed) and declares the names first; they are stored and given to whoever writes
+next. An adviser answers at the length the question deserves, in headed sections, with up
+to five orders. The screen draws headings, lists, bold and italic.
+
+**Played.** Five questions at Rich on `openai/gpt-oss-20b`, from `plans/briefings.json`.
+Transcript: `sessions/2026-11-12-briefings.md`.
+
+**Measured.** 113, 240, 290, 434 and 130 words; 21 to 40 s each; first words after 4 to 9 s.
+All five answered first try.
+
+**Learned.**
+
+1. *It is specific now.* "Send the Interior Minister and the Federal Health Secretary to
+   Karachi on 10 November to audit wage arrears"; "a conditional withdrawal of 12,000 troops
+   from Khyber Pakhtunkhwa from 15 November"; a named Chief Justice to call first.
+2. *The model declared almost no names until it was asked for them first.* With "details"
+   after the reply, one name in five answers was declared. Moved before the reply, the names
+   were declared, and a Chief Justice named in the second answer was reused in the fifth.
+3. *It copied the name in the instructions' own example.* The example now uses a
+   placeholder.
+4. *It writes its other fields into the answer as sections* ("## Orders", "## Lever"). Cut
+   locally.
+5. *It reaches for real names it knows* (a former army chief), which may be out of date for
+   November 2026. A dossier in the scenario pack is the fix.
+6. *Length is still short of the other game's:* 434 words at most against about 900. A
+   20-billion-parameter local model does not fill the room it is given.
+
+**Decided.** Next on this: full accounts in the chronicle under the same rule and written
+without being asked for events that matter; then the dossier.
+
 ## 2026-11-12, pass 5: the clock by the hour
 
 **From the owner.** "Send" opened the time panel instead of sending. Asked for a plan first

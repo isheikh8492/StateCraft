@@ -428,6 +428,7 @@ describe('answers from people', () => {
     const parrot = {
       why: '',
       reply: said,
+      details: [],
       orders: [],
       lever: { kind: 'none' as const, claim: '' },
     };
@@ -441,6 +442,7 @@ describe('answers from people', () => {
     const helpful = {
       why: '',
       reply: `Announce it in stages. ${said}`,
+      details: [],
       orders: [
         'Announce that troops will pull back from two districts if attacks stop for thirty days.',
         'ok',
@@ -460,7 +462,7 @@ describe('answers from people', () => {
     // The schema leaves an adviser room to give a plan.
     // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
     const schema = actorReply.schema(replyIn) as any;
-    expect(schema.properties.orders.maxItems).toBe(3);
+    expect(schema.properties.orders.maxItems).toBe(5);
     expect(schema.properties.reply.maxLength).toBeGreaterThan(1000);
   });
 });
@@ -493,6 +495,7 @@ describe('tidying a plan', () => {
     const reply = {
       why: '',
       reply: '1. Announce it.\n2. Record it in the Gazette.\norders:["Announce it."\n]',
+      details: [],
       orders: [],
       lever: { kind: 'none' as const, claim: '' },
     };
@@ -510,5 +513,43 @@ describe('tidying a plan', () => {
       reply,
     );
     expect(reply.reply).toBe('1. Announce it.\n2. Record it in the Gazette.');
+  });
+});
+
+describe('details of texture', () => {
+  it('lets advice name names and dates, and keeps the name a thing was first given', () => {
+    const input = {
+      actor: { id: 'ps', name: 'PS', kind: 'advisor', stance: 'friendly', voice: '' },
+      asker: 'The Prime Minister',
+      question: 'Should I ask the Supreme Court to restrict the protests?',
+      knows: [],
+      state: { Inflation: 10.3 },
+      policies: [],
+      earlier: [],
+      words: 500,
+      canon: [{ label: 'Chief Justice of Pakistan', value: 'Justice Tariq Siddiqui' }],
+    };
+    const out = {
+      why: '',
+      reply:
+        '## What the court will do\n\nChief Justice Siddiqui will not rubber-stamp a ban under **Article 16**. Meet the Wifaq ul Madaris leadership on 18 February and offer Rs. 5 billion for curriculum reform.',
+      details: [
+        { label: 'chief justice of pakistan', value: 'Justice Someone Else' },
+        { label: 'Head of Wifaq ul Madaris', value: 'Maulana Hanif Jalandhari' },
+      ],
+      orders: [],
+      lever: { kind: 'none' as const, claim: '' },
+    };
+    const fixes = actorReply.mend?.(input, out) ?? [];
+    // Dates, amounts, articles and headings are all left alone: that is the advice.
+    expect(out.reply).toContain('18 February');
+    expect(out.reply).toContain('## What the court will do');
+    expect(out.reply).toContain('**Article 16**');
+    // The Chief Justice already has a name, so the second one offered is not recorded.
+    expect(out.details).toEqual([
+      { label: 'Head of Wifaq ul Madaris', value: 'Maulana Hanif Jalandhari' },
+    ]);
+    expect(fixes).toEqual(['details: dropped 1 already on record']);
+    expect(actorReply.check(input, out)).toEqual([]);
   });
 });
