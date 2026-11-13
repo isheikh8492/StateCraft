@@ -1,4 +1,5 @@
 import { isValidTarget } from './effects.ts';
+import { roll } from './rng.ts';
 import { type Effect, EngineRuleError, type World } from './state.ts';
 
 /**
@@ -223,6 +224,54 @@ export function narrow(
   const index = scale === 'small' ? 0 : scale === 'medium' ? 1 : 2;
   const a = near + third * index;
   const b = near + third * (index + 1);
+  return a <= b ? [a, b] : [b, a];
+}
+
+export const LANDINGS = ['as_intended', 'partial', 'stalled', 'backfired'] as const;
+/** How an order went in practice. */
+export type Landing = (typeof LANDINGS)[number];
+
+/**
+ * The odds of each landing, in the order of LANDINGS. The more forceful the order, the
+ * likelier it is to stall or to turn on its author; an order outside the catalogue is the
+ * least sure of all. Placeholders until calibration.
+ */
+const LANDING_ODDS: Readonly<Record<Scale | 'novel', readonly number[]>> = {
+  small: [0.45, 0.4, 0.08, 0.07],
+  medium: [0.32, 0.45, 0.11, 0.12],
+  large: [0.2, 0.46, 0.16, 0.18],
+  novel: [0.25, 0.45, 0.18, 0.12],
+};
+
+/**
+ * How an order lands: as intended, in part, stalled, or turned against its author. The dice
+ * decide, not a model: left to itself a model calls every order "partial", and an order
+ * with no chance of going well or badly has no suspense. A model is then told how it went
+ * and writes why (decision record 0011).
+ */
+export function landing(seed: string, policyId: string, scale: Scale, novel = false): Landing {
+  const odds = LANDING_ODDS[novel ? 'novel' : scale];
+  let at = roll(seed, `landing:${policyId}`);
+  for (const [i, chance] of odds.entries()) {
+    at -= chance;
+    if (at < 0) return LANDINGS[i] ?? 'partial';
+  }
+  return 'partial';
+}
+
+/**
+ * The part of an order's range that its landing allows: the stronger half when it went as
+ * intended, the weaker half when it went in part or backfired, nothing when it stalled. A
+ * range that runs both ways from zero has no stronger half and is left whole.
+ */
+export function landed(range: readonly [number, number], how: Landing): [number, number] | null {
+  if (how === 'stalled') return null;
+  const [min, max] = range;
+  if (min < 0 && max > 0) return [min, max];
+  const near = Math.abs(min) <= Math.abs(max) ? min : max;
+  const far = near === min ? max : min;
+  const mid = (near + far) / 2;
+  const [a, b] = how === 'as_intended' ? [mid, far] : [near, mid];
   return a <= b ? [a, b] : [b, a];
 }
 

@@ -16,6 +16,9 @@ import {
   type EngineEvent,
   fiscalCost,
   type Instrument,
+  type Landing,
+  landed as landedRange,
+  landing,
   legislatureVote,
   NOVEL_LIMITS,
   narrow,
@@ -880,13 +883,23 @@ export function createDirector(options: DirectorOptions): Director {
     const active = (r.compile?.policies ?? []).filter((x) => !x.blockedReason);
     const days = periodDays(r, active);
     const by = actorId(world);
-    const actions = active.map((x) => ({
-      id: x.id,
-      by,
-      summary: `${x.title}. ${x.summary}`.slice(0, 400),
-      stage: 'announced',
-      allowed: allowedFor(x, world),
-    }));
+    // How each order lands is settled here, by keyed dice, before any model is asked: the
+    // judge is told, and given only the part of each range that such a landing allows.
+    const actions = active.map((x) => {
+      const novel = !CATALOGUE.some((c) => c.id === x.instrument);
+      const how: Landing = landing(world.seed, x.id, x.scale, novel);
+      return {
+        id: x.id,
+        by,
+        summary: `${x.title}. ${x.summary}`.slice(0, 400),
+        stage: 'announced',
+        landed: how,
+        allowed: allowedFor(x, world).flatMap((rule): Allowed[] => {
+          const range = landedRange(rule.range, how);
+          return range ? [{ ...rule, range: range.map(round2) as [number, number] }] : [];
+        }),
+      };
+    });
     // Nothing was ordered and little time passes: there is nothing to judge, so no model is
     // called and the world's own events fill the days.
     if (actions.length === 0 && days < 7) return { quiet: true, outcomes: [], events: [] };
@@ -927,12 +940,16 @@ export function createDirector(options: DirectorOptions): Director {
       Object.fromEntries(Object.entries(effects).filter(([, value]) => value !== 0));
     const data: AdjudicateData = {
       ...(via === 'fallback' ? { quiet: true } : {}),
-      outcomes: Object.entries(output.outcomes).map(([policy, o]) => ({
-        policy,
-        result: o.result,
-        note: o.note,
-        picks: o.result === 'stalled' ? {} : moved(o.effects),
-      })),
+      outcomes: Object.entries(output.outcomes).map(([policy, o]) => {
+        // The dice's word is final, whatever came back.
+        const result = actions.find((a) => a.id === policy)?.landed ?? o.result;
+        return {
+          policy,
+          result,
+          note: o.note,
+          picks: result === 'stalled' ? {} : moved(o.effects),
+        };
+      }),
       events: output.events.map((e) => ({
         kind: e.kind,
         size: e.size,
@@ -1092,6 +1109,18 @@ export function createDirector(options: DirectorOptions): Director {
       const made = instrument
         ? resolveInstrument(world, instrument, picks, resolution)
         : resolveNovel(world, picks, resolution);
+      // An order that backfires still does what it does, and stirs up anger on top.
+      if (outcome?.result === 'backfired')
+        made.push(
+          ...resolveNovel(
+            world,
+            {
+              [policy.region ? `grievance.${policy.region}` : 'grievance.all']:
+                NOVEL_LIMITS.grievance ?? 0,
+            },
+            { ...resolution, idPrefix: `${policy.id}:backlash` },
+          ),
+        );
       // A budget line cannot be cut below nothing: the cut stops at what is there to cut.
       for (const effect of made) {
         const available = readTarget(world, effect.on);
@@ -1115,6 +1144,20 @@ export function createDirector(options: DirectorOptions): Director {
         [policy.id],
         policy.region ? { place: policy.region } : {},
       );
+      // An order that goes nowhere, or goes wrong, is news the day it is due to take effect.
+      if (outcome?.result === 'stalled' || outcome?.result === 'backfired')
+        emit(
+          Math.min(policy.enactDay, r.fromDay + days),
+          outcome.result === 'stalled' ? 'policy.stalled' : 'policy.backfired',
+          'significant',
+          `${
+            outcome.result === 'stalled'
+              ? `The order "${policy.title}" has stalled.`
+              : `The order "${policy.title}" has turned against the government.`
+          } ${outcome.note}`.trim(),
+          [policy.id],
+          policy.region ? { place: policy.region } : {},
+        );
       pendingEnact.push(policy);
       // Those whose support you rely on tell you privately when an order cuts against them.
       for (const actor of scenario.cast) {

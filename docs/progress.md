@@ -10,8 +10,8 @@ If you are picking this project up cold, read this section, then the tables belo
 - **The M0 gate passed on 2026-11-12:** eighteen in-game months on the local model with no failed step (see step 8 in the table below). M1 is the current milestone.
 - **Not verified:** CI has not run since the map moved to MapLibre; the Anthropic and Gemini adapters have never made a real call; no hosted model has been measured.
 - **Next, in order:**
-  1. Let the dice decide how an order lands (as intended, in part, stalled, backfired) so that not every order ends "partial", as all twelve did in the year played; the model then words it.
-  1a. Freedom of action: a wider catalogue, and orders outside it with consequences that fit what was ordered.
+  1. Freedom of action: a wider catalogue, and orders outside it with consequences that fit what was ordered. (Done on 2026-11-12, decision record 0011: the dice decide how an order lands, and a clear order can no longer be set aside as too vague.)
+  1a. Make the odds of a landing depend on who opposes the order and how the government stands, not only on its size.
   1b. Ways to lose office, so that a year has stakes.
   1c. Events of the world's own drawn by the engine from the cast and the state of the country, in place of the judge's free-hand one-liners.
   2. Check that an undertaking was kept by its specifics, not just by the kind of order issued.

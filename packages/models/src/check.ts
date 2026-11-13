@@ -56,6 +56,7 @@ const adjudicateIn: AdjudicateIn = {
       by: 'gov-tst',
       summary: 'Cut fuel subsidies, medium in scale.',
       stage: 'enacted',
+      landed: 'partial',
       allowed: [
         { on: 'spending.subsidies', range: [-1.4, -0.7], unit: '% GDP' },
         { on: 'inflation', range: [1.1, 2.1], unit: 'points' },

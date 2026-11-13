@@ -7,6 +7,8 @@ import {
   type Effect,
   findInstrument,
   fiscal,
+  landed,
+  landing,
   nationalApproval,
   resolveInstrument,
   type ScenarioInput,
@@ -222,5 +224,39 @@ describe('engine rules', () => {
       owner: 'TST',
       status: 'occupied',
     });
+  });
+});
+
+describe('how an order lands', () => {
+  it('is decided by keyed dice, and goes wrong more often the more forceful the order', () => {
+    const count = (scale: 'small' | 'large') => {
+      const tally = { as_intended: 0, partial: 0, stalled: 0, backfired: 0 };
+      for (let i = 0; i < 4000; i++) tally[landing('seed', `p${i}`, scale)]++;
+      return tally;
+    };
+    const small = count('small');
+    const large = count('large');
+    // Every landing happens, so an order has something to hope for and something to fear.
+    for (const n of [...Object.values(small), ...Object.values(large)])
+      expect(n).toBeGreaterThan(100);
+    expect(small.as_intended).toBeGreaterThan(large.as_intended);
+    expect(large.stalled + large.backfired).toBeGreaterThan(small.stalled + small.backfired);
+    // The same order in the same campaign always lands the same way; another campaign differs.
+    expect(landing('seed', 'p1', 'medium')).toBe(landing('seed', 'p1', 'medium'));
+    const differs = Array.from({ length: 40 }, (_, i) => `p${i}`).some(
+      (id) => landing('seed', id, 'medium') !== landing('other', id, 'medium'),
+    );
+    expect(differs).toBe(true);
+  });
+
+  it('gives the stronger half of a range to an order that went as intended, and nothing to one that stalled', () => {
+    expect(landed([1, 3], 'as_intended')).toEqual([2, 3]);
+    expect(landed([1, 3], 'partial')).toEqual([1, 2]);
+    expect(landed([1, 3], 'backfired')).toEqual([1, 2]);
+    expect(landed([-3, -1], 'as_intended')).toEqual([-3, -2]);
+    expect(landed([-3, -1], 'partial')).toEqual([-2, -1]);
+    expect(landed([1, 3], 'stalled')).toBeNull();
+    // A range that runs both ways from zero has no stronger half.
+    expect(landed([-2, 2], 'as_intended')).toEqual([-2, 2]);
   });
 });

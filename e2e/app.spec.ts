@@ -200,7 +200,7 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   const judging = inspector
     .getByRole('list', { name: 'Model calls' })
     .getByRole('listitem')
-    .filter({ hasText: 'turn.adjudicate v3' });
+    .filter({ hasText: 'turn.adjudicate v' });
   await expect(judging).toBeVisible();
   // Every call carries its own measurements and says how the shape was asked for.
   await expect(judging).toContainText('to first token');

@@ -14,3 +14,4 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0008](0008-fast-local-calls-strict-schemas-and-local-repair.md) | Fast local calls: strict schemas, local repair, and one call for a turn's answers | 2026-11-12 |
 | [0009](0009-the-world-moves-first.md) | The world moves first: the cast acts unprompted, and a more eventful judge | 2026-11-12 |
 | [0010](0010-no-second-opinion-before-the-commit.md) | No second opinion before the commit | 2026-11-12 |
+| [0011](0011-the-dice-decide-how-an-order-lands.md) | The dice decide how an order lands, and the game decides what is too vague | 2026-11-12 |

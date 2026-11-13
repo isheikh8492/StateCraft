@@ -7,6 +7,7 @@ import {
   type AdjudicateIn,
   dropInvented,
   INSTRUMENT_REFS,
+  policyCompile,
   policyReact,
   policyRead,
   type ReadIn,
@@ -132,6 +133,7 @@ describe('a per-call schema', () => {
         by: 'gov',
         summary: 'Cut fuel subsidies.',
         stage: 'announced',
+        landed: 'partial',
         allowed: [
           { on: 'inflation', range: [1.1, 2.1], unit: 'points' },
           { on: 'spending.subsidies', range: [-1.4, -0.7], unit: '% GDP' },
@@ -341,5 +343,43 @@ describe('a per-call schema', () => {
       'One two three four. Five six seven eight.\n\nNine ten eleven twelve.',
     );
     expect(clipWords('One two three four five six seven', 4)).toBe('One two three four…');
+  });
+});
+
+describe('reading orders', () => {
+  it('does not let a model set a clear order aside as too vague', () => {
+    const compileIn = {
+      cards: [
+        { id: 'c1', text: 'Open talks with tribal elders in the Northern Province.' },
+        { id: 'c2', text: 'Nationalise the three largest private banks.' },
+        { id: 'c3', text: 'Fix it' },
+      ],
+      standing: [],
+      office,
+      instruments: INSTRUMENT_REFS,
+      regions,
+    };
+    // What the local model actually did in play: asked how to implement orders any
+    // government would simply carry out.
+    const out = {
+      why: '',
+      policies: [],
+      duplicates: [],
+      conflicts: [],
+      needsDetail: [
+        { card: 'c1', question: 'What specific action is intended?' },
+        { card: 'c2', question: 'How should it be implemented and funded?' },
+        { card: 'c3', question: 'Fix what?' },
+      ],
+    };
+    const fixes = policyCompile.mend?.(compileIn, out) ?? [];
+    expect(fixes).toHaveLength(2);
+    expect(out.policies).toMatchObject([
+      { instrument: 'regional_settlement', region: 'north', fromCards: ['c1'] },
+      { instrument: 'novel', fromCards: ['c2'] },
+    ]);
+    // Two words that say nothing are still too vague, and are answered as such in the world.
+    expect(out.needsDetail).toEqual([{ card: 'c3', question: 'Fix what?' }]);
+    expect(policyCompile.check(compileIn, out)).toEqual([]);
   });
 });

@@ -84,19 +84,31 @@ async function request(
   body: unknown,
   signal: AbortSignal,
 ): Promise<Response> {
-  let response: Response;
-  try {
-    response = await fetch(url, {
+  const send = () =>
+    fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
       signal,
     });
-  } catch (error) {
+  const timedOut = (error: unknown) => {
     const name = error instanceof Error ? error.name : '';
-    if (name === 'TimeoutError' || name === 'AbortError')
-      throw new ModelFailure('timeout', 'The model took too long to answer.');
-    throw new ModelFailure('network', `Could not reach the model at ${new URL(url).origin}.`);
+    return name === 'TimeoutError' || name === 'AbortError';
+  };
+  let response: Response;
+  try {
+    response = await send();
+  } catch (first) {
+    if (timedOut(first)) throw new ModelFailure('timeout', 'The model took too long to answer.');
+    // A connection that drops before anything is sent back is usually a stale socket, not a
+    // dead server: try once more before giving the whole call up to built-in wording.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    try {
+      response = await send();
+    } catch (second) {
+      if (timedOut(second)) throw new ModelFailure('timeout', 'The model took too long to answer.');
+      throw new ModelFailure('network', `Could not reach the model at ${new URL(url).origin}.`);
+    }
   }
   if (response.ok) return response;
   const detail = (await response.text().catch(() => '')).slice(0, 300);

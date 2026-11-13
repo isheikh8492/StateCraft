@@ -1,4 +1,4 @@
-import { CATALOGUE, type Direction, type Scale } from '@statecraft/engine';
+import { CATALOGUE, type Direction, type Landing, type Scale } from '@statecraft/engine';
 import { z } from 'zod';
 import { findRegion, matchInstrument, OPPOSITES, type Ref } from './match.ts';
 import {
@@ -300,6 +300,32 @@ export const policyCompile: Job<CompileIn, CompileOut> = {
     out.duplicates = once(out.duplicates, (d) => [d.card], 'duplicates');
     out.conflicts = once(out.conflicts, (c) => c.cards, 'conflicts');
     out.needsDetail = once(out.needsDetail, (n) => [n.card], 'needsDetail');
+    // What counts as too vague to act on is the game's call, not the model's. A model asks
+    // "how should this be implemented?" of orders any government would simply carry out,
+    // and an order set aside as vague is an order the player has lost. If the game's own
+    // reader can tell what is meant, or the order is a full sentence, it goes ahead.
+    out.needsDetail = out.needsDetail.filter((unclear) => {
+      const card = input.cards.find((c) => c.id === unclear.card);
+      const match = card ? matchInstrument(card.text, input.regions) : undefined;
+      if (!card || match === undefined) return true;
+      const instrument = match === 'novel' ? 'novel' : match.instrument;
+      const label =
+        input.instruments.find((i) => i.id === instrument)?.label ?? 'Order outside the catalogue';
+      out.policies.push({
+        title: clip(label, 120),
+        summary: clip(card.text, 400),
+        instrument,
+        ...(match !== 'novel' && match.region ? { region: match.region } : {}),
+        scale: match === 'novel' ? 'small' : match.scale,
+        ...(match === 'novel' ? {} : { direction: match.direction }),
+        funding: 'unspecified',
+        fromCards: [card.id],
+      });
+      fixes.push(
+        `needsDetail: "${clip(card.text, 40)}" is clear enough to act on, read as ${instrument}`,
+      );
+      return false;
+    });
     return fixes;
   },
   check(input, out) {
@@ -418,7 +444,18 @@ export interface AdjudicateIn {
   state: Record<string, number | string>;
   regions: Ref[];
   /** Every actor's actions in one list with one shape. Nothing marks the human player. */
-  actions: { id: string; by: string; summary: string; stage: string; allowed: Allowed[] }[];
+  actions: {
+    id: string;
+    by: string;
+    summary: string;
+    stage: string;
+    /**
+     * How the action went, already decided by the dice. The judge does not choose this: it
+     * picks how far each variable moved inside "allowed", and says why it went that way.
+     */
+    landed: Landing;
+    allowed: Allowed[];
+  }[];
   /** How far an event may move each variable, either way: `{ "inflation": 0.5, ... }`. */
   eventLimits: Record<string, number>;
   recent: { id: string; when: string; summary: string }[];
@@ -462,13 +499,13 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     '{"why":string,"outcomes":{"<action id>":{"result":"as_intended"|"partial"|"stalled"|"backfired","effects":{"<variable>":number},"note":string}},"events":[{"kind":string,"size":"colour"|"minor"|"significant"|"major","summary":string,"place"?:string,"inDays":number,"effects":{"<variable>":number},"causes":string[]}]}',
   usesBrief: true,
   repairs: 2,
-  version: 3,
+  version: 4,
   role: 'adjudicator',
   maxTokens: 4000,
   rules: `You judge one stretch of time in a political simulation. You do not know which actor, if any, is a human; treat every action the same way.
-- "outcomes" has one entry per action, keyed by the action's id. "result" says how the action went in practice: as_intended, partial, stalled or backfired. Institutions resist change: most large changes land partially.
-- "effects" is an object of named numbers. Give a value for each variable the action is allowed to touch, inside its range; 0 means no movement. A stalled action moves nothing.
-- "note": one sentence for the record, plain and factual.
+- "outcomes" has one entry per action, keyed by the action's id. How each action went has already been decided and is given as its "landed": as_intended, partial, stalled (announced, and nothing moved) or backfired (carried out, and it turned against whoever ordered it). Copy it into "result". You do not choose it.
+- "effects" is an object of named numbers. Give a value for each variable the action is allowed to touch, inside its range; the ranges already reflect how it landed. A stalled action has none.
+- "note": one sentence for the record that says why it went the way "landed" says: who dragged their feet, what gave way, what the order ran into. Plain and factual, with no figures.
 - "events": what else happens in the period. The world does not wait for the government. Parties, armed groups, courts, provinces, markets, neighbours, lenders and the weather all move on their own, and most of what happens in a country is not a response to its government. Write those things: a walkout, a ruling, a border incident, a leak, a strike, a run on a bank, a flood, a deal struck without the government. Keep them consistent with the state and the world brief.
 - Write about one event for every week of the period, and at least one in any period. In a period of a week or more, at least one must be of size "significant": something the head of government will have to decide what to do about.
 - Each event needs a "kind", a "size", a one-sentence "summary" (at most 200 characters) that names who did what and where, "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "outcomes" where one of them really led to it, otherwise an empty list. An event of size "major" must cite a cause.
@@ -485,7 +522,7 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
       const fields: Record<string, [number, number]> = {};
       for (const rule of action.allowed) fields[rule.on] = rule.range;
       outcomes[action.id] = obj({
-        result: pick(RESULTS),
+        result: pick([action.landed]),
         effects: numbers(fields, true),
         note: str(300),
       });
@@ -523,6 +560,15 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     // The engine holds the budget for grave events, so an event too many is taken down a
     // size here instead of costing a second call: the event still happens, as lesser news.
     const fixes: string[] = [];
+    // The dice have said how each order landed. A reply that says otherwise is overruled.
+    for (const action of input.actions) {
+      const outcome = out.outcomes[action.id];
+      if (!outcome || outcome.result === action.landed) continue;
+      fixes.push(
+        `outcomes.${action.id}.result: "${outcome.result}" read as "${action.landed}", as decided`,
+      );
+      outcome.result = action.landed;
+    }
     // The engine works out what an order moved, and the policy page shows it. A note that
     // quotes figures of its own ("cut by 19% of GDP") is replaced with plain wording.
     for (const [id, outcome] of Object.entries(out.outcomes)) {
@@ -599,16 +645,13 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     const outcomes: Record<string, z.infer<typeof Outcome>> = {};
     for (const a of input.actions) {
       outcomes[a.id] = {
-        result: 'partial',
+        result: a.landed,
         effects: Object.fromEntries(a.allowed.map((r) => [r.on, (r.range[0] + r.range[1]) / 2])),
-        note:
-          a.allowed.length > 0
-            ? 'Carried out, with the usual friction.'
-            : 'Announced; no measurable effect yet.',
+        note: PLAIN_NOTE[a.landed],
       };
     }
     return {
-      why: 'No model: each action applies the middle of its allowed ranges.',
+      why: 'No model: each action lands as the dice said, at the middle of its allowed ranges.',
       outcomes,
       events: [],
     };

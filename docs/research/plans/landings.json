@@ -1,0 +1,13 @@
+[
+  { "order": "Cut the fuel subsidy by a third." },
+  { "order": "Raise the sales tax by two points." },
+  { "order": "Launch a security operation against the Tehrik-i-Taliban in Khyber Pakhtunkhwa." },
+  { "move": { "days": 14 } },
+  { "order": "Expand cash transfers to poor households." },
+  { "order": "Open talks with tribal elders in Balochistan." },
+  { "order": "Nationalise the three largest private banks." },
+  { "move": { "days": 14 } },
+  { "order": "Increase development spending on roads in Sindh." },
+  { "order": "Cut income tax for salaried workers." },
+  { "move": { "untilMajor": true } }
+]

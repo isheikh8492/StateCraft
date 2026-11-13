@@ -3,6 +3,42 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 2: how an order lands
+
+**Built.** Keyed dice decide whether an order goes as intended, in part, stalls or backfires;
+the judge is told and writes why (decision record 0011). A dropped connection to the model
+server is tried once more before the call is given up: an intermittent test failure turned
+out to be exactly that, a stale socket sending a whole answer to built-in wording.
+
+**Played.** Eight orders over a month on `openai/gpt-oss-20b`, from `plans/landings.json`.
+Transcript: `sessions/2026-11-12-landings.md`.
+
+**Measured.** 9 calls, all answered first try, none repaired, none fell back. A turn with
+orders took 46 s on average and 57 s at worst (three orders at a time, so more to read and
+judge than in the earlier sessions).
+
+**Learned.**
+
+1. *Landings vary now.* Five in part and one backfired among the six that went ahead. The
+   backfired tax cut got its own news line and a sentence of cause from the judge.
+2. *The reader threw away two clear orders.* "Open talks with tribal elders in Balochistan"
+   and "Nationalise the three largest private banks" came back as too vague, with a question
+   about how to implement them, and were blocked. In the first month the same nationalisation
+   order went through. Whether an order is clear cannot be left to the model.
+3. *"To next major event" stops properly now* (eight days, on an attack), but the event that
+   stopped it had the Baloch Liberation Army shelling a checkpoint in Skardu, which is in
+   Gilgit-Baltistan. The judge's free-hand events are still the weakest writing in the game.
+4. *The judge's note sometimes argues with the landing:* "Subsidy cut stalled by cabinet
+   delay, but subsidy reduced" for an order that went in part.
+
+**Decided.**
+
+- Fixed now: the game's own reader has the last word on vagueness. If the keyword rules can
+  read an order, or it is a full sentence, it goes ahead.
+- Next: events of the world's own drawn by the engine from the cast and the state of the
+  country, in place of the judge's free-hand lines (seen wrong in all three sessions: out of
+  season, contradicting a reaction, in the wrong province); then ways to lose office.
+
 ## 2026-11-12, pass 1 continued: a year and a half on a real model, and the M0 gate
 
 **Played.** Eighteen in-game months on `openai/gpt-oss-20b`, on the build with the month's

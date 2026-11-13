@@ -1,6 +1,6 @@
 # Scorecard: StateCraft against Modern Day 2026
 
-Last scored: 2026-11-12 (pass 1). Rules for this file are in `docs/GOAL.md`.
+Last scored: 2026-11-12 (pass 2). Rules for this file are in `docs/GOAL.md`.
 
 **Sources for the other game.** `[MD]` is its own page, <https://worldos.cc/worlds/modern-day-2026>,
 read on 2026-11-12 (the page was cut short by the reader, so absence of a feature there is
@@ -21,7 +21,7 @@ well enough to say. "Ahead" needs evidence on our side and a source on theirs.
 | Depth of one country | Not stated. The page lists domains tracked (diplomacy, economy, deterrence, technology, energy, domestic politics) with no detail `[MD]` | Budget, approval by group, unrest by region in stages, control, a legislature with real seat counts that votes, courts that stay orders, sixteen named stakeholders with standing (engine tests; session `2026-11-12-month-1`) | **unknown**, likely ahead per country |
 | Other nations acting on their own agendas | Yes: "Every other country is run by its own AI government with its own interests"; since v6 they act "every turn" `[MD]` | No other country is modelled. India, China, Afghanistan and the IMF speak and can make bounded moves as cast members | **behind** |
 | A world that moves without you | Yes since v6: coups, elections, civil wars, border wars, new alliances; a time skip reports what happened; background events never take your own territory `[MD]` | The cast moves first and the judge writes the country's own events (decision 0009; test "a world that moves first"; 5 unprompted moves in session `month-1`). Inside one country only | **behind** in scope |
-| Plain-language orders | Yes: "whatever you want to do — the world reacts" `[MD]` | Yes, but an order outside the ten or so catalogue instruments becomes `novel` with small bounded effects: "Nationalise the three largest private banks" landed as "modest economic impact" (session `month-1`, step 11) | **behind**: freedom of action is the weakest thing in play |
+| Plain-language orders | Yes: "whatever you want to do — the world reacts" `[MD]` | Yes. A clear order can no longer be set aside as too vague, and dice decide whether it goes as intended, in part, stalls or backfires (decision 0011; session `landings`). But an order outside the ten or so catalogue instruments still gets only small bounded effects and no consequences of its own | **behind**: still the weakest thing in play |
 | Diplomacy | Private and group chats with any character `[MD]`; treaties and alliances `[claim]` | Ask any reachable stakeholder; offers become undertakings with a due date that are kept or broken on the record; threats cost standing (test "holds you to your word"). No treaties, no alliances, no other states | **behind** in scope, **ahead** on being held to your word |
 | War and territory | A zoomable territory map acted on region by region; provinces added so civil wars and secessions can play out `[MD]` | Regions have control status drawn on the map; no units, no fronts, no transfer of territory | **behind** |
 | Map correctness | The GM gets the map wrong often enough that players are given a wrench tool to fix it `[MD]` | Control changes only through engine rules; a model cannot change the map (engine test "control changes only by an explicit act") | **ahead** |
