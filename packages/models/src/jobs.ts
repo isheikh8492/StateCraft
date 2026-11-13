@@ -456,10 +456,22 @@ export interface AdjudicateIn {
     landed: Landing;
     allowed: Allowed[];
   }[];
-  /** How far an event may move each variable, either way: `{ "inflation": 0.5, ... }`. */
-  eventLimits: Record<string, number>;
+  /**
+   * What else happens in the period, already decided by the engine: what kind of thing,
+   * where, on which day, involving whom, and how much it matters. The judge words each one
+   * and decides none of it (decision record 0012).
+   */
+  happenings: {
+    id: string;
+    kind: string;
+    size: Size;
+    when: string;
+    where?: string;
+    who?: string;
+    /** A plain line saying what happened, to be written properly. */
+    gist: string;
+  }[];
   recent: { id: string; when: string; summary: string }[];
-  surpriseBudget: { major: number; significant: number };
 }
 /** Effects in the short form: one named number per variable, `{"inflation": 1.2}`. */
 const Effects = z.record(z.string(), z.number()).default({});
@@ -468,24 +480,15 @@ const Outcome = z.object({
   effects: Effects,
   note: z.string().max(300).default(''),
 });
-const WorldEvent = z.object({
-  kind: z.string().min(1).max(40),
-  size: z.enum(SIZES),
-  summary: z.string().min(1).max(200),
-  place: z.string().optional(),
-  inDays: z.number().int().min(0),
-  effects: Effects,
-  causes: z.array(z.string()).default([]),
-});
 const AdjudicateOut = z.object({
   why: z.string().default(''),
   /** Keyed by action id: exactly one outcome per action, by construction. */
   outcomes: z.record(z.string(), Outcome).default({}),
-  events: z.array(WorldEvent).default([]),
+  /** Keyed by happening id: the one sentence of news for each. */
+  events: z.record(z.string(), z.string()).default({}),
 });
 export type AdjudicateOut = z.infer<typeof AdjudicateOut>;
 
-const MAX_EVENTS = 8;
 const PLAIN_NOTE = {
   as_intended: 'Carried out as ordered.',
   partial: 'Carried out in part, with the usual friction.',
@@ -496,27 +499,21 @@ const PLAIN_NOTE = {
 export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
   name: 'turn.adjudicate',
   shape:
-    '{"why":string,"outcomes":{"<action id>":{"result":"as_intended"|"partial"|"stalled"|"backfired","effects":{"<variable>":number},"note":string}},"events":[{"kind":string,"size":"colour"|"minor"|"significant"|"major","summary":string,"place"?:string,"inDays":number,"effects":{"<variable>":number},"causes":string[]}]}',
+    '{"why":string,"outcomes":{"<action id>":{"result":"as_intended"|"partial"|"stalled"|"backfired","effects":{"<variable>":number},"note":string}},"events":{"<happening id>":string}}',
   usesBrief: true,
   repairs: 2,
-  version: 4,
+  version: 5,
   role: 'adjudicator',
   maxTokens: 4000,
   rules: `You judge one stretch of time in a political simulation. You do not know which actor, if any, is a human; treat every action the same way.
 - "outcomes" has one entry per action, keyed by the action's id. How each action went has already been decided and is given as its "landed": as_intended, partial, stalled (announced, and nothing moved) or backfired (carried out, and it turned against whoever ordered it). Copy it into "result". You do not choose it.
 - "effects" is an object of named numbers. Give a value for each variable the action is allowed to touch, inside its range; the ranges already reflect how it landed. A stalled action has none.
 - "note": one sentence for the record that says why it went the way "landed" says: who dragged their feet, what gave way, what the order ran into. Plain and factual, with no figures.
-- "events": what else happens in the period. The world does not wait for the government. Parties, armed groups, courts, provinces, markets, neighbours, lenders and the weather all move on their own, and most of what happens in a country is not a response to its government. Write those things: a walkout, a ruling, a border incident, a leak, a strike, a run on a bank, a flood, a deal struck without the government. Keep them consistent with the state and the world brief.
-- Write about one event for every week of the period, and at least one in any period. In a period of a week or more, at least one must be of size "significant": something the head of government will have to decide what to do about.
-- Each event needs a "kind", a "size", a one-sentence "summary" (at most 200 characters) that names who did what and where, "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "outcomes" where one of them really led to it, otherwise an empty list. An event of size "major" must cite a cause.
-- Event "effects" may name only the variables in "eventLimits", each between minus and plus its limit. Give effects to events that would really move something; leave the object empty otherwise.
-- Stay inside "surpriseBudget" for events of size major and significant.
-- Keep to the calendar. "period" gives the dates: write what fits that month and season in this country, and nothing that belongs to another time of year.
-- "place" is a region id from the list. Use ids only. State what happens; do not comment on whether it is right or wrong.`,
+- "events" has one entry per item in "happenings", keyed by its id. Each happening is settled: that kind of thing took place, on that day ("when"), in that place ("where"), involving that actor ("who"), and it matters as much as its "size" says. You decide none of that and may change none of it.
+- For each, write one sentence of news, at most 200 characters, that makes its "gist" specific to this country as the world brief describes it: name the city, the institution, the union, the road, the crossing. Do not copy the gist's wording. Do not state the date: it is shown beside the line. Keep to the season. Use no figures that are not in the input. Make each different from the others and from "recent".
+- State what happened. Do not comment on whether it is right or wrong, and do not add what it led to.`,
   output: AdjudicateOut,
   schema(input) {
-    const regions = ids(input.regions);
-    const causes = [...input.recent.map((r) => r.id), ...input.actions.map((a) => a.id)];
     const outcomes: Record<string, Schema> = {};
     for (const action of input.actions) {
       const fields: Record<string, [number, number]> = {};
@@ -527,38 +524,17 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         note: str(300),
       });
     }
-    const limits: Record<string, [number, number]> = {};
-    for (const [on, limit] of Object.entries(input.eventLimits))
-      limits[on] = [-Math.abs(limit), Math.abs(limit)];
-    return obj({
-      why: WHY,
-      outcomes: {
-        type: 'object',
-        properties: outcomes,
-        required: Object.keys(outcomes),
-        additionalProperties: false,
-      },
-      events: list(
-        obj(
-          {
-            kind: str(40),
-            // A size the budget rules out is not offered at all.
-            size: pick(SIZES.filter((size) => size !== 'major' || input.surpriseBudget.major > 0)),
-            summary: str(200),
-            place: pick(regions),
-            inDays: int(0, Math.max(input.period.days, 0)),
-            effects: numbers(limits, false),
-            causes: list(pick(causes), 3),
-          },
-          ['place'],
-        ),
-        MAX_EVENTS,
-      ),
+    const events: Record<string, Schema> = {};
+    for (const happening of input.happenings) events[happening.id] = str(200);
+    const keyed = (properties: Record<string, Schema>): Schema => ({
+      type: 'object',
+      properties,
+      required: Object.keys(properties),
+      additionalProperties: false,
     });
+    return obj({ why: WHY, outcomes: keyed(outcomes), events: keyed(events) });
   },
   mend(input, out) {
-    // The engine holds the budget for grave events, so an event too many is taken down a
-    // size here instead of costing a second call: the event still happens, as lesser news.
     const fixes: string[] = [];
     // The dice have said how each order landed. A reply that says otherwise is overruled.
     for (const action of input.actions) {
@@ -578,21 +554,21 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         `outcomes.${id}.note: replaced, since it stated figures that are not in the input`,
       );
     }
-    let major = input.surpriseBudget.major;
-    let significant = input.surpriseBudget.significant;
-    for (const [i, e] of out.events.entries()) {
-      if (e.size === 'major' && (major <= 0 || e.causes.length === 0)) {
-        e.size = 'significant';
-        fixes.push(`events[${i}].size: major taken down to significant, the budget allows no more`);
-      } else if (e.size === 'major') major--;
-      if (e.size === 'significant') {
-        if (significant <= 0) {
-          e.size = 'minor';
-          fixes.push(
-            `events[${i}].size: significant taken down to minor, the budget allows no more`,
-          );
-        } else significant--;
-      }
+    // A happening is news whatever becomes of its wording: a line that is missing, invents a
+    // figure or passes judgment is replaced by the plain line, and never costs a second call.
+    for (const happening of input.happenings) {
+      const line = out.events[happening.id]?.trim() ?? '';
+      const why =
+        line === ''
+          ? 'was not written'
+          : inventedNumbers(line, input).length > 0
+            ? 'stated figures that are not in the input'
+            : COMMENTARY.test(line)
+              ? 'passed judgment on what happened'
+              : undefined;
+      if (why === undefined) continue;
+      out.events[happening.id] = happening.gist;
+      fixes.push(`events.${happening.id}: the plain line is used, since the one written ${why}`);
     }
     return fixes;
   },
@@ -615,30 +591,6 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     }
     for (const id of actions.keys())
       if (out.outcomes[id] === undefined) problems.push(`No outcome for action ${id}.`);
-
-    const causes = new Set([...input.recent.map((r) => r.id), ...actions.keys()]);
-    const regions = new Set(input.regions.map((r) => r.id));
-    let major = 0;
-    let significant = 0;
-    for (const [i, e] of out.events.entries()) {
-      if (e.size === 'major') major++;
-      if (e.size === 'significant') significant++;
-      if (e.inDays > input.period.days) problems.push(`Event ${i}: inDays is beyond the period.`);
-      if (e.place !== undefined && !regions.has(e.place))
-        problems.push(`Event ${i}: unknown region id ${e.place}.`);
-      for (const c of e.causes)
-        if (!causes.has(c)) problems.push(`Event ${i}: unknown cause id ${c}.`);
-      if (e.causes.length === 0 && e.size === 'major')
-        problems.push(`Event ${i}: a major event must cite a cause.`);
-      for (const on of Object.keys(e.effects))
-        if (input.eventLimits[on] === undefined) problems.push(`Event ${i}: may not touch ${on}.`);
-      if (COMMENTARY.test(e.summary))
-        problems.push(`Event ${i}: state what happened without commentary.`);
-    }
-    if (major > input.surpriseBudget.major)
-      problems.push(`Too many major events: at most ${input.surpriseBudget.major}.`);
-    if (significant > input.surpriseBudget.significant)
-      problems.push(`Too many significant events: at most ${input.surpriseBudget.significant}.`);
     return problems;
   },
   fallback(input) {
@@ -653,7 +605,7 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     return {
       why: 'No model: each action lands as the dice said, at the middle of its allowed ranges.',
       outcomes,
-      events: [],
+      events: Object.fromEntries(input.happenings.map((h) => [h.id, h.gist])),
     };
   },
 };

@@ -140,12 +140,27 @@ describe('a per-call schema', () => {
         ],
       },
     ],
-    eventLimits: { 'grievance.all': 3 },
+    happenings: [
+      {
+        id: 'h1',
+        kind: 'strike',
+        size: 'minor',
+        when: '2026-01-05',
+        where: 'Northern Province',
+        gist: 'Traders in Northern Province shut their shops for a day.',
+      },
+      {
+        id: 'h2',
+        kind: 'court',
+        size: 'minor',
+        when: '2026-01-19',
+        gist: 'The highest court took up a petition challenging a recent government decision.',
+      },
+    ],
     recent: [{ id: 'e1', when: '2025-12-20', summary: 'Unions warned against price rises.' }],
-    surpriseBudget: { major: 0, significant: 1 },
   };
 
-  it('names the only answers allowed: the actions, their variables, the regions and the causes', () => {
+  it('names the only answers allowed: the actions, their variables, and the happenings to word', () => {
     // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
     const schema = turnAdjudicate.schema(input) as any;
     expect(schema.additionalProperties).toBe(false);
@@ -154,10 +169,12 @@ describe('a per-call schema', () => {
     const effects = schema.properties.outcomes.properties.p1.properties.effects;
     expect(Object.keys(effects.properties)).toEqual(['inflation', 'spending.subsidies']);
     expect(effects.properties.inflation).toEqual({ type: 'number', minimum: 1.1, maximum: 2.1 });
-    const event = schema.properties.events.items.properties;
-    expect(event.place.enum).toEqual(['north', 'south']);
-    expect(event.causes.items.enum).toEqual(['e1', 'p1']);
-    expect(Object.keys(event.effects.properties)).toEqual(['grievance.all']);
+    // The landing is not the judge's to choose: only the one the dice gave is on offer.
+    expect(schema.properties.outcomes.properties.p1.properties.result.enum).toEqual(['partial']);
+    // Nor are events: what happened, where and when is settled, and only a line is asked for.
+    expect(schema.properties.events.required).toEqual(['h1', 'h2']);
+    expect(schema.properties.events.properties.h1).toEqual({ type: 'string', maxLength: 200 });
+    expect(schema.properties.events.additionalProperties).toBe(false);
   });
 
   it('puts small mistakes right in place, and says when the shape itself was wrong', () => {
@@ -177,32 +194,29 @@ describe('a per-call schema', () => {
             confidence: 0.9,
           },
         },
-        events: [
-          {
-            kind: 'strike',
-            size: 'minor',
-            summary: 'Transporters struck for a day.',
-            place: null,
-            inDays: '4',
-            effects: { 'grievance.all': 7 },
-            causes: ['e1'],
-          },
-        ],
+        events: {
+          h1: 'Shopkeepers along the Grand Bazaar in the northern capital pulled down their shutters for a day.',
+          h2: null,
+          h9: 'A coup.',
+        },
       },
       schema,
     );
     const out = turnAdjudicate.output.parse(fixed.value);
     expect(out.outcomes.p1?.effects).toEqual({ inflation: 2.1, 'spending.subsidies': -1 });
-    expect(out.events[0]).toMatchObject({ inDays: 4, effects: { 'grievance.all': 3 } });
-    expect(out.events[0]?.place).toBeUndefined();
-    expect(turnAdjudicate.check(input, out)).toEqual([]);
+    expect(Object.keys(out.events)).toEqual(['h1']);
     expect(fixed.fixes).toEqual([
       'the reply.outcomes.p1.effects: read a list of pairs as named values',
       'the reply.outcomes.p1.effects.inflation: 9 clamped to 2.1',
       'the reply.outcomes.p1: dropped the unasked field "confidence"',
-      'the reply.events[0].inDays: read "4" as a number',
-      'the reply.events[0].effects.grievance.all: 7 clamped to 3',
+      'the reply.events: dropped the unasked field "h9"',
     ]);
+    // A happening the judge left unworded still happens, in the plain line it was given.
+    expect(turnAdjudicate.mend?.(input, out)).toEqual([
+      'events.h2: the plain line is used, since the one written was not written',
+    ]);
+    expect(out.events.h2).toBe(input.happenings[1]?.gist);
+    expect(turnAdjudicate.check(input, out)).toEqual([]);
     // Fields nobody asked for and values of the wrong type: this server is not enforcing it.
     expect(fixed.shapeOk).toBe(false);
   });
@@ -310,30 +324,23 @@ describe('a per-call schema', () => {
     expect(dropInvented('Fares will jump by 30%.', known)).toBeUndefined();
   });
 
-  it('takes a grave event the budget does not allow down a size, and offers no size it rules out', () => {
-    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
-    const schema = turnAdjudicate.schema(input) as any;
-    expect(schema.properties.events.items.properties.size.enum).toEqual([
-      'colour',
-      'minor',
-      'significant',
-    ]);
-    const event = (size: 'major' | 'significant', causes: string[]) => ({
-      kind: 'strike',
-      size,
-      summary: 'A strike.',
-      inDays: 2,
-      effects: {},
-      causes,
-    });
+  it('overrules a landing the dice did not give, and a line of news that invents or moralises', () => {
     const out = {
       why: '',
-      outcomes: turnAdjudicate.fallback(input).outcomes,
-      events: [event('major', ['e1']), event('significant', []), event('significant', [])],
+      outcomes: {
+        p1: { result: 'as_intended' as const, effects: {}, note: 'Cut by 37% of GDP at once.' },
+      },
+      events: {
+        h1: 'Some 40,000 traders shut their shops in the northern capital.',
+        h2: 'Tragically, the highest court agreed to hear a petition against the decision.',
+      },
     };
-    expect(turnAdjudicate.mend?.(input, out)).toHaveLength(3);
-    expect(out.events.map((e) => e.size)).toEqual(['significant', 'minor', 'minor']);
-    expect(turnAdjudicate.check(input, out)).toEqual([]);
+    expect(turnAdjudicate.mend?.(input, out)).toHaveLength(4);
+    expect(out.outcomes.p1).toMatchObject({
+      result: 'partial',
+      note: 'Carried out in part, with the usual friction.',
+    });
+    expect(out.events).toEqual({ h1: input.happenings[0]?.gist, h2: input.happenings[1]?.gist });
   });
 
   it('trims prose at a sentence end without flattening its paragraphs', () => {

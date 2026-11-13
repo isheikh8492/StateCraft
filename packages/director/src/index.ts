@@ -82,6 +82,7 @@ import {
   type ScenarioId,
 } from '@statecraft/scenarios';
 import { ambientEvent } from './ambient.ts';
+import { aftershock, forecast, type Happening } from './happenings.ts';
 import {
   dateOf,
   dayOf,
@@ -131,6 +132,12 @@ interface CompileData {
 interface AdjudicateData {
   /** No model wrote events for this period, so the world's own noise fills in. */
   quiet?: boolean;
+  /**
+   * The period's events were drawn by the engine before it was judged (decision record
+   * 0012), so nothing more is drawn while the days are run. Missing on turns saved before
+   * that, which keep the older day-by-day draw when they are run again.
+   */
+  drawn?: boolean;
   outcomes: { policy: string; result: string; note: string; picks: Record<string, number> }[];
   events: {
     kind: string;
@@ -428,6 +435,8 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
 const named = (sentence: string, name: string) =>
   sentence.replace(/^(It|They|The group|The party)\b/, name);
 
+/** How many of a period's happenings a model is asked to word. */
+const MAX_WORDED = 8;
 /** How many actors answer one order in full; the rest are noted by name. */
 const MAX_REACTIONS = 3;
 /** And how many answer in a whole turn, however much was ordered. */
@@ -900,11 +909,41 @@ export function createDirector(options: DirectorOptions): Director {
         }),
       };
     });
+    // What the world does on its own account over these days is settled now, by the engine:
+    // what kind of thing, where, when, how grave, and what it moves. So is what each order
+    // stirs up among ordinary people. A model words them; with none, the plain line stands.
+    const happenings: Happening[] = [
+      ...forecast(world, scenario.cast, r.fromDay, days),
+      ...active.flatMap((x, n) => {
+        const how = actions.find((a) => a.id === x.id)?.landed ?? 'partial';
+        return (
+          aftershock(
+            world,
+            { id: x.id, title: x.title, region: x.region, landed: how },
+            days,
+            n + 1,
+          ) ?? []
+        );
+      }),
+    ].sort((a, b) => a.inDays - b.inDays);
+    const asEvents = (wording: Record<string, string>): AdjudicateData['events'] =>
+      happenings.map((h) => ({
+        kind: h.kind,
+        size: h.size,
+        summary: wording[h.id] ?? h.gist,
+        ...(h.place ? { place: h.place } : {}),
+        inDays: h.inDays,
+        picks: h.picks,
+        causes: h.causes,
+      }));
     // Nothing was ordered and little time passes: there is nothing to judge, so no model is
-    // called and the world's own events fill the days.
-    if (actions.length === 0 && days < 7) return { quiet: true, outcomes: [], events: [] };
+    // called and the plain lines are the news.
+    if (actions.length === 0 && days < 7)
+      return { quiet: true, drawn: true, outcomes: [], events: asEvents({}) };
 
-    const tags = [...new Set(world.groups.flatMap((g) => g.tags))];
+    // A long run has more happenings than are worth a model's time: the first few are
+    // worded, since they are what the player reads first, and the rest keep the plain line.
+    const worded = happenings.slice(0, MAX_WORDED);
     const input: AdjudicateIn = {
       period: {
         from: dateOf(world.startDate, r.fromDay),
@@ -918,19 +957,22 @@ export function createDirector(options: DirectorOptions): Director {
       },
       regions: world.regions.map((x) => ({ id: x.id, label: x.name })),
       actions,
-      eventLimits: {
-        inflation: 0.5,
-        growth: 0.2,
-        'grievance.all': 3,
-        ...Object.fromEntries(world.regions.map((x) => [`grievance.${x.id}`, 3])),
-        ...Object.fromEntries(tags.map((t) => [`approval.${t}`, 3])),
-      },
+      happenings: worded.map((h) => {
+        const where = world.regions.find((x) => x.id === h.place)?.name;
+        const who = scenario.cast.find((c) => c.id === h.actor)?.name;
+        return {
+          id: h.id,
+          kind: h.kind,
+          size: h.size,
+          when: dateOf(world.startDate, r.fromDay + h.inDays),
+          ...(where ? { where } : {}),
+          ...(who ? { who } : {}),
+          gist: h.gist,
+        };
+      }),
       recent: allEvents(p)
         .slice(-8)
         .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
-      // The world is allowed to be eventful: something that matters every fortnight or so,
-      // and something grave in any stretch of two weeks or more.
-      surpriseBudget: { major: days >= 14 ? 1 : 0, significant: 1 + Math.floor(days / 14) },
     };
     const context = { resolution: r.id, brief: scenario.brief };
     const { output, via } = await harness.run(turnAdjudicate, input, context);
@@ -940,6 +982,7 @@ export function createDirector(options: DirectorOptions): Director {
       Object.fromEntries(Object.entries(effects).filter(([, value]) => value !== 0));
     const data: AdjudicateData = {
       ...(via === 'fallback' ? { quiet: true } : {}),
+      drawn: true,
       outcomes: Object.entries(output.outcomes).map(([policy, o]) => {
         // The dice's word is final, whatever came back.
         const result = actions.find((a) => a.id === policy)?.landed ?? o.result;
@@ -950,16 +993,7 @@ export function createDirector(options: DirectorOptions): Director {
           picks: result === 'stalled' ? {} : moved(o.effects),
         };
       }),
-      events: output.events.map((e) => ({
-        kind: e.kind,
-        size: e.size,
-        summary: e.summary,
-        ...(e.place ? { place: e.place } : {}),
-        inDays: e.inDays,
-        picks: moved(e.effects),
-        // Something the world did on its own has no earlier event behind it.
-        causes: e.causes.length > 0 ? e.causes : ['world'],
-      })),
+      events: asEvents(output.events),
     };
 
     // No second opinion is asked for before the turn commits (decision record 0010): the
@@ -1240,7 +1274,7 @@ export function createDirector(options: DirectorOptions): Director {
           policy.region ? { place: policy.region } : {},
         );
       }
-      if (judged.quiet) {
+      if (judged.quiet && !judged.drawn) {
         const today = dateOf(world.startDate, world.day);
         const ambient = ambientEvent(world, today, ambientSignificant > 0);
         if (ambient) {

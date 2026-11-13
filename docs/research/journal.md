@@ -3,6 +3,43 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 3: the engine draws the news
+
+**Built.** What the world does on its own is drawn by the engine from a deck, weighted by
+the state of the country, tied to the calendar, the cast and the map; the judge only words
+each one (decision record 0012).
+
+**Played.** The same month as pass 1, on `openai/gpt-oss-20b`. Transcript:
+`sessions/2026-11-12-month-2.md`.
+
+**Measured, against the first month.**
+
+| | Pass 1 | Pass 3 |
+| --- | --- | --- |
+| Calls answered first try | 17 of 21 | 19 of 19 |
+| Second tries / fallbacks | 4 / 0 | 0 / 0 |
+| Wait for a turn with orders, average | 33 s | 17 s |
+| Worst | 71 s | 44 s |
+| Judge: output tokens a turn | 545 | 184 |
+| Judge: time a call | 35 s | 14 s |
+| Unprompted moves by the cast | 5 | 7 |
+
+The average turn is now inside the spec's 30-second target for a local model.
+
+**Learned.**
+
+1. *The news is right now.* Arrests in Balochistan, a province complaining about its revenue
+   share, a lender's mission before its review, a crowd in Punjab against the tax rise that
+   was ordered: each in a real place, in season, and following from the state of the country.
+2. *The model prefixes every line with the date* ("On 5 Nov, ..."), which the screen already
+   shows. Told not to.
+3. *Reactions are now the slow part:* 32 s a call on average, after the commit.
+4. *From the owner, playing it:* the Principal Secretary repeats the same paragraph from one
+   answer to the next, objects instead of helping when asked for a plan, and the text sits
+   in a narrow column of a wide window.
+
+**Decided.** Next: advisers that help (finding 4), then ways to lose office.
+
 ## 2026-11-12, pass 2: how an order lands
 
 **Built.** Keyed dice decide whether an order goes as intended, in part, stalls or backfires;

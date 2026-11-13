@@ -64,11 +64,19 @@ const adjudicateIn: AdjudicateIn = {
       ],
     },
   ],
-  eventLimits: { 'grievance.all': 3 },
+  happenings: [
+    {
+      id: 'h1',
+      kind: 'strike',
+      size: 'minor',
+      when: '2026-01-09',
+      where: 'Northern Province',
+      gist: 'Traders in Northern Province shut their shops for a day in protest at taxes and power bills.',
+    },
+  ],
   recent: [
     { id: 'e1', when: '2025-12-20', summary: 'Transport unions warned against fuel price rises.' },
   ],
-  surpriseBudget: { major: 0, significant: 1 },
 };
 const chronicleIn: ChronicleIn = {
   event: {

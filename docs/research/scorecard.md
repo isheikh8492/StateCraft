@@ -1,6 +1,6 @@
 # Scorecard: StateCraft against Modern Day 2026
 
-Last scored: 2026-11-12 (pass 2). Rules for this file are in `docs/GOAL.md`.
+Last scored: 2026-11-12 (pass 3). Rules for this file are in `docs/GOAL.md`.
 
 **Sources for the other game.** `[MD]` is its own page, <https://worldos.cc/worlds/modern-day-2026>,
 read on 2026-11-12 (the page was cut short by the reader, so absence of a feature there is
@@ -29,8 +29,8 @@ well enough to say. "Ahead" needs evidence on our side and a source on theirs.
 | Domestic politics | Listed as a domain; elections happen in the background `[MD]` | Legislature votes, courts, approval by group, coalition partners whose standing sways votes. No elections, no loss of office | **unknown**; no way to lose is a real gap |
 | World-level conditions | Energy and technology listed as domains `[MD]`; mechanics not stated | None | **behind** |
 | Consistency over a long game | Not stated. The wrench tool suggests the GM drifts `[MD]`; forgotten treaties `[claim]` | Eighteen months played with no failed step and the world rebuilt from the ledger throughout (session `year-1`). But the judge sees only the last eight events and its own events repeated from month to month | **unknown** |
-| Speed of a turn | Not stated | On `gpt-oss-20b` locally at about 20 tokens a second: 37 s on average, 78 s at worst, for a turn with orders over 18 months; instant with none (session `year-1`). Hosted: never measured | **unknown** |
-| Quality and amount of writing | Story told as cards; full-screen cutscenes `[MD]` | Reactions of up to 250 words, full accounts on demand, streamed. On the local model the judge's own events are one bland line each and one was out of season (session `month-1`) | **unknown**; ours is thin where the judge writes |
+| Speed of a turn | Not stated | On `gpt-oss-20b` locally at about 20 tokens a second: 17 s on average and 44 s at worst for a turn with orders; instant with none (session `month-2`). Hosted: never measured | **unknown** |
+| Quality and amount of writing | Story told as cards; full-screen cutscenes `[MD]` | Reactions of up to 250 words, full accounts on demand, streamed. The country's own news is now drawn by the engine and worded by the model, in place and in season (decision 0012; session `month-2`), from a deck of about thirty kinds of event | **unknown** |
 | Saves, rewind, branches | Runs keep their own history `[MD]`; rewind not stated | Snapshot every turn, rewind to any turn or date onto a new branch, old line kept (tests; session `month-1` step 15) | **ahead** on what is stated |
 | Offline, no key, local model | Browser only; runs on a metered allowance of "Zaps", with subscriptions `[MD]` | Runs locally, with no model at all, or on a local model: 21 of 21 calls answered by the local model, none fell back (session `month-1`) | **ahead** |
 | Scenarios and start dates | Kept current to the month (v8 opens after the November 2026 US midterms); the same author runs WW1, WW2 and 350 BC worlds; one-click remix `[MD]` | One scenario, sourced, starting November 2026. Packs are data files but there is no second pack and no guide | **behind** |

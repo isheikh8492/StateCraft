@@ -13,7 +13,7 @@ If you are picking this project up cold, read this section, then the tables belo
   1. Freedom of action: a wider catalogue, and orders outside it with consequences that fit what was ordered. (Done on 2026-11-12, decision record 0011: the dice decide how an order lands, and a clear order can no longer be set aside as too vague.)
   1a. Make the odds of a landing depend on who opposes the order and how the government stands, not only on its size.
   1b. Ways to lose office, so that a year has stakes.
-  1c. Events of the world's own drawn by the engine from the cast and the state of the country, in place of the judge's free-hand one-liners.
+  1c. Grow the deck of the world's own events and move it into the scenario pack. (The engine draws them since 2026-11-12, decision record 0012.)
   2. Check that an undertaking was kept by its specifics, not just by the kind of order issued.
   3. Give the judge a memory beyond the last eight events, and carry detail figures forward (same mechanism).
   4. Personas, plots and betrayal: actors with traits and private motives. The cast already acts first (decision record 0009), but from the state of the country, not from a character. With it, ways to lose office (a confidence vote, a coup, an election), so there is something to scheme for.
