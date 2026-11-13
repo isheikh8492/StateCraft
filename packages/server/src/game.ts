@@ -36,14 +36,14 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
   const campaignFile = join(dataDir, 'campaign.statecraft');
   const settingsFile = join(dataDir, 'settings.json');
 
-  let config: ModelConfig = { main: initial ?? NO_MODEL, roles: {} };
+  let config: ModelConfig = { main: initial ?? NO_MODEL, detail: 'standard', roles: {} };
   if (!initial && existsSync(settingsFile)) {
     const stored: unknown = JSON.parse(readFileSync(settingsFile, 'utf8'));
     const parsed = ModelConfig.safeParse(stored);
     // Earlier versions stored one model's settings on their own.
     const single = ModelSettings.safeParse(stored);
     if (parsed.success) config = parsed.data;
-    else if (single.success) config = { main: single.data, roles: {} };
+    else if (single.success) config = { main: single.data, detail: 'standard', roles: {} };
   }
   const settingsFor = (role?: ModelRole) => (role ? config.roles[role] : undefined) ?? config.main;
 
@@ -58,7 +58,12 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
     });
     // A fixed seed makes a campaign repeatable; the end-to-end tests set one.
     const seed = process.env.STATECRAFT_SEED;
-    director = createDirector({ ledger, harness, ...(seed ? { newSeed: () => seed } : {}) });
+    director = createDirector({
+      ledger,
+      harness,
+      detail: () => config.detail,
+      ...(seed ? { newSeed: () => seed } : {}),
+    });
   };
   open();
 

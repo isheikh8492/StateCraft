@@ -214,7 +214,7 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
         </div>
       )}
       <p className="mt-2 flex flex-wrap items-center gap-2 text-2xs text-fg-subtle">
-        {entry.full === undefined && !entry.speaker && (
+        {entry.full === undefined && (
           <Button
             size="sm"
             variant="ghost"

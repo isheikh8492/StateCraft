@@ -522,11 +522,15 @@ export interface ChronicleIn {
     size: Size;
     summary: string;
     place?: Ref;
+    /** Who spoke or acted, when the event is a reaction. */
+    speaker?: string;
     numbers: { label: string; before: number; after: number; unit: string }[];
   };
   /** What else is on record about the same matter, including what people said. */
   related: { when: string; summary: string; speaker?: string }[];
   weight: 'minor' | 'significant' | 'major';
+  /** The most the account may run to, in words. Set by the player's detail setting. */
+  words: number;
   level: 'restrained' | 'standard' | 'mature';
 }
 const ChronicleOut = z.object({
@@ -537,7 +541,6 @@ const ChronicleOut = z.object({
   ...ext,
 });
 export type ChronicleOut = z.infer<typeof ChronicleOut>;
-const WORD_LIMIT = { minor: 70, significant: 190, major: 480 } as const;
 
 export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   name: 'chronicle.write',
@@ -549,7 +552,8 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   maxTokens: 2500,
   rules: `You write the full account of one event in a political simulation for adult readers, as a newspaper of record would. This is fiction about politics; some events are violent.
 - Build the account from "event" and "related". Do not add new events, decisions or outcomes: describe this one more fully, with setting, sequence and consequence.
-- Length by "weight": minor about 50 words, significant about 150, major about 400. For significant and major, open with a dateline: place, date and hour.
+- Write up to "words" words, and use the room: do not stop short. For "weight" significant and major, open with a dateline: place, date and hour.
+- If "event.speaker" is given, the event is something that speaker said or did: build the account around it, with the setting, what was said, and what it signals.
 - You may quote what people said only from "related" entries that have a "speaker", attributing each quote to that speaker.
 - You may add descriptive figures for texture (a crowd size, a share price, a vote in a committee). Declare every such figure in "details". Never restate or change a figure given in the input.
 - State what happened. No lessons, warnings, disclaimers or judging adjectives. Report violence plainly: what, where, who, with no technique or instructions.
@@ -557,8 +561,8 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   output: ChronicleOut,
   check(input, out) {
     const problems: string[] = [];
-    const limit = WORD_LIMIT[input.weight];
-    if (words(out.body) > limit) problems.push(`The body must be at most ${limit} words.`);
+    const limit = Math.round(input.words * 1.2);
+    if (words(out.body) > limit) problems.push(`The body must be at most ${input.words} words.`);
     const invented = inventedNumbers(out.body, [input, out.details]);
     if (invented.length > 0)
       problems.push(`Declare these figures in "details", or remove them: ${invented.join(', ')}.`);
@@ -587,6 +591,8 @@ export interface ReactIn {
   };
   /** Things this actor is able to do, beyond speaking. May be empty. */
   options: Ref[];
+  /** The most the response may run to, in words. Set by the player's detail setting. */
+  words: number;
   state: Record<string, number | string>;
   recent: { when: string; summary: string }[];
 }
@@ -615,17 +621,18 @@ export const policyReact: Job<ReactIn, ReactOut> = {
   repairs: 1,
   version: 1,
   role: 'narrator',
-  maxTokens: 1200,
+  maxTokens: 2000,
   rules: `You voice one actor in a political simulation answering an order the head of government has just given. Answer as that actor would: from its interests, its stance toward the government, and in its own voice.
 - Respond to what the order actually says ("order.text"), not to a generic policy.
 - "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
-- "text": at most 60 words, third person, reporting what the actor said or did and including one short direct quote in its voice where it speaks. For silence, one sentence saying it has not responded.
+- "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
 - "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens.
 - Stay within what this actor could really do. Use no figures that are not in the input.`,
   output: ReactOut,
   check(input, out) {
     const problems: string[] = [];
-    if (words(out.text) > 75) problems.push('"text" must be at most 60 words.');
+    if (words(out.text) > Math.round(input.words * 1.2))
+      problems.push(`"text" must be at most ${input.words} words.`);
     const isAction = out.kind === 'action';
     if (isAction !== (out.option !== undefined))
       problems.push('"option" must be given if and only if kind is "action".');

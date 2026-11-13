@@ -243,6 +243,7 @@ test('the model can be checked before you rely on it', async ({ page }) => {
   );
   await panel.getByRole('button', { name: 'Check this model' }).click();
   await expect(panel.getByRole('region', { name: 'Model check result' })).toContainText('suitable');
+  await expect(panel.getByLabel('How much the game writes')).toHaveValue('standard');
   await panel.getByRole('tab', { name: 'Narrator' }).click();
   await expect(panel.getByLabel('Use the main model for this role')).toBeChecked();
   await page.getByRole('button', { name: 'Minimise Model' }).click();

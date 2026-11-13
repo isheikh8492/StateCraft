@@ -1,4 +1,6 @@
 import {
+  DETAIL_LEVELS,
+  type Detail,
   MODEL_KINDS,
   type ModelCheck,
   type ModelConfig,
@@ -37,6 +39,11 @@ const KIND_LABEL: Record<ModelSettings['kind'], string> = {
   anthropic: 'Anthropic',
   gemini: 'Google Gemini',
 };
+const DETAIL_LABEL: Record<Detail, string> = {
+  brief: 'Brief: short responses, fastest',
+  standard: 'Standard: a full paragraph from each',
+  rich: 'Rich: long responses and accounts, slowest',
+};
 const EMPTY: ModelSettings = { kind: 'none', baseUrl: '', model: '', keyEnv: '' };
 const PRESETS: { label: string; baseUrl: string }[] = [
   { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1' },
@@ -52,7 +59,7 @@ const VERDICT_TONE = {
 /** Connect models, one for everything or one per role, and check each before relying on it. */
 export function ModelPanel() {
   const [info, setInfo] = useState<ModelInfo | null>(null);
-  const [config, setConfig] = useState<ModelConfig>({ main: EMPTY, roles: {} });
+  const [config, setConfig] = useState<ModelConfig>({ main: EMPTY, detail: 'standard', roles: {} });
   const [slot, setSlot] = useState<Slot>('main');
   const [check, setCheck] = useState<ModelCheck | 'running' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -121,6 +128,24 @@ export function ModelPanel() {
         Models read your boxes, judge each period inside limits the engine sets, and write the
         chronicle. Without one, the game still plays, in plain built-in wording.
       </p>
+      <label htmlFor="m-detail" className="mt-3 flex items-center gap-2">
+        <span className="text-xs text-fg-muted">How much the game writes</span>
+        <Select
+          id="m-detail"
+          value={config.detail}
+          onChange={(e) => {
+            const next = { ...config, detail: e.target.value as Detail };
+            setConfig(next);
+            void api.saveModel(next).then(setInfo, () => setMessage('Could not save.'));
+          }}
+        >
+          {DETAIL_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {DETAIL_LABEL[level]}
+            </option>
+          ))}
+        </Select>
+      </label>
       <div
         role="tablist"
         aria-label="Which model"

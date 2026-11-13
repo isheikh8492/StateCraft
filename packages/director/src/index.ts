@@ -54,6 +54,7 @@ import {
   type CallView,
   type CardView,
   type ChronicleEntry,
+  type Detail,
   type Figure,
   MAX_ADVANCE_DAYS,
   type Moment,
@@ -414,6 +415,10 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
 };
 /** How many actors answer one order in full; the rest are noted by name. */
 const MAX_REACTIONS = 3;
+/** Words a reaction may run to, and how far a full account is stretched, at each detail level. */
+const REACTION_WORDS = { brief: 60, standard: 150, rich: 250 } as const;
+const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
+const ACCOUNT_WORDS = { minor: 50, significant: 150, major: 400 } as const;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
 const ROUTINE_KINDS = new Set([
   'policy.announced',
@@ -427,6 +432,8 @@ const isRoutine = (e: WorldEventView) =>
 
 export interface DirectorOptions {
   ledger: Ledger;
+  /** How much the game writes. Read at the moment of writing, so a change applies at once. */
+  detail?: () => Detail;
   harness: Harness;
   /** Makes the campaign seed. Tests pass a fixed one. */
   newSeed?: () => string;
@@ -477,6 +484,7 @@ export interface Director {
 
 export function createDirector(options: DirectorOptions): Director {
   const { ledger, harness } = options;
+  const detail = () => options.detail?.() ?? 'standard';
   const newSeed = options.newSeed ?? (() => Math.random().toString(36).slice(2, 12));
 
   let cache:
@@ -1461,6 +1469,7 @@ export function createDirector(options: DirectorOptions): Director {
               id: o.id,
               label: o.label,
             })),
+            words: REACTION_WORDS[detail()],
             state: stateNow,
             recent,
           },
@@ -2015,6 +2024,12 @@ export function createDirector(options: DirectorOptions): Director {
               ...(speakers.has(e.id) ? { speaker: speakers.get(e.id) ?? '' } : {}),
             }));
           const place = world.regions.find((x) => x.id === event.place);
+          const weight =
+            event.size === 'major'
+              ? 'major'
+              : event.size === 'significant'
+                ? 'significant'
+                : 'minor';
           const { output, via } = await harness.run(
             chronicleWrite,
             {
@@ -2025,6 +2040,7 @@ export function createDirector(options: DirectorOptions): Director {
                 size: event.size,
                 summary: event.summary,
                 ...(place ? { place: { id: place.id, label: place.name } } : {}),
+                ...(speakers.has(event.id) ? { speaker: speakers.get(event.id) ?? '' } : {}),
                 numbers: event.numbers
                   .filter(
                     (x): x is Figure & { before: number; now: number } =>
@@ -2033,12 +2049,8 @@ export function createDirector(options: DirectorOptions): Director {
                   .map((x) => ({ label: x.label, before: x.before, after: x.now, unit: x.unit })),
               },
               related,
-              weight:
-                event.size === 'major'
-                  ? 'major'
-                  : event.size === 'significant'
-                    ? 'significant'
-                    : 'minor',
+              weight,
+              words: Math.round(ACCOUNT_WORDS[weight] * ACCOUNT_SCALE[detail()]),
               level: 'standard',
             },
             { resolution: 'entries', brief: scenario.brief },

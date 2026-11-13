@@ -91,6 +91,7 @@ const chronicleIn: ChronicleIn = {
     },
   ],
   weight: 'significant',
+  words: 150,
   level: 'standard',
 };
 

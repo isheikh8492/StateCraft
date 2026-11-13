@@ -11,7 +11,7 @@ export * from './view.ts';
 export const API_TOKEN_HEADER = 'x-statecraft-token';
 
 /** Version of the save-file layout. Bump on any change to stored shapes. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** One move of the clock is capped at a year (REQ-CLK-01). */
 export const MAX_ADVANCE_DAYS = 366;
@@ -206,8 +206,13 @@ export type ModelSettings = z.infer<typeof ModelSettings>;
 export const MODEL_ROLES = ['adjudicator', 'extractor', 'narrator'] as const;
 export type ModelRole = (typeof MODEL_ROLES)[number];
 /** One main model, and optionally a different one for any role (REQ-HARN-08). */
+/** How much the game writes: shorter is faster. */
+export const DETAIL_LEVELS = ['brief', 'standard', 'rich'] as const;
+export type Detail = (typeof DETAIL_LEVELS)[number];
+
 export const ModelConfig = z.object({
   main: ModelSettings,
+  detail: z.enum(DETAIL_LEVELS).default('standard'),
   roles: z
     .object({
       adjudicator: ModelSettings.optional(),

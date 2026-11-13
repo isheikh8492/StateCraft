@@ -131,6 +131,10 @@ describe('director', () => {
     expect(director.view().chronicle.length).toBeGreaterThan(0);
     await director.idle();
     expect(jobs().slice(2)).toEqual(['policy.react', 'policy.react', 'policy.react']);
+    // At the standard detail level each of them is given room for a full paragraph.
+    expect(calls.slice(2).map((c) => (JSON.parse(c.input) as { words: number }).words)).toEqual([
+      150, 150, 150,
+    ]);
     expect(director.view().arriving.reactions).toBe(false);
 
     // Running the clock an hour, a day or a few days with nothing ordered: no calls at all.
@@ -196,6 +200,12 @@ describe('director', () => {
     director.expandEntry(beat?.id ?? '');
     await director.idle();
     expect(calls.length).toBe(written);
+
+    // What someone said can be opened into a full account too.
+    const said = director.view().chronicle.find((e) => e.speaker);
+    director.expandEntry(said?.id ?? '');
+    await director.idle();
+    expect(director.view().chronicle.find((e) => e.id === said?.id)?.full).toContain(said?.quote);
 
     // People can be asked; some cannot be reached.
     director.ask('interior_minister', 'Is the lull in Balochistan real?');
