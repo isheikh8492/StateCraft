@@ -35,6 +35,8 @@ export interface Ledger {
   calls(resolution?: string): unknown[];
   /** Bumps on every write, so readers can cache. */
   version(): number;
+  /** Called after every write, so the screen can be pushed to instead of asking. */
+  watch(listener: () => void): () => void;
   /** The engine version this campaign is pinned to. */
   readonly engineVersion: string;
   close(): void;
@@ -107,6 +109,18 @@ export function openLedger(path: string, engineVersion: string): Ledger {
 
   let current = Number(readMeta('current_branch') ?? 1);
   let writes = 0;
+  const listeners = new Set<() => void>();
+  /** Counts the write and tells anyone waiting on one. */
+  const bump = () => {
+    writes++;
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.error('[ledger] a watcher threw', error);
+      }
+    }
+  };
 
   const insert = db.prepare('INSERT INTO events (at, type, payload, branch) VALUES (?, ?, ?, ?)');
   const selectBranch = db.prepare(
@@ -156,7 +170,7 @@ export function openLedger(path: string, engineVersion: string): Ledger {
     const valid = LedgerEvent.parse(event);
     const iso = at.toISOString();
     const result = insert.run(iso, valid.type, JSON.stringify(valid), current);
-    writes++;
+    bump();
     return { seq: Number(result.lastInsertRowid), at: iso, event: valid };
   };
 
@@ -202,12 +216,12 @@ export function openLedger(path: string, engineVersion: string): Ledger {
       const branch = { id: Number(result.lastInsertRowid), parent: current, forkSeq: seq, label };
       current = branch.id;
       setMeta.run('current_branch', String(current));
-      writes++;
+      bump();
       return branch;
     },
     recordCall(id, resolution, record) {
       insertCall.run(id, resolution, JSON.stringify(record));
-      writes++;
+      bump();
     },
     calls(resolution) {
       const rows = (resolution === undefined
@@ -218,6 +232,10 @@ export function openLedger(path: string, engineVersion: string): Ledger {
       return rows.map((r) => JSON.parse(r.record) as unknown);
     },
     version: () => writes,
+    watch(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     close: () => db.close(),
   };
 }

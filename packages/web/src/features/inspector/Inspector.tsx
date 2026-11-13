@@ -9,6 +9,19 @@ import { EmptyState } from '@/ui/empty-state';
 
 const VIA_TONE = { model: 'good', repaired: 'accent', fallback: 'warn' } as const;
 
+/** Per call: what the server did with the schema, and how fast it answered. */
+function Measures({ call }: { call: CallView }) {
+  const parts = [
+    `${call.tokensIn}/${call.tokensOut} tok`,
+    ...(call.reasoningTokens ? [`${call.reasoningTokens} thinking`] : []),
+    ...(call.ttftMs === undefined ? [] : [`${(call.ttftMs / 1000).toFixed(1)} s to first token`]),
+    ...(call.tokensPerSecond === undefined ? [] : [`${call.tokensPerSecond} tok/s`]),
+    `${call.ms} ms`,
+    `${call.attempts} ${call.attempts === 1 ? 'try' : 'tries'}`,
+  ];
+  return <span className="tabular text-2xs text-fg-subtle">{parts.join(' · ')}</span>;
+}
+
 /** A developer tool: every model call of the last resolution, and what it cost. */
 export function Inspector() {
   const { view } = useGame();
@@ -24,18 +37,27 @@ export function Inspector() {
     return (
       <EmptyState icon={Wrench} title="Nothing to inspect yet">
         After each resolution this shows every model call: what was sent, what came back, which
-        checks failed, and the tokens used.
+        checks failed, the tokens used, the time to the first token and the tokens a second, and
+        whether the server held the reply to the JSON schema or the shape was asked for in the
+        prompt.
       </EmptyState>
     );
   }
   return (
     <div className="h-full overflow-auto p-4">
-      <dl aria-label="Cost of the last resolution" className="grid grid-cols-4 gap-2">
+      <dl aria-label="Cost of the last resolution" className="grid grid-cols-3 gap-2">
         {[
           ['Model calls', String(last.calls)],
           ['Built-in wording used', String(last.fallbacks)],
           ['Tokens in / out', `${last.tokensIn} / ${last.tokensOut}`],
           ['Time in models', `${(last.ms / 1000).toFixed(1)} s`],
+          [
+            'Held to the schema',
+            calls.length === 0
+              ? '—'
+              : `${calls.filter((c) => c.schemaEnforced).length} of ${calls.length}`,
+          ],
+          ['Put right here', String(calls.reduce((total, c) => total + (c.fixes?.length ?? 0), 0))],
         ].map(([label, value]) => (
           <div key={label} className="rounded-control border border-border bg-surface-2 p-2">
             <dt className="text-2xs text-fg-subtle">{label}</dt>
@@ -47,12 +69,12 @@ export function Inspector() {
         {calls.map((call) => (
           <li key={call.id} className="rounded-control border border-border bg-surface-2">
             <details>
-              <summary className="flex cursor-pointer items-center gap-2 px-3 py-2">
+              <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2">
                 <span className="flex-1 font-mono text-xs">{call.job}</span>
-                <span className="tabular text-2xs text-fg-subtle">
-                  {call.model} · {call.tokensIn}/{call.tokensOut} tok · {call.ms} ms ·{' '}
-                  {call.attempts} {call.attempts === 1 ? 'try' : 'tries'}
-                </span>
+                <Measures call={call} />
+                <Badge tone={call.schemaEnforced ? 'good' : 'warn'}>
+                  {call.schemaEnforced ? 'schema' : 'prompted'}
+                </Badge>
                 <Badge tone={VIA_TONE[call.via]}>{call.via}</Badge>
               </summary>
               <div className="border-t border-border p-3">
@@ -61,6 +83,20 @@ export function Inspector() {
                     {e}
                   </p>
                 ))}
+                {(call.fixes?.length ?? 0) > 0 && (
+                  <>
+                    <p className="label-caps text-fg-subtle">
+                      Put right here, without asking again
+                    </p>
+                    <ul className="mt-1 mb-2 flex flex-col gap-0.5">
+                      {call.fixes?.map((fix) => (
+                        <li key={fix} className="text-2xs text-fg-muted">
+                          {fix}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
                 <p className="label-caps text-fg-subtle">Input</p>
                 <pre className="mt-1 max-h-40 overflow-auto font-mono text-2xs break-all whitespace-pre-wrap text-fg-muted">
                   {call.input}

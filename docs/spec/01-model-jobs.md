@@ -21,19 +21,17 @@ The split below holds for every job. It is the reason a weak or biased model can
 - **One call, one JSON object.** No text outside it. The harness picks the output strategy the model supports (see Model harness on the main tab).
 - **Reason first.** Every output starts with a short `why` field. Writing the reasoning before the answer improves small models, and the field is logged, never shown to the player.
 - **Ids, never names.** Inputs carry lists of valid ids with labels. Outputs refer to actors, regions, policies and events by id only. An unknown id fails validation.
+- **A schema per call, not per job.** Each job builds its own strict JSON schema from that call's input, so every allowed answer is an enum: the region ids in play, this actor's option ids, the variables this order may touch, these card ids. Objects are closed, every field is listed as required unless it is genuinely optional, and nothing is open-ended. On a local server the schema becomes a grammar, so a wrong id cannot be written in the first place.
+- **One answer per thing, by construction.** Where a job must answer about several things, the output is an object keyed by each thing's id — `outcomes` by action id, `verdicts` by item index, `answers` by item key — rather than a list that could be short, long or duplicated.
+- **Effects are named numbers.** `effects: { "inflation": 1.2, "approval.urban_poor": -8 }`, with each variable's bounds in the schema. A zero means no movement.
 - **Causes required.** Anything that changes state carries `causes: EventId[]`, chosen from events in the input.
 - **No new numbers in prose.** A figure in any written text must appear in the input. The validator checks this.
-- **Prompt layout.** Fixed text first, changing text last, so providers can cache the prefix: (1) game rules for this job, (2) output schema, (3) world brief for the scenario, (4) the job's input.
+- **Prompt layout.** Fixed text first, changing text last, so providers can cache the prefix: (1) game rules for this job, (2) the output's shape in words, only while the server has not proved it enforces the schema, (3) world brief for the scenario, (4) the job's input.
+- **Mended, then checked.** Between parsing and the checks, the harness puts right what has one obvious correction — a number outside its range, prose past its word limit, a field nobody asked for, a null for a missing field, a list of pairs where named numbers were wanted — and records each fix. A job may add its own mending for a choice that contradicts itself. Only what is left over costs a second call.
 - **Language and tone.** Narration is neutral and in the player's language. Characters speak in their own voice.
 - **Failure.** Each job names its fallback: what the game does if the model fails twice.
 
-**Open slots.** Every job's output also accepts an optional `extensions` object, where a model may return anything the schema has no room for. It is logged and never applied to the world. Three jobs carry extra open fields from the first version, all ignored by the rules until switched on:
-
-- `policy.compile`: each policy may list `analogues` (known policies it resembles) with a reason.
-- `actor.reply`: `intent` accepts free text beside the fixed labels, and the persona input carries `quirks`.
-- `turn.adjudicate`: `proposedMeasures` for custom measures.
-
-The design is in the Engine rules tab under Open by design.
+**Open slots.** There is no open `extensions` field: a strict schema and an open field cannot both hold. The slots the Engine rules tab describes under Open by design — `analogues` on a compiled policy, free-text `intent` on a reply, `proposedMeasures` on a judged turn — come back as named fields in the schema when something reads them.
 
 Shared types used below:
 
@@ -50,7 +48,8 @@ type Size = "colour" | "minor" | "significant" | "major";
 | Job | Role | Runs when | First needed |
 | --- | --- | --- | --- |
 | `policy.read` | Extractor | Retired: boxes are not read back to the player | none |
-| `policy.react` | Actor | An order takes effect, once per touched actor (batched for the lightly touched) | M1 |
+| `policy.react` | Actor | An order takes effect, once per touched actor, on a hosted model | M1 |
+| `turn.reactions` | Actor | The same answers, all in one call, on a model running on this machine | M1 |
 | `policy.compile` | Extractor | You execute your boxes | M0 |
 | `turn.adjudicate` | Adjudicator | Each world resolution | M0 |
 | `turn.review` | Adjudicator | A major event or novel policy was proposed | M0 |
@@ -164,18 +163,17 @@ interface In {
 }
 interface Out {
   why: string;
-  outcomes: {
-    policy: Id;
+  outcomes: Record<Id, {                              // keyed by action id: one per action, by construction
     result: "as_intended" | "partial" | "stalled" | "backfired";
-    effects: Effect[];                                // each inside its allowed range
+    effects: Record<VarPath, number>;                 // one named number per allowed variable; 0 is no movement
     note: string;                                     // one sentence, for the policy ledger
-  }[];
+  }>;
   odds: { roll: Id; multiplier: number; reason: string }[];   // inside the band; the engine rolls afterwards
   events: {
     kind: string; size: Size;
     actors: Id[]; place?: Id;
     summary: string;                                  // at most 200 characters, plain wording
-    effects: Effect[];
+    effects: Record<VarPath, number>;                 // only the variables in eventLimits
     causes: Id[];
     public: boolean;
   }[];
@@ -184,9 +182,10 @@ interface Out {
 }
 ```
 
+- **As built, on events.** The judge is told that the world does not wait for the government: about one event for each week judged, at least one in any period, and in a period of a week or more at least one of size `significant`. The surprise budget is one significant event a fortnight and one major event in any period of two weeks or more. A significant event may have no cause among the listed ids (the engine records it as caused by `world`); a major event must cite one.
 - **Checks:**
-  - Every policy in the input has exactly one outcome.
-  - Every effect targets a variable in that policy's `allowed` list and sits inside the range.
+  - Every policy in the input has exactly one outcome. The schema's `outcomes` keys are the action ids, so this cannot fail where the server enforces the schema.
+  - Every effect names a variable in that action's `allowed` list; a value outside its range is clamped by the mender rather than sent back.
   - Every roll has a multiplier inside its band.
   - Events of size `major` and `significant` stay within the surprise budget.
   - Every event and follow-up cites at least one existing cause.
@@ -205,7 +204,8 @@ interface In {
 }
 interface Out {
   why: string;
-  verdicts: { index: number; plausible: boolean; caused: boolean; withinPower: boolean; note: string }[];
+  // Keyed by the item's index, written as text: one verdict per item, by construction.
+  verdicts: Record<string, { plausible: boolean; caused: boolean; withinPower: boolean; note: string }>;
 }
 ```
 
@@ -345,9 +345,11 @@ interface Out {
 }
 ```
 
-- **Checks:** `action.option` is in `options` and every effect is inside its range; `action` is present if and only if `kind` is `"action"`; no figure in `text` that is not in the input; `later.inDays` is within 90 days.
+- **Checks:** no figure in `text` that is not in the input. The rest is mended in place: `option` must be one of this actor's, which the schema's enum already settles, and an action naming an option nobody can take is read as a statement; text past the word limit is trimmed at a sentence end.
 - **Fallback:** a template statement for the actor's kind and stance, no action, no later beat.
 - **Blindness does not apply here.** This job voices one named actor answering a named order, so it knows who gave the order. Judging the period stays blind.
+- **Moves nobody asked for.** An item in `turn.reactions` may carry `motive: { reason, region? }` in place of `order`. The engine has decided that this actor moves first and why; the model decides what it does and writes it as news, not as a response. Silence is not allowed for such an item, and is read as a statement if it comes back. With no model, a template for that kind of actor is used. On a hosted model the answers to orders are still written side by side with `policy.react`, and the turn's moves go in one `turn.reactions` call beside them.
+- **One call for a whole turn on a local model.** `turn.reactions` takes the same items together — `{ key, order, actor, options }[]` with one `words` limit, one `state` and one `recent` — and returns `answers`, an object keyed by each item's key with the same answer shape. A server that handles one request at a time would otherwise queue the separate calls and pay for the prompt again on each; a hosted model keeps `policy.react` and writes them side by side. At most five answers a turn.
 
 ### `actor.reply`
 
@@ -495,6 +497,7 @@ These are design targets, set so the smallest supported local model (an 8,000-to
 | `policy.compile` | 3,500 | 900 |
 | `turn.adjudicate` | 5,500 | 1,500 |
 | `turn.review` | 1,500 | 300 |
+| `turn.reactions` | 5,000 | 1,800 |
 | `chronicle.write` | 3,500 | 1,000 |
 | `policy.report` | 3,000 | 800 |
 | `memory.digest` | 3,500 | 500 |
@@ -504,7 +507,7 @@ These are design targets, set so the smallest supported local model (an 8,000-to
 
 A model with a larger context window gets more history and more memories in the same layout.
 
-**Calls per turn.** Two before the turn commits: `policy.compile` (when orders were sent) and `turn.adjudicate` (when orders were sent or a week or more passes). After the commit: up to three `policy.react` per order, written side by side, and `turn.review` only for a major event. A move of a day or less with nothing ordered makes none. Everything else waits for the player to open or ask.
+**Calls per turn.** Two before the turn commits: `policy.compile` (when orders were sent) and `turn.adjudicate` (when orders were sent or a week or more passes). After the commit: the cast's answers, up to three per order and five in the turn — one `turn.reactions` call on a model running on this machine, or that many `policy.react` calls side by side on a hosted one — and `turn.review` only for a major event. A move of a day or less with nothing ordered makes none. Everything else waits for the player to open or ask. A warm-up call is made once when the server starts, outside any turn.
 
 ## How to build from this tab
 

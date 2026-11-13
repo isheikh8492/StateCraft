@@ -3,10 +3,12 @@ import { Download, MapPin, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatDate, useGame } from '@/lib/game';
+import { formatDate, useDraft, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
+import { Writing } from '@/ui/writing';
+import { ArrivingReactions } from './Arriving';
 
 /**
  * What happened. By turn, each move of yours is followed by what the world did in return;
@@ -68,6 +70,15 @@ export function Chronicle() {
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
+        {(view?.arriving.writing.length ?? 0) > 0 && (
+          <section
+            aria-label="Reactions coming in"
+            className="border-b-2 border-border bg-surface-2 px-4 py-3"
+          >
+            <p className="label-caps mb-2 text-accent">Coming in now</p>
+            <ArrivingReactions />
+          </section>
+        )}
         {mode === 'story' ? (
           stories(entries).map((story) => (
             <section key={story.id} aria-label={story.title} className="border-b-2 border-border">
@@ -151,6 +162,7 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
   const policies = (view?.policies ?? []).filter((p) => event?.causes.includes(p.id));
   const region = view?.world?.regions.find((r) => r.id === entry.place)?.name;
   const writing = view?.arriving.entries.includes(entry.id) ?? false;
+  const draft = useDraft(entry.id);
 
   if (entry.routine) {
     return (
@@ -211,6 +223,11 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
           className="prose-read mt-2 whitespace-pre-wrap text-fg-muted"
         >
           {entry.full}
+        </div>
+      )}
+      {entry.full === undefined && draft && (
+        <div className="prose-read mt-2 text-fg-muted">
+          <Writing text={draft} />
         </div>
       )}
       <p className="mt-2 flex flex-wrap items-center gap-2 text-2xs text-fg-subtle">

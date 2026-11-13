@@ -91,6 +91,48 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   );
 
   app.get('/api/view', async () => view());
+
+  /**
+   * A line out to the page every time the state changes, so the screen is pushed to rather
+   * than asking four times a second while a turn runs (spec: Responsiveness, "one live
+   * connection"). The page refreshes on each line; the lines themselves carry no state.
+   */
+  app.get('/api/stream', (request, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'x-content-type-options': 'nosniff',
+    });
+    reply.raw.write(': open\n\n');
+    let pending: NodeJS.Timeout | undefined;
+    // A turn writes several ledger events in a row; one line for the burst is enough.
+    const push = () => {
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = undefined;
+        reply.raw.write('data: changed\n\n');
+      }, 40);
+    };
+    // Prose being written goes down the same line as it grows, so it can be read while the
+    // model is still at work. A page that has just connected is told what is in progress.
+    const draft = (id: string, text: string | null) =>
+      reply.raw.write(`event: draft\ndata: ${JSON.stringify({ id, text })}\n\n`);
+    for (const [id, text] of Object.entries(game.director().drafts())) draft(id, text);
+    const stopDrafts = game.watchDrafts(draft);
+    const stop = game.subscribe(push);
+    const beat = setInterval(() => reply.raw.write(': beat\n\n'), 25_000);
+    const close = () => {
+      stop();
+      stopDrafts();
+      clearInterval(beat);
+      if (pending) clearTimeout(pending);
+      reply.raw.end();
+    };
+    request.raw.on('close', close);
+    request.raw.on('error', close);
+  });
   app.get('/api/scenarios', async () => game.director().scenarios());
 
   app.post('/api/campaign', async (request, reply) => {

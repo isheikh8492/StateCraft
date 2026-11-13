@@ -6,6 +6,7 @@ import { formatDate, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
+import { ArrivingReactions } from '../chronicle/Arriving';
 
 const STAGES = ['announced', 'enacted', 'implemented', 'felt'] as const;
 const STATUS_TONE = { active: 'good', blocked: 'bad', repealed: 'neutral' } as const;
@@ -52,6 +53,7 @@ export function Policies() {
 
 function PolicyPage({ policy: p, onBack }: { policy: PolicyView; onBack: () => void }) {
   const { view, act, setPlace } = useGame();
+  const answering = (view?.arriving.writing ?? []).some((w) => w.policy === p.id);
   const events = (view?.events ?? []).filter((e) => p.linkedEvents.includes(e.id));
   const at = STAGES.indexOf(p.stage);
   return (
@@ -107,8 +109,9 @@ function PolicyPage({ policy: p, onBack }: { policy: PolicyView; onBack: () => v
             <p className="text-fg-muted">{p.funding}</p>
           </Section>
 
-          {(p.reactions.length > 0 || p.alsoNoted.length > 0) && (
+          {(p.reactions.length > 0 || p.alsoNoted.length > 0 || answering) && (
             <Section title="Reactions">
+              <ArrivingReactions policy={p.id} />
               <ul className="flex flex-col gap-3">
                 {p.reactions.map((r) => (
                   <li key={r.id}>

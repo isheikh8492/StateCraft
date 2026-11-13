@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createDirector, type Director } from '@statecraft/director';
 import { ENGINE_VERSION } from '@statecraft/engine';
 import { type Ledger, openLedger } from '@statecraft/ledger';
-import { createHarness } from '@statecraft/models';
+import { createHarness, type Harness } from '@statecraft/models';
 import { ModelConfig, type ModelRole, ModelSettings } from '@statecraft/protocol';
 
 /**
@@ -19,6 +19,18 @@ export interface Game {
   saveConfig(next: ModelConfig): void;
   /** True when the environment variable a model's settings name holds a key. */
   hasKey(settings: ModelSettings): boolean;
+  /**
+   * Loads the model, so the first turn does not wait for the weights to come off disk, and
+   * lets the harness learn what this server accepts before anything depends on it.
+   */
+  warmUp(): void;
+  /**
+   * Called whenever anything the screen shows may have changed, across a change of campaign.
+   * The server pushes on it, so the page does not poll (REQ-PERF-02).
+   */
+  subscribe(listener: () => void): () => void;
+  /** Prose as it is being written, across a change of campaign. See the director. */
+  watchDrafts(listener: (id: string, text: string | null) => void): () => void;
   newCampaign(): void;
   close(): void;
   readonly campaignFile: string;
@@ -49,10 +61,18 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
 
   let ledger: Ledger;
   let director: Director;
+  let harness: Harness;
+  /** Watchers outlive a change of campaign, so a new campaign keeps pushing to the screen. */
+  const watchers = new Set<() => void>();
+  const draftWatchers = new Set<(id: string, text: string | null) => void>();
+  let detach: (() => void) | undefined;
+  let detachDrafts: (() => void) | undefined;
   const open = () => {
+    detach?.();
+    detachDrafts?.();
     ledger = openLedger(campaignFile, ENGINE_VERSION);
     const current = ledger;
-    const harness = createHarness({
+    harness = createHarness({
       settings: settingsFor,
       onCall: (record) => current.recordCall(record.id, record.resolution, record),
     });
@@ -64,6 +84,12 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
       detail: () => config.detail,
       ...(seed ? { newSeed: () => seed } : {}),
     });
+    detach = director.subscribe(() => {
+      for (const watcher of watchers) watcher();
+    });
+    detachDrafts = director.watchDrafts((id, text) => {
+      for (const watcher of draftWatchers) watcher(id, text);
+    });
   };
   open();
 
@@ -74,10 +100,26 @@ export function openGame(dataDir: string, initial?: ModelSettings): Game {
     config: () => config,
     settingsFor,
     saveConfig(next) {
+      const before = config.main;
       config = next;
       writeFileSync(settingsFile, `${JSON.stringify(next, null, 2)}\n`);
+      // A model just pointed at is cold. Load it now rather than on the player's first turn.
+      const changed =
+        before.kind !== next.main.kind ||
+        before.baseUrl !== next.main.baseUrl ||
+        before.model !== next.main.model;
+      if (changed) void harness.warmUp();
     },
     hasKey: (settings) => Boolean(process.env[settings.keyEnv || DEFAULT_KEY[settings.kind] || '']),
+    warmUp: () => void harness.warmUp(),
+    subscribe(listener) {
+      watchers.add(listener);
+      return () => watchers.delete(listener);
+    },
+    watchDrafts(listener) {
+      draftWatchers.add(listener);
+      return () => draftWatchers.delete(listener);
+    },
     newCampaign() {
       ledger.close();
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');

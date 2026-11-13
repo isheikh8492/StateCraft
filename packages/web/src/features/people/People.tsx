@@ -2,11 +2,12 @@ import { Users } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { formatDate, useGame } from '@/lib/game';
+import { formatDate, useDraft, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { Textarea } from '@/ui/textarea';
+import { Writing } from '@/ui/writing';
 
 const KIND_LABEL: Record<string, string> = {
   advisor: 'Your office',
@@ -26,6 +27,18 @@ const STANCE_TONE: Record<string, 'bad' | 'warn' | 'neutral' | 'good'> = {
   watchful: 'neutral',
   'on your side': 'good',
 };
+
+/** An answer: the words so far while it is being written, then the finished text. */
+function Reply({ id, reply }: { id: string; reply: string | undefined }) {
+  const draft = useDraft(id);
+  if (reply === undefined && !draft)
+    return <p className="mt-1 text-fg-subtle">Waiting for an answer…</p>;
+  return (
+    <blockquote className="prose-read mt-1 border-l-2 border-accent pl-3 whitespace-pre-wrap text-fg-muted">
+      {reply ?? <Writing text={draft ?? ''} />}
+    </blockquote>
+  );
+}
 
 /** Everyone who answers what you do. Ask any of them a question; each answers in their own voice. */
 export function People() {
@@ -128,13 +141,7 @@ export function People() {
                   turn.question
                 )}
               </p>
-              {turn.reply === undefined ? (
-                <p className="mt-1 text-fg-subtle">Waiting for an answer…</p>
-              ) : (
-                <blockquote className="prose-read mt-1 border-l-2 border-accent pl-3 whitespace-pre-wrap text-fg-muted">
-                  {turn.reply}
-                </blockquote>
-              )}
+              <Reply id={turn.id} reply={turn.reply} />
             </li>
           ))}
         </ol>

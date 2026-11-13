@@ -159,11 +159,21 @@ export interface CallView {
   job: string;
   model: string;
   strategy: string;
+  /** True when the server itself held the reply to the JSON schema for this call. */
+  schemaEnforced?: boolean;
   via: 'model' | 'repaired' | 'fallback';
   attempts: number;
   errors: string[];
+  /** Small mistakes put right here instead of asking the model again. */
+  fixes?: string[];
   tokensIn: number;
   tokensOut: number;
+  /** Tokens the model spent thinking before answering. */
+  reasoningTokens?: number;
+  /** Milliseconds to the first token: the server's prompt-processing time. */
+  ttftMs?: number;
+  /** Tokens generated per second, with the wait for the first token taken out. */
+  tokensPerSecond?: number;
   ms: number;
   promptHash: string;
   input: string;
@@ -206,6 +216,11 @@ export interface View {
   /** Work still arriving after the last turn committed. */
   arriving: {
     reactions: boolean;
+    /**
+     * Whose answers are being written this moment. Their words so far arrive down the live
+     * line under each `id`; this only says who is speaking, and to which order.
+     */
+    writing: { id: string; actorName: string; policy: string }[];
     entries: string[] /** Responses written but not yet due: they land in the coming hours. */;
     later: number;
   };
@@ -224,7 +239,21 @@ export interface ModelCheck {
   ok: boolean;
   verdict: 'suitable' | 'usable' | 'unsuitable' | 'unreachable';
   summary: string;
-  jobs: { job: string; via: 'model' | 'repaired' | 'fallback'; ms: number; errors: string[] }[];
+  /** Whether this server held the replies to the JSON schema, or we fell back to prompting. */
+  schemaEnforced: boolean;
+  /** How the model performed, averaged over the check's calls. */
+  speed: { ttftMs?: number; tokensPerSecond?: number; reasoningTokens: number };
+  jobs: {
+    job: string;
+    via: 'model' | 'repaired' | 'fallback';
+    ms: number;
+    errors: string[];
+    schemaEnforced?: boolean;
+    ttftMs?: number;
+    tokensPerSecond?: number;
+    reasoningTokens?: number;
+    fixes?: string[];
+  }[];
 }
 
 export interface ScenarioInfo {

@@ -1,10 +1,23 @@
 import { CATALOGUE, type Direction, type Scale } from '@statecraft/engine';
 import { z } from 'zod';
 import { matchInstrument, OPPOSITES, type Ref } from './match.ts';
+import {
+  bool,
+  clipWords,
+  countWords,
+  int,
+  list,
+  numbers,
+  obj,
+  pick,
+  type Schema,
+  str,
+} from './shape.ts';
 
 /**
- * The seven M0 model jobs (spec: Model jobs). Each has fixed rules, an output schema,
- * checks the output must pass, and a fallback that needs no model.
+ * The model jobs (spec: Model jobs). Each has fixed rules, an output schema, a strict
+ * per-call JSON schema that names the only answers it will accept, checks the output must
+ * pass, and a fallback that needs no model.
  */
 export type Role = 'adjudicator' | 'extractor' | 'narrator';
 
@@ -15,21 +28,33 @@ export interface Job<I, O> {
   /** Fixed instructions. They never change during a campaign. */
   rules: string;
   output: z.ZodType<O>;
-  /** The output written compactly, for the prompt. Far shorter than the full JSON Schema. */
+  /**
+   * The strict JSON schema for one call, built from that call's input so that every allowed
+   * answer — region ids, instrument ids, an actor's options, the variables an order may
+   * touch — is an enum. Used by servers that enforce a schema, and by the local mender.
+   */
+  schema(input: I): Schema;
+  /** The output written compactly, for servers that cannot enforce the schema. */
   shape: string;
   /** Whether the job needs the scenario's world brief. Most do not, and skipping it saves tokens. */
   usesBrief: boolean;
   /** How many times a rejected answer is sent back before the built-in wording is used. */
   repairs: number;
   maxTokens: number;
+  /**
+   * Puts right what this job can fix in place, after validation and before the checks: over-long
+   * prose, a choice that contradicts itself. Returns one line per fix, for the record.
+   * Anything left for `check` costs another call, so prefer a fix here where one is honest.
+   */
+  mend?(input: I, output: O): string[];
   /** Problems with a schema-valid output, in words a model can act on. Empty means it passes. */
   check(input: I, output: O): string[];
   fallback(input: I): O;
 }
 
-const ext = { extensions: z.record(z.string(), z.unknown()).optional() };
 const SIZES = ['colour', 'minor', 'significant', 'major'] as const;
 export type Size = (typeof SIZES)[number];
+const RESULTS = ['as_intended', 'partial', 'stalled', 'backfired'] as const;
 
 const NUMBER = /\d+(?:[.,]\d+)*/g;
 /** Figures in written text that do not appear anywhere in the input (REQ-JOB-03). */
@@ -55,9 +80,13 @@ export function inventedNumbers(text: string, input: unknown): string[] {
 const COMMENTARY =
   /\b(tragic\w*|shocking\w*|sadly|unfortunately|heinous|appalling\w*|deplorabl\w*|it is important to (note|remember)|serves as a reminder|raises (serious )?(ethical|moral) questions|morally)\b/i;
 
-const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+const words = countWords;
 const clip = (text: string, max: number) =>
   text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+const ids = (refs: readonly { id: string }[]) => refs.map((r) => r.id);
+/** Room for prose in characters, from a limit in words. The mender trims the rest. */
+const roomFor = (limit: number) => Math.max(240, Math.round(limit * 9));
+const WHY = str(160, 'At most 20 words.');
 
 // ---------------------------------------------------------------------------------- policy.read
 
@@ -69,12 +98,11 @@ export interface ReadIn {
   regions: Ref[];
 }
 const ReadOut = z.object({
-  why: z.string(),
+  why: z.string().default(''),
   reading: z.string().min(1),
   instrument: z.string(),
   targets: z.array(z.string()).default([]),
   question: z.string().optional(),
-  ...ext,
 });
 export type ReadOut = z.infer<typeof ReadOut>;
 
@@ -85,7 +113,7 @@ export const policyRead: Job<ReadIn, ReadOut> = {
     '{"why":string,"reading":string,"instrument":string,"targets":string[],"question"?:string}',
   usesBrief: false,
   repairs: 1,
-  version: 1,
+  version: 2,
   role: 'extractor',
   maxTokens: 1000,
   rules: `You read one instruction written by an office holder and say, in one line, how a government would understand it.
@@ -94,9 +122,31 @@ export const policyRead: Job<ReadIn, ReadOut> = {
 - "targets": ids of regions the instruction names, from the list given. Use ids only.
 - "question": include it only when instrument is "unclear": one short question that would make the instruction usable.`,
   output: ReadOut,
+  schema: (input) =>
+    obj(
+      {
+        why: WHY,
+        reading: str(140),
+        instrument: pick([...ids(input.instruments), 'novel', 'unclear']),
+        targets: list(pick(ids(input.regions)), 4),
+        question: str(160),
+      },
+      ['question'],
+    ),
+  mend(_input, out) {
+    const unclear = out.instrument === 'unclear';
+    if (!unclear && out.question !== undefined) {
+      delete out.question;
+      return ['question: dropped, since the instruction is clear enough to act on'];
+    }
+    if (unclear && (out.question === undefined || out.question === '')) {
+      out.question = 'What exactly should be done, and where?';
+      return ['question: supplied, since the instruction is too vague to act on'];
+    }
+    return [];
+  },
   check(input, out) {
     const problems: string[] = [];
-    if (out.reading.length > 140) problems.push('"reading" must be at most 140 characters.');
     const known = new Set([...input.instruments.map((i) => i.id), 'novel', 'unclear']);
     if (!known.has(out.instrument))
       problems.push(`"instrument" ${out.instrument} is not in the list.`);
@@ -147,27 +197,27 @@ export interface CompileIn {
   instruments: { id: string; label: string; needsRegion: boolean; hasDirection: boolean }[];
   regions: Ref[];
 }
+const SCALES = ['small', 'medium', 'large'] as const;
+const FUNDING = ['tax', 'borrowing', 'cuts', 'reserves', 'unspecified'] as const;
 const CompiledPolicy = z.object({
   title: z.string().min(1).max(120),
   summary: z.string().min(1).max(400),
   instrument: z.string(),
   region: z.string().optional(),
-  scale: z.enum(['small', 'medium', 'large']),
+  scale: z.enum(SCALES),
   direction: z.enum(['raise', 'lower']).optional(),
-  funding: z.enum(['tax', 'borrowing', 'cuts', 'reserves', 'unspecified']).default('unspecified'),
+  funding: z.enum(FUNDING).default('unspecified'),
   fromCards: z.array(z.string()).min(1),
-  analogues: z.array(z.unknown()).optional(),
 });
 export type CompiledPolicy = z.infer<typeof CompiledPolicy>;
 const CompileOut = z.object({
-  why: z.string(),
-  policies: z.array(CompiledPolicy),
+  why: z.string().default(''),
+  policies: z.array(CompiledPolicy).default([]),
   duplicates: z.array(z.object({ card: z.string(), of: z.string() })).default([]),
   conflicts: z
     .array(z.object({ cards: z.array(z.string()).min(2), explanation: z.string() }))
     .default([]),
   needsDetail: z.array(z.object({ card: z.string(), question: z.string() })).default([]),
-  ...ext,
 });
 export type CompileOut = z.infer<typeof CompileOut>;
 
@@ -177,7 +227,7 @@ export const policyCompile: Job<CompileIn, CompileOut> = {
     '{"why":string,"policies":[{"title":string,"summary":string,"instrument":string,"region"?:string,"scale":"small"|"medium"|"large","direction"?:"raise"|"lower","funding":"tax"|"borrowing"|"cuts"|"reserves"|"unspecified","fromCards":string[]}],"duplicates":[{"card":string,"of":string}],"conflicts":[{"cards":string[],"explanation":string}],"needsDetail":[{"card":string,"question":string}]}',
   usesBrief: false,
   repairs: 2,
-  version: 1,
+  version: 2,
   role: 'extractor',
   maxTokens: 3000,
   rules: `You turn an office holder's draft instructions ("cards") into a clean list of policies.
@@ -190,6 +240,33 @@ export const policyCompile: Job<CompileIn, CompileOut> = {
 - "funding": how the card says it is paid for, or "unspecified".
 - Titles and summaries are neutral descriptions. Never rewrite or judge the intent. Use ids only for regions.`,
   output: CompileOut,
+  schema(input) {
+    const cards = ids(input.cards);
+    const card = pick(cards);
+    const n = Math.max(cards.length, 1);
+    return obj({
+      why: WHY,
+      policies: list(
+        obj(
+          {
+            title: str(120),
+            summary: str(400),
+            instrument: pick([...ids(input.instruments), 'novel']),
+            region: pick(ids(input.regions)),
+            scale: pick(SCALES),
+            direction: pick(['raise', 'lower']),
+            funding: pick(FUNDING),
+            fromCards: list(card, n, 1),
+          },
+          ['region', 'direction'],
+        ),
+        n * 2,
+      ),
+      duplicates: list(obj({ card, of: pick([...cards, ...ids(input.standing)]) }), n),
+      conflicts: list(obj({ cards: list(card, n, 2), explanation: str(200) }), n),
+      needsDetail: list(obj({ card, question: str(160) }), n),
+    });
+  },
   check(input, out) {
     const problems: string[] = [];
     const cards = new Set(input.cards.map((c) => c.id));
@@ -307,95 +384,120 @@ export interface AdjudicateIn {
   regions: Ref[];
   /** Every actor's actions in one list with one shape. Nothing marks the human player. */
   actions: { id: string; by: string; summary: string; stage: string; allowed: Allowed[] }[];
-  /** What an unprompted event may touch, and how far. */
   /** How far an event may move each variable, either way: `{ "inflation": 0.5, ... }`. */
   eventLimits: Record<string, number>;
   recent: { id: string; when: string; summary: string }[];
   surpriseBudget: { major: number; significant: number };
 }
-const EffectOut = z.object({ on: z.string(), value: z.number(), reason: z.string().default('') });
+/** Effects in the short form: one named number per variable, `{"inflation": 1.2}`. */
+const Effects = z.record(z.string(), z.number()).default({});
+const Outcome = z.object({
+  result: z.enum(RESULTS),
+  effects: Effects,
+  note: z.string().max(300).default(''),
+});
+const WorldEvent = z.object({
+  kind: z.string().min(1).max(40),
+  size: z.enum(SIZES),
+  summary: z.string().min(1).max(200),
+  place: z.string().optional(),
+  inDays: z.number().int().min(0),
+  effects: Effects,
+  causes: z.array(z.string()).default([]),
+});
 const AdjudicateOut = z.object({
-  why: z.string(),
-  outcomes: z.array(
-    z.object({
-      action: z.string(),
-      result: z.enum(['as_intended', 'partial', 'stalled', 'backfired']),
-      effects: z.array(EffectOut),
-      note: z.string().max(300),
-    }),
-  ),
-  events: z
-    .array(
-      z.object({
-        kind: z.string().min(1).max(40),
-        size: z.enum(SIZES),
-        summary: z.string().min(1).max(200),
-        place: z.string().optional(),
-        inDays: z.number().int().min(0),
-        effects: z.array(EffectOut).default([]),
-        causes: z.array(z.string()).default([]),
-        public: z.boolean().default(true),
-      }),
-    )
-    .default([]),
-  proposedMeasures: z.array(z.unknown()).optional(),
-  ...ext,
+  why: z.string().default(''),
+  /** Keyed by action id: exactly one outcome per action, by construction. */
+  outcomes: z.record(z.string(), Outcome).default({}),
+  events: z.array(WorldEvent).default([]),
 });
 export type AdjudicateOut = z.infer<typeof AdjudicateOut>;
 
-const inRange = (value: number, [min, max]: [number, number]) =>
-  value >= min - 1e-9 && value <= max + 1e-9;
+const MAX_EVENTS = 8;
 
 export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
   name: 'turn.adjudicate',
   shape:
-    '{"why":string,"outcomes":[{"action":string,"result":"as_intended"|"partial"|"stalled"|"backfired","effects":[{"on":string,"value":number}],"note":string}],"events":[{"kind":string,"size":"colour"|"minor"|"significant"|"major","summary":string,"place"?:string,"inDays":number,"effects":[{"on":string,"value":number}],"causes":string[]}]}',
+    '{"why":string,"outcomes":{"<action id>":{"result":"as_intended"|"partial"|"stalled"|"backfired","effects":{"<variable>":number},"note":string}},"events":[{"kind":string,"size":"colour"|"minor"|"significant"|"major","summary":string,"place"?:string,"inDays":number,"effects":{"<variable>":number},"causes":string[]}]}',
   usesBrief: true,
   repairs: 2,
-  version: 1,
+  version: 3,
   role: 'adjudicator',
   maxTokens: 4000,
   rules: `You judge one stretch of time in a political simulation. You do not know which actor, if any, is a human; treat every action the same way.
-- Return exactly one outcome per action. "result" says how the action went in practice: as_intended, partial, stalled or backfired. Institutions resist change: most large changes land partially.
-- "effects": for each variable in the action's "allowed" list, you may give a value inside its range. You may not name any other variable. A stalled action has no effects.
+- "outcomes" has one entry per action, keyed by the action's id. "result" says how the action went in practice: as_intended, partial, stalled or backfired. Institutions resist change: most large changes land partially.
+- "effects" is an object of named numbers. Give a value for each variable the action is allowed to touch, inside its range; 0 means no movement. A stalled action moves nothing.
 - "note": one sentence for the record, plain and factual.
-- "events": other things that happen in the period, from trivial to grave: scandals, strikes, statements, accidents, deals. Keep them consistent with the state and the world brief. Each needs a "kind", a "size", a one-sentence "summary" (at most 200 characters), "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "actions". An event with no cause among those may only be size "colour" or "minor".
-- Event "effects" may use only the variables named in "eventLimits", each between minus and plus its limit. Most events need no effects.
-- Be brief. Give only "on" and "value" for an effect. Write few events, and none when nothing notable would happen.
-- Stay inside "surpriseBudget" for events of size major and significant. Continuity is the default: most periods have no major event.
+- "events": what else happens in the period. The world does not wait for the government. Parties, armed groups, courts, provinces, markets, neighbours, lenders and the weather all move on their own, and most of what happens in a country is not a response to its government. Write those things: a walkout, a ruling, a border incident, a leak, a strike, a run on a bank, a flood, a deal struck without the government. Keep them consistent with the state and the world brief.
+- Write about one event for every week of the period, and at least one in any period. In a period of a week or more, at least one must be of size "significant": something the head of government will have to decide what to do about.
+- Each event needs a "kind", a "size", a one-sentence "summary" (at most 200 characters) that names who did what and where, "inDays" (days after the period starts, within the period), and "causes": ids from "recent" or from "outcomes" where one of them really led to it, otherwise an empty list. An event of size "major" must cite a cause.
+- Event "effects" may name only the variables in "eventLimits", each between minus and plus its limit. Give effects to events that would really move something; leave the object empty otherwise.
+- Stay inside "surpriseBudget" for events of size major and significant.
 - "place" is a region id from the list. Use ids only. State what happens; do not comment on whether it is right or wrong.`,
   output: AdjudicateOut,
+  schema(input) {
+    const regions = ids(input.regions);
+    const causes = [...input.recent.map((r) => r.id), ...input.actions.map((a) => a.id)];
+    const outcomes: Record<string, Schema> = {};
+    for (const action of input.actions) {
+      const fields: Record<string, [number, number]> = {};
+      for (const rule of action.allowed) fields[rule.on] = rule.range;
+      outcomes[action.id] = obj({
+        result: pick(RESULTS),
+        effects: numbers(fields, true),
+        note: str(300),
+      });
+    }
+    const limits: Record<string, [number, number]> = {};
+    for (const [on, limit] of Object.entries(input.eventLimits))
+      limits[on] = [-Math.abs(limit), Math.abs(limit)];
+    return obj({
+      why: WHY,
+      outcomes: {
+        type: 'object',
+        properties: outcomes,
+        required: Object.keys(outcomes),
+        additionalProperties: false,
+      },
+      events: list(
+        obj(
+          {
+            kind: str(40),
+            size: pick(SIZES),
+            summary: str(200),
+            place: pick(regions),
+            inDays: int(0, Math.max(input.period.days, 0)),
+            effects: numbers(limits, false),
+            causes: list(pick(causes), 3),
+          },
+          ['place'],
+        ),
+        MAX_EVENTS,
+      ),
+    });
+  },
   check(input, out) {
     const problems: string[] = [];
     const actions = new Map(input.actions.map((a) => [a.id, a]));
-    const seen = new Set<string>();
-    for (const o of out.outcomes) {
-      const action = actions.get(o.action);
+    for (const [id, outcome] of Object.entries(out.outcomes)) {
+      const action = actions.get(id);
       if (!action) {
-        problems.push(`Outcome for unknown action ${o.action}.`);
+        problems.push(`Outcome for unknown action ${id}.`);
         continue;
       }
-      if (seen.has(o.action)) problems.push(`More than one outcome for ${o.action}.`);
-      seen.add(o.action);
-      const allowed = new Map(action.allowed.map((a) => [a.on, a]));
-      for (const e of o.effects) {
-        const rule = allowed.get(e.on);
-        if (!rule)
+      const allowed = new Set(action.allowed.map((a) => a.on));
+      for (const on of Object.keys(outcome.effects)) {
+        if (!allowed.has(on))
           problems.push(
-            `${o.action}: may not touch ${e.on}. Allowed: ${[...allowed.keys()].join(', ') || 'nothing'}.`,
-          );
-        else if (!inRange(e.value, rule.range))
-          problems.push(
-            `${o.action}: ${e.on} must be between ${rule.range[0]} and ${rule.range[1]}, got ${e.value}.`,
+            `${id}: may not touch ${on}. Allowed: ${[...allowed].join(', ') || 'nothing'}.`,
           );
       }
     }
     for (const id of actions.keys())
-      if (!seen.has(id)) problems.push(`No outcome for action ${id}.`);
+      if (out.outcomes[id] === undefined) problems.push(`No outcome for action ${id}.`);
 
     const causes = new Set([...input.recent.map((r) => r.id), ...actions.keys()]);
     const regions = new Set(input.regions.map((r) => r.id));
-    const limits = input.eventLimits;
     let major = 0;
     let significant = 0;
     for (const [i, e] of out.events.entries()) {
@@ -406,15 +508,10 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
         problems.push(`Event ${i}: unknown region id ${e.place}.`);
       for (const c of e.causes)
         if (!causes.has(c)) problems.push(`Event ${i}: unknown cause id ${c}.`);
-      if (e.causes.length === 0 && (e.size === 'major' || e.size === 'significant')) {
-        problems.push(`Event ${i}: a ${e.size} event must cite a cause.`);
-      }
-      for (const fx of e.effects) {
-        const limit = limits[fx.on];
-        if (limit === undefined) problems.push(`Event ${i}: may not touch ${fx.on}.`);
-        else if (Math.abs(fx.value) > limit + 1e-9)
-          problems.push(`Event ${i}: ${fx.on} must be between ${-limit} and ${limit}.`);
-      }
+      if (e.causes.length === 0 && e.size === 'major')
+        problems.push(`Event ${i}: a major event must cite a cause.`);
+      for (const on of Object.keys(e.effects))
+        if (input.eventLimits[on] === undefined) problems.push(`Event ${i}: may not touch ${on}.`);
       if (COMMENTARY.test(e.summary))
         problems.push(`Event ${i}: state what happened without commentary.`);
     }
@@ -425,21 +522,20 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     return problems;
   },
   fallback(input) {
-    return {
-      why: 'No model: each action applies the middle of its allowed ranges.',
-      outcomes: input.actions.map((a) => ({
-        action: a.id,
-        result: 'partial' as const,
-        effects: a.allowed.map((r) => ({
-          on: r.on,
-          value: (r.range[0] + r.range[1]) / 2,
-          reason: 'Middle of the allowed range.',
-        })),
+    const outcomes: Record<string, z.infer<typeof Outcome>> = {};
+    for (const a of input.actions) {
+      outcomes[a.id] = {
+        result: 'partial',
+        effects: Object.fromEntries(a.allowed.map((r) => [r.on, (r.range[0] + r.range[1]) / 2])),
         note:
           a.allowed.length > 0
             ? 'Carried out, with the usual friction.'
             : 'Announced; no measurable effect yet.',
-      })),
+      };
+    }
+    return {
+      why: 'No model: each action applies the middle of its allowed ranges.',
+      outcomes,
       events: [],
     };
   },
@@ -455,59 +551,70 @@ export interface ReviewIn {
     actorPowers: string[];
   }[];
 }
+const Verdict = z.object({
+  plausible: z.boolean(),
+  caused: z.boolean(),
+  withinPower: z.boolean(),
+  note: z.string().max(200).default(''),
+});
 const ReviewOut = z.object({
-  why: z.string(),
-  verdicts: z.array(
-    z.object({
-      index: z.number().int(),
-      plausible: z.boolean(),
-      caused: z.boolean(),
-      withinPower: z.boolean(),
-      note: z.string().default(''),
-    }),
-  ),
-  ...ext,
+  why: z.string().default(''),
+  /** Keyed by the item's index, written as text: one verdict per item, by construction. */
+  verdicts: z.record(z.string(), Verdict).default({}),
 });
 export type ReviewOut = z.infer<typeof ReviewOut>;
 
 export const turnReview: Job<ReviewIn, ReviewOut> = {
   name: 'turn.review',
   shape:
-    '{"why":string,"verdicts":[{"index":number,"plausible":boolean,"caused":boolean,"withinPower":boolean,"note":string}]}',
+    '{"why":string,"verdicts":{"<item index>":{"plausible":boolean,"caused":boolean,"withinPower":boolean,"note":string}}}',
   usesBrief: true,
   repairs: 1,
-  version: 1,
+  version: 2,
   role: 'adjudicator',
   maxTokens: 1500,
   rules: `You give a second opinion on proposed outcomes in a political simulation. For each item answer three questions.
 - "plausible": could this happen in the world described?
 - "caused": do the listed causes actually lead to it?
 - "withinPower": is it within the powers of whoever acts?
-Return exactly one verdict per item, with its index and a one-sentence note. Judge realism only, never morality.`,
+"verdicts" has one entry per item, keyed by that item's "index", each with a one-sentence note. Judge realism only, never morality.`,
   output: ReviewOut,
+  schema(input) {
+    const verdicts: Record<string, Schema> = {};
+    for (const item of input.items) {
+      verdicts[String(item.index)] = obj({
+        plausible: bool,
+        caused: bool,
+        withinPower: bool,
+        note: str(200),
+      });
+    }
+    return obj({
+      why: WHY,
+      verdicts: {
+        type: 'object',
+        properties: verdicts,
+        required: Object.keys(verdicts),
+        additionalProperties: false,
+      },
+    });
+  },
   check(input, out) {
-    const wanted = input.items
-      .map((i) => i.index)
-      .sort()
-      .join(',');
-    const got = out.verdicts
-      .map((v) => v.index)
-      .sort()
-      .join(',');
-    return wanted === got ? [] : ['Return exactly one verdict per item.'];
+    const missing = input.items.filter((i) => out.verdicts[String(i.index)] === undefined);
+    return missing.length === 0 ? [] : ['Return exactly one verdict per item, keyed by its index.'];
   },
   // With no second opinion available, reviewed items are dropped (spec: turn.review, Fallback).
   fallback(input) {
-    return {
-      why: 'No model: reviewed items are dropped.',
-      verdicts: input.items.map((i) => ({
-        index: i.index,
+    const verdicts: Record<string, z.infer<typeof Verdict>> = {};
+    for (const item of input.items) {
+      verdicts[String(item.index)] = {
         plausible: false,
         caused: false,
         withinPower: false,
         note: 'Not reviewed.',
-      })),
-    };
+      };
+    }
+    return { why: 'No model: reviewed items are dropped.', verdicts };
   },
 };
 
@@ -534,11 +641,10 @@ export interface ChronicleIn {
   level: 'restrained' | 'standard' | 'mature';
 }
 const ChronicleOut = z.object({
-  why: z.string(),
+  why: z.string().default(''),
   body: z.string().min(1),
   /** Every figure in the body that is not in the input, declared so it can be kept consistent. */
   details: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
-  ...ext,
 });
 export type ChronicleOut = z.infer<typeof ChronicleOut>;
 
@@ -547,7 +653,7 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   shape: '{"why":string,"body":string,"details":[{"label":string,"value":string}]}',
   usesBrief: true,
   repairs: 1,
-  version: 2,
+  version: 3,
   role: 'narrator',
   maxTokens: 2500,
   rules: `You write the full account of one event in a political simulation for adult readers, as a newspaper of record would. This is fiction about politics; some events are violent.
@@ -559,10 +665,21 @@ export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
 - State what happened. No lessons, warnings, disclaimers or judging adjectives. Report violence plainly: what, where, who, with no technique or instructions.
 - Plain paragraphs separated by blank lines. A short list is allowed where figures read best as a list.`,
   output: ChronicleOut,
+  schema: (input) =>
+    obj({
+      why: WHY,
+      body: str(roomFor(input.words)),
+      details: list(obj({ label: str(60), value: str(60) }), 8),
+    }),
+  mend(input, out) {
+    // A piece that overran is trimmed here. Asking for it again costs a whole second call.
+    if (words(out.body) <= Math.round(input.words * 1.2)) return [];
+    const before = words(out.body);
+    out.body = clipWords(out.body, input.words);
+    return [`body: trimmed from ${before} to ${words(out.body)} words`];
+  },
   check(input, out) {
     const problems: string[] = [];
-    const limit = Math.round(input.words * 1.2);
-    if (words(out.body) > limit) problems.push(`The body must be at most ${input.words} words.`);
     const invented = inventedNumbers(out.body, [input, out.details]);
     if (invented.length > 0)
       problems.push(`Declare these figures in "details", or remove them: ${invented.join(', ')}.`);
@@ -596,22 +713,75 @@ export interface ReactIn {
   state: Record<string, number | string>;
   recent: { when: string; summary: string }[];
 }
-const ReactOut = z.object({
-  why: z.string(),
-  kind: z.enum(['statement', 'action', 'silence']),
+const KINDS = ['statement', 'action', 'silence'] as const;
+const Later = z.object({
+  inDays: z.number().int().min(1).max(90),
+  question: z.string(),
+  ifYes: z.string().min(1),
+  ifNo: z.string().min(1),
+});
+const Answer = z.object({
+  kind: z.enum(KINDS),
   text: z.string().min(1),
   option: z.string().optional(),
-  later: z
-    .object({
-      inDays: z.number().int().min(1).max(90),
-      question: z.string(),
-      ifYes: z.string().min(1),
-      ifNo: z.string().min(1),
-    })
-    .optional(),
-  ...ext,
+  later: Later.optional(),
+});
+export type Answer = z.infer<typeof Answer>;
+const ReactOut = z.object({
+  why: z.string().default(''),
+  kind: z.enum(KINDS),
+  text: z.string().min(1),
+  option: z.string().optional(),
+  later: Later.optional(),
 });
 export type ReactOut = z.infer<typeof ReactOut>;
+
+const REACT_RULES = `You voice one actor in a political simulation answering an order the head of government has just given. Answer as that actor would: from its interests, its stance toward the government, and in its own voice.
+- Respond to what the order actually says ("order.text"), not to a generic policy.
+- "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
+- "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
+- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens.
+- Stay within what this actor could really do. Use no figures that are not in the input.`;
+
+const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
+  obj(
+    {
+      kind: pick(KINDS),
+      text: str(roomFor(wordLimit)),
+      option: pick(ids(options)),
+      later: obj({
+        inDays: int(1, 90),
+        question: str(160),
+        ifYes: str(300),
+        ifNo: str(300),
+      }),
+    },
+    ['option', 'later'],
+  );
+
+/** An answer whose choice of action does not hold up is simply read as a statement. */
+function mendAnswer(answer: Answer, options: readonly Ref[], wordLimit: number): string[] {
+  const fixes: string[] = [];
+  const known = options.some((o) => o.id === answer.option);
+  if (answer.kind === 'action' && !known) {
+    fixes.push(
+      answer.option === undefined
+        ? 'kind: read as a statement, since no action was named'
+        : `kind: read as a statement, since "${answer.option}" is not one of its options`,
+    );
+    answer.kind = 'statement';
+    delete answer.option;
+  } else if (answer.kind !== 'action' && answer.option !== undefined) {
+    fixes.push('option: dropped, since this is not an action');
+    delete answer.option;
+  }
+  if (words(answer.text) > Math.round(wordLimit * 1.2)) {
+    const before = words(answer.text);
+    answer.text = clipWords(answer.text, wordLimit);
+    fixes.push(`text: trimmed from ${before} to ${words(answer.text)} words`);
+  }
+  return fixes;
+}
 
 export const policyReact: Job<ReactIn, ReactOut> = {
   name: 'policy.react',
@@ -619,38 +789,231 @@ export const policyReact: Job<ReactIn, ReactOut> = {
     '{"why":string,"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 1,
+  version: 2,
   role: 'narrator',
   maxTokens: 2000,
-  rules: `You voice one actor in a political simulation answering an order the head of government has just given. Answer as that actor would: from its interests, its stance toward the government, and in its own voice.
-- Respond to what the order actually says ("order.text"), not to a generic policy.
-- "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
-- "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
-- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens.
-- Stay within what this actor could really do. Use no figures that are not in the input.`,
+  rules: REACT_RULES,
   output: ReactOut,
+  schema: (input) => {
+    const answer = answerSchema(input.options, input.words) as {
+      properties: Record<string, Schema>;
+      required: string[];
+    };
+    return obj({ why: WHY, ...answer.properties }, ['option', 'later']);
+  },
+  mend: (input, out) => mendAnswer(out, input.options, input.words),
   check(input, out) {
-    const problems: string[] = [];
-    if (words(out.text) > Math.round(input.words * 1.2))
-      problems.push(`"text" must be at most ${input.words} words.`);
-    const isAction = out.kind === 'action';
-    if (isAction !== (out.option !== undefined))
-      problems.push('"option" must be given if and only if kind is "action".');
-    if (out.option !== undefined && !input.options.some((o) => o.id === out.option)) {
-      problems.push(
-        `"option" must be one of: ${input.options.map((o) => o.id).join(', ') || 'none; this actor can only speak'}.`,
-      );
-    }
     const invented = inventedNumbers(
       `${out.text} ${out.later?.ifYes ?? ''} ${out.later?.ifNo ?? ''}`,
       input,
     );
-    if (invented.length > 0)
-      problems.push(`The figures ${invented.join(', ')} are not in the input.`);
-    return problems;
+    return invented.length > 0 ? [`The figures ${invented.join(', ')} are not in the input.`] : [];
   },
   fallback: templateReaction,
 };
+
+// -------------------------------------------------------------------------------- turn.reactions
+
+/**
+ * Everything the cast says and does after a turn, in one call: its answers to the turn's
+ * orders, and the moves some of its members make unprompted. On a server that handles one
+ * request at a time — any model on this machine — separate calls queue behind each other
+ * and each pays the prompt again, so one call with one shared prompt is the faster shape
+ * (spec: Speed).
+ */
+export interface ReactBatchIn {
+  items: {
+    /** The key this item's answer is filed under. */
+    key: string;
+    /** The order being answered. Left out when the actor is moving first. */
+    order?: ReactIn['order'];
+    /**
+     * Why this actor is acting unprompted, as the engine sees it. The engine decides who
+     * moves and why; the model decides what the move is, and writes it (REQ-ACT-21).
+     */
+    motive?: { reason: string; region?: Ref };
+    actor: ReactIn['actor'];
+    options: Ref[];
+  }[];
+  /** The most each response may run to, in words. */
+  words: number;
+  state: Record<string, number | string>;
+  recent: { when: string; summary: string }[];
+}
+const ReactBatchOut = z.object({
+  why: z.string().default(''),
+  answers: z.record(z.string(), Answer).default({}),
+});
+export type ReactBatchOut = z.infer<typeof ReactBatchOut>;
+
+export const turnReactions: Job<ReactBatchIn, ReactBatchOut> = {
+  name: 'turn.reactions',
+  shape:
+    '{"why":string,"answers":{"<item key>":{"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}}}',
+  usesBrief: true,
+  repairs: 1,
+  version: 2,
+  role: 'narrator',
+  maxTokens: 6000,
+  rules: `${REACT_RULES}
+
+You are given several items at once. Answer every one of them, in "answers", keyed by that item's "key". Each actor answers only its own item's order, in its own voice; do not let one answer echo another. "option" for an item must be an id from that item's own "options".
+
+An item with a "motive" and no "order" is not an answer to anything. That actor is moving first, on its own initiative, for the reason given in "motive". Decide what it does and write it as news: a demand, a march, an attack, an ultimatum, a warning, a walkout, an offer, a visit, a leak. Make it specific, make it something the head of government will have to deal with, and do not present it as a response to an order. "silence" is not allowed for these items. Prefer "action" when one of its options fits, and give a "later" follow-up when the move could go either way.`,
+  output: ReactBatchOut,
+  schema(input) {
+    const answers: Record<string, Schema> = {};
+    for (const item of input.items) answers[item.key] = answerSchema(item.options, input.words);
+    return obj({
+      why: WHY,
+      answers: {
+        type: 'object',
+        properties: answers,
+        required: Object.keys(answers),
+        additionalProperties: false,
+      },
+    });
+  },
+  mend(input, out) {
+    const fixes: string[] = [];
+    for (const item of input.items) {
+      const answer = out.answers[item.key];
+      if (!answer) continue;
+      // An actor chosen to move first cannot answer by saying nothing.
+      if (item.order === undefined && answer.kind === 'silence') {
+        answer.kind = 'statement';
+        fixes.push(`${item.key}.kind: read as a statement, since a move cannot be silence`);
+      }
+      for (const fix of mendAnswer(answer, item.options, input.words))
+        fixes.push(`${item.key}.${fix}`);
+    }
+    return fixes;
+  },
+  check(input, out) {
+    const problems: string[] = [];
+    for (const item of input.items) {
+      const answer = out.answers[item.key];
+      if (!answer) {
+        problems.push(`No answer for ${item.key} (${item.actor.name}).`);
+        continue;
+      }
+      const invented = inventedNumbers(
+        `${answer.text} ${answer.later?.ifYes ?? ''} ${answer.later?.ifNo ?? ''}`,
+        [item, input.state, input.recent],
+      );
+      if (invented.length > 0)
+        problems.push(`${item.key}: the figures ${invented.join(', ')} are not in the input.`);
+    }
+    for (const key of Object.keys(out.answers))
+      if (!input.items.some((i) => i.key === key)) problems.push(`Unknown item key ${key}.`);
+    return problems;
+  },
+  fallback(input) {
+    const answers: Record<string, Answer> = {};
+    for (const item of input.items) {
+      if (item.order === undefined) {
+        answers[item.key] = templateMove(item);
+        continue;
+      }
+      const { why: _why, ...answer } = templateReaction({
+        order: item.order,
+        actor: item.actor,
+        options: item.options,
+        words: input.words,
+        state: input.state,
+        recent: input.recent,
+      });
+      answers[item.key] = answer;
+    }
+    return { why: 'No model: a standard response for each kind of actor.', answers };
+  },
+};
+
+/** A move with no model: what this kind of actor does when it acts first. */
+function templateMove(item: ReactBatchIn['items'][number]): Answer {
+  const { actor } = item;
+  const name = actor.name;
+  const where = item.motive?.region?.label ?? 'the country';
+  const has = (id: string) => item.options.some((o) => o.id === id);
+  const say = (text: string, later?: Answer['later']): Answer => ({
+    kind: 'statement',
+    text,
+    ...(later ? { later } : {}),
+  });
+  const act = (option: string, text: string, later?: Answer['later']): Answer =>
+    has(option) ? { kind: 'action', option, text, ...(later ? { later } : {}) } : say(text, later);
+
+  switch (actor.kind) {
+    case 'militant':
+      return act(
+        'step_up_attacks',
+        `${name} claimed an attack on a security post in ${where}. "The state will find no rest here," its statement said.`,
+        {
+          inDays: 10,
+          question: 'Do the security forces contain it?',
+          ifYes: `Security forces said they had driven ${name} back from the roads around ${where}.`,
+          ifNo: `${name} followed its attack with a second, on a convoy in ${where}.`,
+        },
+      );
+    case 'opposition':
+      return act(
+        'call_protests',
+        `${name} called a day of protest across the country. "This government answers to no one, so it will answer to the street," its leadership said.`,
+        {
+          inDays: 7,
+          question: 'Does the protest draw crowds?',
+          ifYes: `Large crowds answered the call from ${name}, closing main roads in several cities.`,
+          ifNo: `The protest called by ${name} drew thin crowds and dispersed by evening.`,
+        },
+      );
+    case 'ally':
+      return act(
+        'demand_concessions',
+        `${name} said its support "cannot be taken for granted" and set out what it expects from the government before the next vote.`,
+        {
+          inDays: 14,
+          question: 'Does it stay in the coalition?',
+          ifYes: `${name} said it would remain in the coalition "for the time being".`,
+          ifNo: `${name} said it would sit apart from the government in the legislature until its demands were met.`,
+        },
+      );
+    case 'business':
+      return say(
+        `${name} warned that its members were cutting shifts and delaying investment. "We are asking the government for a meeting, and for a plan," its president said.`,
+      );
+    case 'lender':
+      return act(
+        'warn_publicly',
+        `${name} said its staff were "watching recent slippages closely" and that the next review would depend on corrective steps.`,
+      );
+    case 'religious':
+      return say(
+        `${name} used Friday sermons to press the government over conditions in ${where}, and said it would bring its followers out if it was ignored.`,
+        {
+          inDays: 10,
+          question: 'Does it hold back?',
+          ifYes: `${name} said it had been heard and called off its planned gatherings.`,
+          ifNo: `${name} brought its followers into the streets of ${where}.`,
+        },
+      );
+    case 'province':
+      return say(
+        `${name} wrote to the federal government demanding its overdue share of funds and a say in decisions that touch ${where}. "We will not be governed by circular," its spokesman said.`,
+      );
+    case 'military':
+      return say(
+        `${name} met to review the security situation and said afterwards that conditions in ${where} "demand the government's full attention and full resources".`,
+      );
+    default:
+      if (actor.stance === 'hostile' || actor.stance === 'wary')
+        return say(
+          `${name} summoned the country's envoy and said it held the government responsible for "what is allowed to happen on its soil".`,
+        );
+      return say(
+        `${name} sent a senior official to the capital to seek assurances about its interests and its people in ${where}.`,
+      );
+  }
+}
 
 /** A reaction with no model: the actor's kind, stance and the kind of order pick the words. */
 function templateReaction(input: ReactIn): ReactOut {
@@ -810,23 +1173,25 @@ export interface ReplyIn {
   policies: string[];
   earlier: { question: string; reply: string }[];
 }
+const LEVERS = ['offer', 'threat', 'none'] as const;
 const ReplyOut = z.object({
-  why: z.string(),
+  why: z.string().default(''),
   reply: z.string().min(1),
   /** What the asker put on the table, if anything. The engine holds them to an offer. */
   lever: z
-    .object({ kind: z.enum(['offer', 'threat', 'none']), claim: z.string().default('') })
+    .object({ kind: z.enum(LEVERS), claim: z.string().default('') })
     .default({ kind: 'none', claim: '' }),
-  ...ext,
 });
 export type ReplyOut = z.infer<typeof ReplyOut>;
+
+const REPLY_WORDS = 120;
 
 export const actorReply: Job<ReplyIn, ReplyOut> = {
   name: 'actor.reply',
   shape: '{"why":string,"reply":string,"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 1,
+  version: 2,
   role: 'narrator',
   maxTokens: 1500,
   rules: `You speak as one person or body in a political simulation, answering a question put by the head of government ("asker").
@@ -836,13 +1201,23 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
 - At most 120 words. No stage directions, no narration, just what is said.
 - "lever": did the asker put something on the table? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments and questions are "none". An offer does not change your position by itself: say what you would need to see.`,
   output: ReplyOut,
+  schema: () =>
+    obj({
+      why: WHY,
+      reply: str(roomFor(REPLY_WORDS)),
+      lever: obj({ kind: pick(LEVERS), claim: str(200) }),
+    }),
+  mend(_input, out) {
+    if (words(out.reply) <= 150) return [];
+    const before = words(out.reply);
+    out.reply = clipWords(out.reply, REPLY_WORDS);
+    return [`reply: trimmed from ${before} to ${words(out.reply)} words`];
+  },
   check(input, out) {
-    const problems: string[] = [];
-    if (words(out.reply) > 150) problems.push('"reply" must be at most 120 words.');
     const invented = inventedNumbers(out.reply, input);
-    if (invented.length > 0)
-      problems.push(`The figures ${invented.join(', ')} are not in what you know.`);
-    return problems;
+    return invented.length > 0
+      ? [`The figures ${invented.join(', ')} are not in what you know.`]
+      : [];
   },
   fallback(input) {
     const recent = input.knows.slice(-3).map((k) => k.summary);
@@ -884,6 +1259,7 @@ export const JOBS: Readonly<Record<string, Job<any, any>>> = Object.fromEntries(
     turnReview,
     chronicleWrite,
     policyReact,
+    turnReactions,
     actorReply,
   ].map((j) => [j.name, j]),
 );

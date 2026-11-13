@@ -11,3 +11,5 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0005](0005-effects-are-offsets.md)               | Policies change the world through caused, bounded offsets | 2026-11-11 |
 | [0006](0006-saved-steps-branches-and-an-svg-map.md) | Saved steps, branches in one file, and an SVG map for M0 | 2026-11-11 |
 | [0007](0007-answers-after-the-commit-and-standing-from-causes.md) | Answers after the commit, depth on demand, and standing from recorded causes | 2026-11-12 |
+| [0008](0008-fast-local-calls-strict-schemas-and-local-repair.md) | Fast local calls: strict schemas, local repair, and one call for a turn's answers | 2026-11-12 |
+| [0009](0009-the-world-moves-first.md) | The world moves first: the cast acts unprompted, and a more eventful judge | 2026-11-12 |

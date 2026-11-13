@@ -130,28 +130,42 @@ describe('director', () => {
     expect(director.view().arriving.reactions).toBe(true);
     expect(director.view().chronicle.length).toBeGreaterThan(0);
     await director.idle();
-    expect(jobs().slice(2)).toEqual(['policy.react', 'policy.react', 'policy.react']);
+    // The stand-in is a server on this machine, so the whole turn's answers are asked for in
+    // one call instead of three that would only queue behind each other.
+    expect(jobs().slice(2)).toEqual(['turn.reactions']);
+    const batch = JSON.parse(calls[2]?.input ?? '{}') as {
+      words: number;
+      items: { key: string }[];
+    };
     // At the standard detail level each of them is given room for a full paragraph.
-    expect(calls.slice(2).map((c) => (JSON.parse(c.input) as { words: number }).words)).toEqual([
-      150, 150, 150,
-    ]);
+    expect(batch.words).toBe(150);
+    expect(batch.items.map((i) => i.key)).toEqual(['a1', 'a2', 'a3']);
     expect(director.view().arriving.reactions).toBe(false);
 
-    // Running the clock an hour, a day or a few days with nothing ordered: no calls at all.
+    // Running the clock an hour with nothing ordered: no calls at all.
     calls.length = 0;
     director.move({ hours: 1 }, false);
     await director.idle();
     expect(director.view().campaign).toMatchObject({ day: 3, hour: 10 });
+    expect(jobs()).toEqual([]);
+    // A day or a few days: nothing is read or judged, so the turn itself is instant. All that
+    // may follow it is somebody in the cast acting on their own, written after the commit.
     director.move({ days: 1 }, false);
     await director.idle();
     director.move({ days: 3 }, false);
     await director.idle();
-    expect(jobs()).toEqual([]);
+    expect(jobs().filter((job) => job !== 'turn.reactions')).toEqual([]);
 
-    // A longer run is judged once, and nothing is written that nobody asked for.
+    // A longer run is judged once. With two months gone, some of the cast have moved first.
+    calls.length = 0;
     director.move({ days: 60 }, false);
     await director.idle();
-    expect(jobs()).toEqual(['turn.adjudicate']);
+    expect(jobs()).toEqual(['turn.adjudicate', 'turn.reactions']);
+    const moves = JSON.parse(calls[1]?.input ?? '{}') as {
+      items: { order?: unknown; motive?: { reason: string } }[];
+    };
+    expect(moves.items).toHaveLength(2);
+    expect(moves.items.every((i) => i.order === undefined && i.motive?.reason)).toBe(true);
   }, 60_000);
 
   it('answers every order: the cast reacts, a later beat is decided by dice, and people can be asked', async () => {
@@ -385,6 +399,131 @@ describe('people', () => {
   });
 });
 
+describe('a world that moves first', () => {
+  it('has the cast act unprompted, for reasons the engine gives, with consequences', async () => {
+    const { director } = open(null);
+    director.start('pakistan-2026');
+    // Nothing is ordered at all: the clock is simply run for three months.
+    for (let month = 0; month < 3; month++) {
+      director.advance(30);
+      await director.idle();
+    }
+    const view = director.view();
+    const moves = view.events.filter((e) => e.kind === 'move');
+    // Two each month: a month always brings moves, and no more than two a turn.
+    expect(moves).toHaveLength(6);
+    // Nobody moves twice within a fortnight, so a turn's two movers are different people.
+    const said = view.chronicle.filter((e) => e.speaker && moves.some((m) => m.id === e.id));
+    expect(said).toHaveLength(6);
+    for (const turn of view.turns) {
+      const names = said.filter((e) => e.turn === turn.id).map((e) => e.speaker);
+      expect(new Set(names).size).toBe(names.length);
+    }
+    // Each is news in its own right, is filed under dealings with that actor, and answers no
+    // order: the player gave none.
+    expect(view.policies).toEqual([]);
+    expect(moves.every((m) => m.size === 'significant')).toBe(true);
+    expect(moves.every((m) => m.causes.length === 1 && m.causes[0]?.startsWith('actor:'))).toBe(
+      true,
+    );
+    expect(said.every((e) => /made a move|spoke out/.test(e.headline))).toBe(true);
+    expect(said.every((e) => e.story.id.startsWith('actor:'))).toBe(true);
+    // Who moves is weighted by who has reason to: Balochistan is contested from the first
+    // day, so the armed group fighting there is among the first to act.
+    expect(said.map((e) => e.speaker)).toContain('The Baloch Liberation Army');
+    // A move can set something in train that the dice settle later, citing the same actor.
+    const beats = view.events.filter((e) => e.kind === 'beat');
+    expect(beats.length).toBeGreaterThan(0);
+    expect(beats.every((b) => b.causes[0]?.startsWith('actor:'))).toBe(true);
+
+    // The same campaign played again makes the same moves: it is dice, not chance.
+    n++;
+    const again = open(null);
+    again.director.start('pakistan-2026');
+    for (let month = 0; month < 3; month++) {
+      again.director.advance(30);
+      await again.director.idle();
+    }
+    expect(again.director.view().events.filter((e) => e.kind === 'move')).toEqual(moves);
+  }, 30_000);
+});
+
+describe('writing', () => {
+  it('shows prose as it is written, and saves only the finished text', async () => {
+    const { director, add } = open('standin-typing');
+    director.start('pakistan-2026');
+    const seen = new Map<string, (string | null)[]>();
+    /** Ids in the order their first words appeared. */
+    const began: string[] = [];
+    director.watchDrafts((id, text) => {
+      seen.set(id, [...(seen.get(id) ?? []), text]);
+      if (text && !began.includes(id)) began.push(id);
+    });
+    let speaking = 0;
+    director.subscribe(() => {
+      speaking = Math.max(speaking, director.view().arriving.writing.length);
+    });
+    /** The words that reached the screen for one piece, and whether the writing was closed. */
+    const drafts = (id: string) => {
+      const all = seen.get(id) ?? [];
+      return {
+        closed: all.at(-1) === null,
+        texts: all.filter((t): t is string => t !== null && t !== ''),
+      };
+    };
+
+    // An answer from a person grows on screen, and what is saved is where it ended.
+    director.ask('interior_minister', 'How do things stand in Balochistan?');
+    await director.idle();
+    const turn = director.view().talks.interior_minister?.[0];
+    const answer = drafts(turn?.id ?? '');
+    expect(answer.closed).toBe(true);
+    expect(answer.texts.length).toBeGreaterThan(0);
+    expect(answer.texts.every((t) => turn?.reply?.startsWith(t))).toBe(true);
+    expect(answer.texts.at(-1)).toBe(turn?.reply);
+
+    // The cast's answers to an order arrive the same way, each under its own name.
+    add('Declare an immediate ceasefire and open talks with the insurgents in Balochistan.');
+    director.move({ days: 2 }, false);
+    await director.idle();
+    const policy = director.view().policies[0];
+    expect(speaking).toBe(3);
+    expect(director.view().arriving.writing).toEqual([]);
+    for (const reaction of policy?.reactions ?? []) {
+      const written = drafts(reaction.id);
+      expect(written.closed).toBe(true);
+      expect(written.texts.length).toBeGreaterThan(1);
+      expect(written.texts.every((t) => reaction.text.startsWith(t))).toBe(true);
+    }
+    // In one call the actors are written one after another, so they begin in that order.
+    const ids = (policy?.reactions ?? []).map((reaction) => reaction.id);
+    expect(began.filter((id) => ids.includes(id))).toEqual(ids);
+
+    // A full account is written out the same way when its entry is opened.
+    const entry = director.view().chronicle.find((e) => e.speaker);
+    director.expandEntry(entry?.id ?? '');
+    await director.idle();
+    const full = director.view().chronicle.find((e) => e.id === entry?.id)?.full ?? '';
+    const account = seen.get(entry?.id ?? '')?.filter((t): t is string => !!t) ?? [];
+    expect(account.length).toBeGreaterThan(1);
+    // This one ran past its length, so what is saved is what was watched arriving, cut at
+    // the end of a sentence with its paragraphs intact.
+    expect(full.length).toBeGreaterThan(100);
+    expect(full).toContain('\n\n');
+    expect(account.at(-1)?.startsWith(full)).toBe(true);
+    expect(account.at(-1)).not.toBe(full);
+
+    // Answers due over the coming hours are not shown early.
+    seen.clear();
+    add('Launch a security operation in Khyber Pakhtunkhwa.');
+    director.move({ hours: 1 }, false);
+    await director.idle();
+    expect([...seen.keys()]).toEqual([]);
+    // Nothing is left behind in memory once the writing has ended.
+    expect(director.drafts()).toEqual({});
+  }, 60_000);
+});
+
 describe('desk and time', () => {
   it('lets boxes be edited, reordered and pinned as standing instructions', async () => {
     const { director, add } = open(null);
@@ -433,6 +572,7 @@ describe('desk and time', () => {
     await long.director.idle();
     const target = new Date(Date.UTC(2026, 10, 1 + firstStop + 20)).toISOString().slice(0, 10);
     long.director.rewindToDate(target);
+    await long.director.idle();
 
     const view = long.director.view();
     expect(view.campaign).toMatchObject({ day: firstStop + 20, date: target, branch: 2 });

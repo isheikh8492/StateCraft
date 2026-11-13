@@ -297,15 +297,25 @@ export function ModelPanel() {
           aria-label="Model check result"
           className="mt-4 rounded-control border border-border bg-surface-2 p-3"
         >
-          <p className="flex items-center gap-2">
+          <p className="flex flex-wrap items-center gap-2">
             <Badge tone={VERDICT_TONE[check.verdict]}>{check.verdict}</Badge>
+            <Badge tone={check.schemaEnforced ? 'good' : 'warn'}>
+              {check.schemaEnforced ? 'schema enforced' : 'prompted shape'}
+            </Badge>
             <span className="text-fg">{check.summary}</span>
+          </p>
+          <p className="mt-1 text-2xs text-fg-subtle">
+            {check.schemaEnforced
+              ? 'This server holds every reply to the JSON schema, so only the answers the game allows can come back, and the prompt no longer has to describe the shape.'
+              : 'This server did not take the JSON schema, so the shape is asked for in the prompt and wrong answers are put right or asked for again.'}
+            {check.speed.reasoningTokens > 0 &&
+              ` It spent ${check.speed.reasoningTokens} tokens thinking across the four jobs; the lowest reasoning effort is already being asked for.`}
           </p>
           <ul className="mt-2 flex flex-col gap-1">
             {check.jobs.map((job) => (
               <li
                 key={job.job}
-                className="flex items-center justify-between gap-2 text-xs text-fg-muted"
+                className="flex flex-wrap items-center justify-between gap-2 text-xs text-fg-muted"
               >
                 <span>{job.job}</span>
                 <span className="tabular">
@@ -315,6 +325,11 @@ export function ModelPanel() {
                       ? 'needed a second try'
                       : 'failed'}{' '}
                   · {(job.ms / 1000).toFixed(1)} s
+                  {job.ttftMs === undefined
+                    ? ''
+                    : ` · ${(job.ttftMs / 1000).toFixed(1)} s to first token`}
+                  {job.tokensPerSecond === undefined ? '' : ` · ${job.tokensPerSecond} tok/s`}
+                  {job.fixes?.length ? ` · ${job.fixes.length} put right here` : ''}
                 </span>
               </li>
             ))}

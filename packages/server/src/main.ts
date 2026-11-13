@@ -77,6 +77,9 @@ try {
   process.exit(1);
 }
 
+// Load the model now, in the background, so the first turn is not spent waiting for it.
+game.warmUp();
+
 const url = `http://${HOST}:${port}`;
 console.log(dev ? `StateCraft API listening on ${url}` : `StateCraft is running at ${url}`);
 console.log(`Campaign file: ${game.campaignFile}`);

@@ -2,7 +2,14 @@
  * The deterministic core. This package does no I/O, reads no clock, and uses no randomness
  * except the seeded generator. Same inputs, same outputs.
  */
-export { type CastEntry, type OrderShape, type Touched, touchedBy } from './cast.ts';
+export {
+  type CastEntry,
+  type OrderShape,
+  type Restless,
+  restless,
+  type Touched,
+  touchedBy,
+} from './cast.ts';
 export {
   AUTHORITIES,
   type Authority,

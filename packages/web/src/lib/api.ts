@@ -104,6 +104,46 @@ export const api = {
   model: () => get<ModelInfo>('/api/model'),
   saveModel: (config: ModelConfig) => post<ModelInfo>('/api/model', config, 'PUT'),
   checkModel: (role?: ModelRole) => post<ModelCheck>('/api/model/check', role ? { role } : {}),
+  /**
+   * The server's live line. `onChange` is called every time the state changes, so the screen
+   * is pushed to instead of asking over and over while a turn runs. `onDraft` is called with
+   * prose as it is being written: the id of what it will become and its text so far, or null
+   * once the writing has ended. Resolves when the line closes; the caller reopens it.
+   */
+  stream: async (
+    handlers: { onChange: () => void; onDraft: (id: string, text: string | null) => void },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const response = await send('/api/stream', { signal });
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let event = 'message';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        // Lines beginning with a colon are keep-alives and carry nothing.
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line === '') event = 'message';
+        else if (line.startsWith('data:')) {
+          if (event !== 'draft') handlers.onChange();
+          else {
+            try {
+              const draft = JSON.parse(line.slice(5)) as { id: string; text: string | null };
+              handlers.onDraft(draft.id, draft.text);
+            } catch {
+              // A line cut short tells nothing; the next one carries the whole text again.
+            }
+          }
+        }
+      }
+    }
+  },
   calls: (resolution?: string) =>
     get<CallView[]>(
       `/api/calls${resolution ? `?resolution=${encodeURIComponent(resolution)}` : ''}`,

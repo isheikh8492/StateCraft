@@ -149,7 +149,13 @@ interface ModelPort {
 4. JSON mode, plus the schema written into the prompt
 5. Plain prompt, then extraction of the first JSON object from the reply
 
-**Every call runs the same pipeline:** assemble context within the model's token budget → call → strip reasoning blocks and code fences → parse → validate with Zod → on failure, up to 2 repair attempts that feed the validation errors back → the Task's deterministic fallback → log.
+**The schema is built for the call, not for the job.** Each job writes its own JSON schema from that call's input, so the only answers it accepts are the ones the game allows: these region ids, this actor's option ids, the variables this order may touch, these card ids. Every object is closed and lists every field it requires; there is no open field. A local server turns the schema into a grammar, so an enum is not advice but the only thing the model can emit. Where one answer per thing is wanted, the reply is keyed by that thing's id — a turn's outcomes by action id, a review's verdicts by item index — so "exactly one answer per thing" holds by construction. Effects are named numbers, `{"inflation": 1.2}`.
+
+**The prompt stops describing the shape once the server has proved it enforces it:** once one reply has come back in the schema's exact shape. A server that quietly ignores `response_format` looks no different at the request, so nothing is assumed about one.
+
+**Every call runs the same pipeline:** assemble context within the model's token budget → call → strip reasoning blocks and code fences → parse → **mend what is mechanically wrong** → validate with Zod → check → on failure, up to 2 repair attempts that feed the validation errors back → the Task's deterministic fallback → log.
+
+**Mending instead of asking again.** A repair costs as much as the call it repairs, so a mistake with one obvious correction is put right where the reply lands: a number outside its range is clamped, over-long prose is trimmed at a sentence end, a field nobody asked for is dropped, a null standing in for a missing field is removed, a list of `{on, value}` pairs is read as named values, an action no actor can take is read as a statement. Every fix is recorded and shown in the Inspector, so a model that constantly needs mending is visible rather than hidden. The model is asked again only when the reply is unusable.
 
 Failures are classified, because each class needs a different response:
 
@@ -181,17 +187,18 @@ Decided in play-testing: cost is not the constraint, waiting is. The game is tun
 
 - **Only two things run before a turn commits:** reading your boxes (when you sent any) and judging the period. Then the date, the figures, the map and each order's outcome appear at once.
 - **Depth is written when you ask for it.** Headlines arrive with the turn; the full piece on an event is written when you open it, and an explanation comes when you ask a person. Nothing long is written on the chance that you might read it.
-- **Writing arrives as it is written.** Long pieces stream onto the page word by word.
-- **Reactions run after the commit, side by side.** You are already reading results while they arrive. On a server that handles one request at a time they simply queue.
+- **Writing arrives as it is written.** The wait that is felt is the wait before the first word, so prose you are waiting to read appears word by word: an answer from a person, a full account, and the cast's answers to a turn (one actor after another when a local model writes them in one call). What is on screen while it grows is provisional and is never saved. The finished text is checked as a whole and replaces it: usually the same words, sometimes cut at a sentence end, and now and then started over when a check fails and the model is asked again. Answers due over the coming hours are not shown early. Servers that cannot stream (and the Anthropic and Gemini adapters, for now) show the text when it is finished.
+- **Reactions run after the commit.** You are already reading results while they arrive. A hosted model writes them side by side; a model on this machine answers one request at a time, so the whole turn's answers are asked for in one call with one shared prompt rather than in calls that queue and pay for the prompt again. At most five answers a turn, however much was ordered.
 - **Nothing is asked that rules can answer.** Adding or editing a box, routine notices, policy milestones, the judge's memory of earlier months, and choosing where "to next major event" stops involve no model.
-- **Short moves are instant.** A move of a day or less with nothing ordered is resolved by the engine and the dice-driven event deck alone. The judge runs when orders are sent, or when a week or more passes.
-- **Small prompts.** Each job is given a compact description of its output, not a full schema, and only the judge receives the world brief. Fixed text comes first so servers can reuse it.
-- **Short where it does not show.** Internal reasoning and structured fields are kept terse; length is spent only on prose the player reads.
-- **Fewer second tries.** Structured jobs get two repairs; prose gets one, then built-in wording.
+- **Short moves are instant.** A move of a day or less with nothing ordered is resolved by the engine and the dice-driven event deck alone. The judge runs when orders are sent, or when a week or more passes. What may follow, after the commit, is one call when somebody in the cast moves first.
+- **Small prompts.** Only the judge receives the world brief, and fixed text comes first so servers can reuse it. A server that enforces the schema is not also told the output's shape in words.
+- **Short where it does not show.** Internal reasoning and structured fields are kept terse; length is spent only on prose the player reads. The lowest reasoning effort is asked for, and dropped silently where a server does not know the option: the engine decides outcomes, so thinking about them is pure waiting.
+- **Fewer second tries.** A mistake with one obvious correction is mended where the reply lands rather than sent back. Past that, structured jobs get two repairs; prose gets one, then built-in wording.
+- **The model is warm.** A throwaway call when the server starts, and when a model is pointed at, loads the weights and teaches the harness what this server accepts, so the first real turn pays for neither.
 - **Up to three written reactions per order,** chosen by how strongly each actor is touched; the rest are named in one line.
 - **No call for headlines.** An event's own one-line summary is its headline, so nothing is written for the chronicle until you open an entry.
 - **You choose how much is written.** A Detail setting (Brief, Standard, Rich) sets how long reactions and full accounts run: about 60, 150 or 250 words for a reaction, and a full account 0.6, 1 or 1.6 times its normal length. Longer reads better and takes longer.
-- **Measured.** The Inspector shows, per turn, the time to first result, the time to last word, and every call.
+- **Measured.** The Inspector shows, per turn, the time to first result, the time to last word, and every call. Each call carries its time to the first token, its tokens a second with that wait taken out, the tokens it spent thinking, whether the server held it to the schema, and what was put right locally — enough to tell a slow server from a slow model, and prompt processing from generation. Replies from OpenAI-compatible servers are streamed for this reason. The model check reports the same figures before you rely on a model.
 
 ## Responsiveness
 
@@ -232,7 +239,7 @@ These are targets to measure in M0, not measurements.
 
 - Shows your own input immediately, before the server confirms it.
 - Keeps every window usable during a resolution: you can read, browse the map and draft boxes while the world resolves.
-- Updates through one live connection, so nothing needs a refresh.
+- Updates through one live connection (`GET /api/stream`): the server pushes a line whenever anything changes and the page reads the new state, instead of asking several times a second while a turn runs. A slow poll is left only as a safety net for a dropped line. Nothing needs a refresh.
 
 ## Gameplay: the core loop
 
@@ -529,6 +536,22 @@ A policy is not a change to a number. It is an act that other people see, and th
 **Where you see it.** Responses appear in the chronicle beside the order, on the policy's page under "Reactions", and, when addressed to you, in the inbox.
 
 **Limits.** The engine caps responses per order and per resolution so a long advance stays affordable; actors that are only lightly touched are batched into one line. A response can never invent a number or change control of territory.
+
+## The world moves first
+
+Answering every order is half of a living world. The other half is that most of what happens in a country is not a response to its government. Play-testing showed a world that only ever reacted, so this is a rule of the game too.
+
+**Members of the cast act unprompted.** As a turn of a day or more ends, dice decide whether somebody moves first: the longer the turn, the likelier, and at most two in one turn.
+
+**The engine says who and why; a model says what.** The engine weighs each actor's reason to act from the state of the country and that actor's standing toward you: an armed group fighting for a contested region, an opposition facing an unpopular government, a coalition partner grown wary, business under high inflation, a lender when a crisis line is crossed, a province or a religious party when its own region is restive. Dice pick among them by that weight. The model is given the reason and writes the move as news: a demand, a march, an attack, an ultimatum, a walkout, a visit. With no model, a template for that kind of actor is used.
+
+**A move is bounded like a response.** It is a statement or one of that actor's listed actions, with the same limited effects, and it may set up a later beat that the dice decide. An actor that is answering one of your orders this turn, or that moved in the last fortnight, is passed over.
+
+**Where you see it.** In the chronicle, as news in its own right ("made a move", "spoke out"), filed under your dealings with that actor, and written word by word as it arrives like any other answer.
+
+**The judge writes the world's own events too.** It is told that the world does not wait for the government: about one event for each week it judges, at least one that matters in any period of a week or more, and things done by parties, courts, provinces, markets and neighbours on their own account. The budget allows one significant event a fortnight and one major event in any period of two weeks or more.
+
+**Not yet built:** actors with traits, private motives and plots; a move that lands in your inbox as a demand to answer; "to next major event" stopping when somebody moves.
 
 ## Standing, and being held to your word
 

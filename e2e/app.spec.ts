@@ -197,9 +197,16 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await openWindow(page, 'Inspector');
   const inspector = win(page, 'Inspector');
   await expect(inspector.getByText('Model calls')).toBeVisible();
-  await expect(
-    inspector.getByRole('list', { name: 'Model calls' }).getByText('turn.adjudicate v1'),
-  ).toBeVisible();
+  const judging = inspector
+    .getByRole('list', { name: 'Model calls' })
+    .getByRole('listitem')
+    .filter({ hasText: 'turn.adjudicate v3' });
+  await expect(judging).toBeVisible();
+  // Every call carries its own measurements and says how the shape was asked for.
+  await expect(judging).toContainText('to first token');
+  await expect(judging).toContainText('tok/s');
+  await expect(judging).toContainText('schema');
+  await expect(inspector.getByText('Held to the schema')).toBeVisible();
   await page.getByRole('button', { name: 'Minimise Inspector' }).click();
 });
 
@@ -242,7 +249,12 @@ test('the model can be checked before you rely on it', async ({ page }) => {
     'standin',
   );
   await panel.getByRole('button', { name: 'Check this model' }).click();
-  await expect(panel.getByRole('region', { name: 'Model check result' })).toContainText('suitable');
+  const result = panel.getByRole('region', { name: 'Model check result' });
+  await expect(result).toContainText('suitable');
+  // The check says whether the server held the replies to the schema or we fell back to
+  // asking for the shape in the prompt, and how fast the model answered.
+  await expect(result).toContainText('schema enforced');
+  await expect(result).toContainText('to first token');
   await expect(panel.getByLabel('How much the game writes')).toHaveValue('standard');
   await panel.getByRole('tab', { name: 'Narrator' }).click();
   await expect(panel.getByLabel('Use the main model for this role')).toBeChecked();

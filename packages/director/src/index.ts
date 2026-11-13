@@ -25,6 +25,7 @@ import {
   removeEffects,
   resolveInstrument,
   resolveNovel,
+  restless,
   roll,
   type Scenario,
   STANDING,
@@ -37,6 +38,7 @@ import type { Ledger } from '@statecraft/ledger';
 import {
   type AdjudicateIn,
   type Allowed,
+  type Answer,
   actorReply,
   type CompiledPolicy,
   chronicleWrite,
@@ -48,6 +50,7 @@ import {
   REACTION_OPTIONS,
   type Size,
   turnAdjudicate,
+  turnReactions,
   turnReview,
 } from '@statecraft/models';
 import {
@@ -153,7 +156,10 @@ interface ReactionRecord {
   id: string;
   actor: string;
   actorName: string;
+  /** The order being answered. Empty when the actor moved first. */
   policy: string;
+  /** True when nobody asked: the actor acted on its own initiative. */
+  unprompted?: boolean;
   kind: 'statement' | 'action' | 'silence';
   text: string;
   /** When word of it reaches the player. After a move of hours, answers come in one by one. */
@@ -415,6 +421,14 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
 };
 /** How many actors answer one order in full; the rest are noted by name. */
 const MAX_REACTIONS = 3;
+/** And how many answer in a whole turn, however much was ordered. */
+const REACTIONS_PER_TURN = 5;
+/** How many of the cast may act unprompted after one turn. */
+const MOVES_PER_TURN = 2;
+/** The chance, each day that passes, that somebody in the cast moves first. */
+const MOVE_DAILY_CHANCE = 0.25;
+/** Days before the same actor may move unprompted again. */
+const MOVE_REST_DAYS = 14;
 /** Words a reaction may run to, and how far a full account is stretched, at each detail level. */
 const REACTION_WORDS = { brief: 60, standard: 150, rich: 250 } as const;
 const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
@@ -480,6 +494,20 @@ export interface Director {
   debugWorld(): World | null;
   /** Resolves when no background work is left. */
   idle(): Promise<void>;
+  /**
+   * Called whenever anything the screen shows may have changed. The server uses it to push
+   * the new state out, so the page does not have to keep asking (REQ-PERF-02).
+   */
+  subscribe(listener: () => void): () => void;
+  /**
+   * Prose as it is being written, so it can be shown word by word (REQ-PERF-16). The
+   * listener gets the id of the thing being written (a conversation turn, an event, a
+   * reaction) and its text so far, or null when the writing has ended. Drafts are never
+   * saved: the record holds only the finished, checked text.
+   */
+  watchDrafts(listener: (id: string, text: string | null) => void): () => void;
+  /** Everything being written right now, for a screen that has just connected. */
+  drafts(): Record<string, string>;
 }
 
 export function createDirector(options: DirectorOptions): Director {
@@ -501,14 +529,52 @@ export function createDirector(options: DirectorOptions): Director {
     return cache;
   };
 
+  /** Everyone waiting to be told that the state changed. */
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (error) {
+        console.error('[director] a watcher threw', error);
+      }
+    }
+  };
+  ledger.watch(notify);
+
+  /** Text still being written, by the id of what it will become. Held in memory only. */
+  const drafting = new Map<string, string>();
+  const draftListeners = new Set<(id: string, text: string | null) => void>();
+  const setDraft = (id: string, text: string | null) => {
+    if (text === null ? !drafting.delete(id) : drafting.get(id) === text) return;
+    if (text !== null) drafting.set(id, text);
+    for (const listener of draftListeners) {
+      try {
+        listener(id, text);
+      } catch (error) {
+        console.error('[director] a draft watcher threw', error);
+      }
+    }
+  };
+  /** Whose answers to the last turn are being written right now. */
+  let writingReactions: { id: string; actorName: string; policy: string }[] = [];
+
   // One background task at a time; a resolution goes ahead of box readings (REQ-PERF-02).
   const queue: { priority: number; run: () => Promise<void> }[] = [];
   let working: Promise<void> | undefined;
   let cancelRequested: string | undefined;
   /** True while the cast's answers to the last turn are still being written. */
-  let arrivingReactions = false;
+  let arriving = false;
+  const setArriving = (value: boolean) => {
+    arriving = value;
+    notify();
+  };
   /** True from the moment a move is asked for until its turn has started. */
-  let queuedMove = false;
+  let waiting = false;
+  const setQueuedMove = (value: boolean) => {
+    waiting = value;
+    notify();
+  };
   /** Entries whose full piece is being written right now. */
   const writing = new Set<string>();
   const pump = () => {
@@ -520,6 +586,7 @@ export function createDirector(options: DirectorOptions): Director {
       .catch((error) => console.error('[director]', error))
       .finally(() => {
         working = undefined;
+        notify();
         pump();
       });
   };
@@ -537,11 +604,11 @@ export function createDirector(options: DirectorOptions): Director {
   /** Nothing may rewrite the world while reactions to the last turn are still arriving. */
   const requireSettled = () => {
     requireQuiet();
-    if (arrivingReactions)
+    if (arriving)
       throw new DirectorError('busy', 'Reactions to your last move are still arriving.');
   };
   const requireQuiet = () => {
-    if (running() || queuedMove) throw new DirectorError('busy', 'A turn is still running.');
+    if (running() || waiting) throw new DirectorError('busy', 'A turn is still running.');
   };
   const regionRefs = (world: World) => {
     const listed = state().scenario?.regions ?? [];
@@ -842,20 +909,23 @@ export function createDirector(options: DirectorOptions): Director {
       recent: allEvents(p)
         .slice(-8)
         .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
-      surpriseBudget: { major: days >= 30 ? 1 : 0, significant: 1 + Math.floor(days / 45) },
+      // The world is allowed to be eventful: something that matters every fortnight or so,
+      // and something grave in any stretch of two weeks or more.
+      surpriseBudget: { major: days >= 14 ? 1 : 0, significant: 1 + Math.floor(days / 14) },
     };
     const context = { resolution: r.id, brief: scenario.brief };
     const { output, via } = await harness.run(turnAdjudicate, input, context);
 
-    const toPicks = (effects: { on: string; value: number }[]) =>
-      Object.fromEntries(effects.filter((e) => e.value !== 0).map((e) => [e.on, e.value]));
+    // Effects come back in the short form `{"inflation": 1.2}`; a zero is no movement.
+    const moved = (effects: Record<string, number>) =>
+      Object.fromEntries(Object.entries(effects).filter(([, value]) => value !== 0));
     const data: AdjudicateData = {
       ...(via === 'fallback' ? { quiet: true } : {}),
-      outcomes: output.outcomes.map((o) => ({
-        policy: o.action,
+      outcomes: Object.entries(output.outcomes).map(([policy, o]) => ({
+        policy,
         result: o.result,
         note: o.note,
-        picks: o.result === 'stalled' ? {} : toPicks(o.effects),
+        picks: o.result === 'stalled' ? {} : moved(o.effects),
       })),
       events: output.events.map((e) => ({
         kind: e.kind,
@@ -863,8 +933,9 @@ export function createDirector(options: DirectorOptions): Director {
         summary: e.summary,
         ...(e.place ? { place: e.place } : {}),
         inDays: e.inDays,
-        picks: toPicks(e.effects),
-        causes: e.causes,
+        picks: moved(e.effects),
+        // Something the world did on its own has no earlier event behind it.
+        causes: e.causes.length > 0 ? e.causes : ['world'],
       })),
     };
 
@@ -883,9 +954,9 @@ export function createDirector(options: DirectorOptions): Director {
       }));
       const review = await harness.run(turnReview, { items }, context);
       const failed = new Set(
-        review.output.verdicts
-          .filter((v) => !(v.plausible && v.caused && v.withinPower))
-          .map((v) => v.index),
+        Object.entries(review.output.verdicts)
+          .filter(([, v]) => !(v.plausible && v.caused && v.withinPower))
+          .map(([index]) => Number(index)),
       );
       data.events = data.events.filter(
         (e) => !(e.size === 'major' && failed.has(major.indexOf(e))),
@@ -1391,10 +1462,10 @@ export function createDirector(options: DirectorOptions): Director {
         day: message.day,
       });
     }
-    arrivingReactions = true;
+    setArriving(true);
     enqueue(0, () =>
       aftermath(id).finally(() => {
-        arrivingReactions = false;
+        setArriving(false);
       }),
     );
   }
@@ -1416,7 +1487,19 @@ export function createDirector(options: DirectorOptions): Director {
     )
       return;
     const orders = (r.compile?.policies ?? []).filter((x) => !refusalOf(x, r));
-    if (orders.length === 0) return;
+
+    // Who moves first. Not everything that happens is an answer to the player: each day that
+    // passed gave somebody in the cast a chance to act on their own, and the dice, tilted by
+    // who has most reason, say who. Whoever is answering an order this turn, or has moved in
+    // the last fortnight, is passed over.
+    const days = r.hours ? 0 : world.day - r.fromDay;
+    let moves = 0;
+    if (days >= 1) {
+      if (roll(world.seed, `move:${id}:1`) < 1 - (1 - MOVE_DAILY_CHANCE) ** days) moves++;
+      if (moves === 1 && days >= 7 && (days >= 30 || roll(world.seed, `move:${id}:2`) < 0.5))
+        moves++;
+    }
+    if (orders.length === 0 && moves === 0) return;
 
     const context = { resolution: id, brief: scenario.brief };
     const standingNow = standings(p, scenario);
@@ -1431,7 +1514,12 @@ export function createDirector(options: DirectorOptions): Director {
       .slice(-6)
       .map((e) => ({ when: e.date, summary: e.summary }));
     const others: Record<string, string[]> = {};
-    const asked = orders.flatMap((policy) => {
+    const asked: {
+      policy?: PolicyRecord;
+      actor: (typeof scenario.cast)[number];
+      motive?: { reason: string; region?: string };
+    }[] = [];
+    for (const policy of orders) {
       const authority = CATALOGUE.find((c) => c.id === policy.instrument)?.authority ?? 'executive';
       let touched = touchedBy(scenario.cast, {
         instrument: policy.instrument,
@@ -1443,53 +1531,169 @@ export function createDirector(options: DirectorOptions): Director {
         const fallback = scenario.cast.find((c) => c.kind === 'opposition');
         touched = fallback ? [{ actor: fallback, score: 0 }] : [];
       }
-      others[policy.id] = touched.slice(MAX_REACTIONS).map((t) => t.actor.name);
-      const region = world.regions.find((x) => x.id === policy.region);
-      return touched.slice(0, MAX_REACTIONS).map(({ actor }) => ({
-        policy,
-        actor,
-        answer: harness.run(
-          policyReact,
+      // Three answers to an order, and no more than five in a turn however much was
+      // ordered: past that the wait grows and nobody reads them all (spec: Speed).
+      const room = Math.max(0, Math.min(MAX_REACTIONS, REACTIONS_PER_TURN - asked.length));
+      others[policy.id] = touched.slice(room).map((t) => t.actor.name);
+      for (const { actor } of touched.slice(0, room)) asked.push({ policy, actor });
+    }
+    const answering = asked.length;
+    if (moves > 0) {
+      const rested = new Set(
+        p.resolutions
+          .filter((x) => x.status === 'committed' && x.fromDay > world.day - MOVE_REST_DAYS)
+          .flatMap((x) => (x.reactions?.reactions ?? []).filter((y) => y.unprompted))
+          .map((y) => y.actor),
+      );
+      const busy = new Set(asked.map((a) => a.actor.id));
+      const pool = restless(scenario.cast, world, (actor) => standingNow.get(actor) ?? 0).filter(
+        (c) => !rested.has(c.actor.id) && !busy.has(c.actor.id),
+      );
+      for (let n = 0; n < Math.min(moves, MOVES_PER_TURN) && pool.length > 0; n++) {
+        const total = pool.reduce((sum, c) => sum + c.weight, 0);
+        let at = roll(world.seed, `mover:${id}:${n}`) * total;
+        const index = Math.max(
+          0,
+          pool.findIndex((c) => {
+            at -= c.weight;
+            return at < 0;
+          }),
+        );
+        const [chosen] = pool.splice(index, 1);
+        if (!chosen) break;
+        asked.push({
+          actor: chosen.actor,
+          motive: { reason: chosen.reason, ...(chosen.region ? { region: chosen.region } : {}) },
+        });
+      }
+    }
+    if (asked.length === 0) return;
+    const refOf = (regionId: string | undefined) => {
+      const region = world.regions.find((x) => x.id === regionId);
+      return region ? { id: region.id, label: region.name } : undefined;
+    };
+    const wordLimit = REACTION_WORDS[detail()];
+    const items = asked.map(({ policy, actor, motive }, n) => {
+      const region = refOf(policy?.region);
+      const about = refOf(motive?.region);
+      return {
+        key: `a${n + 1}`,
+        ...(policy
+          ? {
+              order: {
+                id: policy.id,
+                text: policy.orders.join(' '),
+                summary: `${policy.title}. ${policy.summary}`.slice(0, 300),
+                instrument: policy.instrument,
+                ...(region ? { region } : {}),
+              },
+            }
+          : {}),
+        ...(motive
+          ? { motive: { reason: motive.reason, ...(about ? { region: about } : {}) } }
+          : {}),
+        actor: {
+          id: actor.id,
+          name: actor.name,
+          kind: actor.kind,
+          stance: stanceOf(standingNow.get(actor.id) ?? 0),
+          voice: actor.voice,
+        },
+        options: (REACTION_OPTIONS[actor.kind] ?? []).map((o) => ({ id: o.id, label: o.label })),
+      };
+    });
+    const before = ledger.latestSnapshot()?.seq;
+    // A model on this machine answers one request at a time, so separate calls would queue
+    // and pay for the same prompt again and again: ask for the whole turn's answers at once.
+    // A hosted model writes them side by side, which is faster there (REQ-PERF-05).
+    let answers: (Answer | undefined)[];
+    // The words are shown as they are written, unless the answers are due over the coming
+    // hours: those must not be read before they arrive.
+    const live = !r.hours;
+    const draftId = (n: number) => `${id}-x${n + 1}`;
+    if (live) {
+      writingReactions = asked.map(({ policy, actor }, n) => ({
+        id: draftId(n),
+        actorName: actor.name,
+        policy: policy?.id ?? '',
+      }));
+      notify();
+    }
+    try {
+      // Asked for together: the given items, whose answers are filed by their place in `items`.
+      const together = async (indexes: number[]) => {
+        const { output } = await harness.run(
+          turnReactions,
           {
-            order: {
-              id: policy.id,
-              text: policy.orders.join(' '),
-              summary: `${policy.title}. ${policy.summary}`.slice(0, 300),
-              instrument: policy.instrument,
-              ...(region ? { region: { id: region.id, label: region.name } } : {}),
-            },
-            actor: {
-              id: actor.id,
-              name: actor.name,
-              kind: actor.kind,
-              stance: stanceOf(standingNow.get(actor.id) ?? 0),
-              voice: actor.voice,
-            },
-            options: (REACTION_OPTIONS[actor.kind] ?? []).map((o) => ({
-              id: o.id,
-              label: o.label,
-            })),
-            words: REACTION_WORDS[detail()],
+            items: indexes.flatMap((n) => items[n] ?? []),
+            words: wordLimit,
             state: stateNow,
             recent,
           },
           context,
-        ),
-      }));
-    });
-    const before = ledger.latestSnapshot()?.seq;
-    const answers = await Promise.all(asked.map((a) => a.answer));
+          live
+            ? {
+                onDraft: (strings) => {
+                  for (const n of indexes)
+                    setDraft(draftId(n), strings[`answers.${items[n]?.key}.text`] ?? '');
+                },
+              }
+            : undefined,
+        );
+        return indexes.map((n) => [n, output.answers[items[n]?.key ?? '']] as const);
+      };
+      const alone = async (n: number) => {
+        const item = items[n];
+        if (!item?.order) return [n, undefined] as const;
+        const { output } = await harness.run(
+          policyReact,
+          {
+            order: item.order,
+            actor: item.actor,
+            options: item.options,
+            words: wordLimit,
+            state: stateNow,
+            recent,
+          },
+          context,
+          live ? { onDraft: (strings) => setDraft(draftId(n), strings.text ?? '') } : undefined,
+        );
+        return [n, output] as const;
+      };
+      const all = [...items.keys()];
+      const replies = all.filter((n) => n < answering);
+      const movers = all.filter((n) => n >= answering);
+      let written: (readonly [number, Answer | undefined])[];
+      if (harness.oneAtATime('narrator') && (items.length > 1 || movers.length > 0))
+        written = await together(all);
+      else
+        written = (
+          await Promise.all([
+            ...replies.map((n) => alone(n).then((one) => [one])),
+            ...(movers.length > 0 ? [together(movers)] : []),
+          ])
+        ).flat();
+      answers = items.map((_, n) => written.find(([at]) => at === n)?.[1]);
+    } finally {
+      for (const n of items.keys()) setDraft(draftId(n), null);
+      if (writingReactions.length > 0) {
+        writingReactions = [];
+        notify();
+      }
+    }
 
     // If the world was rewritten while the answers were being written (a repeal, say), the
     // answers were to a world that is gone: drop them.
     if (ledger.latestSnapshot()?.seq !== before) return;
     let next = world;
     const data: ReactionData = { reactions: [], events: [], beats: [], others };
-    for (const [n, { policy, actor }] of asked.entries()) {
-      const out = answers[n]?.output;
+    for (const [n, { policy, actor, motive }] of asked.entries()) {
+      const out = answers[n];
       if (!out) continue;
       const eventId = `${id}-x${n + 1}`;
-      const where = policy.region ?? actor.cares.regions[0];
+      const where = policy?.region ?? motive?.region ?? actor.cares.regions[0];
+      // What the event follows from: the order it answers, or the actor's own initiative.
+      const cause = policy?.id ?? `actor:${actor.id}`;
       const option = REACTION_OPTIONS[actor.kind]?.find((o) => o.id === out.option);
       if (out.kind === 'action' && option) {
         const picks = Object.fromEntries(
@@ -1507,27 +1711,31 @@ export function createDirector(options: DirectorOptions): Director {
         id: eventId,
         actor: actor.id,
         actorName: actor.name,
-        policy: policy.id,
+        policy: policy?.id ?? '',
+        ...(policy ? {} : { unprompted: true }),
         kind: out.kind,
         text: out.text,
-        ...dueAt(n),
+        ...(policy ? dueAt(n) : {}),
       });
+      // An answer is dated to the order; a move of the actor's own happens as the turn ends.
+      const day = policy ? r.fromDay : world.day;
       data.events.push({
         id: eventId,
-        day: r.fromDay,
-        date: dateOf(world.startDate, r.fromDay),
-        kind: 'reaction',
-        size: out.kind === 'action' ? 'significant' : 'minor',
+        day,
+        date: dateOf(world.startDate, day),
+        kind: policy ? 'reaction' : 'move',
+        // Nobody asked for it, so it is news in its own right.
+        size: out.kind === 'action' || !policy ? 'significant' : 'minor',
         summary: out.text,
         ...(where ? { place: where } : {}),
-        causes: [policy.id],
+        causes: [cause],
         numbers: [],
       });
       if (out.later) {
         data.beats.push({
           id: `${eventId}-b`,
           dueDay: world.day + out.later.inDays,
-          policy: policy.id,
+          policy: cause,
           ...(where ? { place: where } : {}),
           ifYes: out.later.ifYes,
           ifNo: out.later.ifNo,
@@ -1546,7 +1754,7 @@ export function createDirector(options: DirectorOptions): Director {
   ) => {
     requireCampaign();
     requireQuiet();
-    if (queuedMove) throw new DirectorError('busy', 'A move is already waiting to start.');
+    if (waiting) throw new DirectorError('busy', 'A move is already waiting to start.');
     const start = () => {
       const now = state().world;
       if (!now) return Promise.resolve();
@@ -1565,9 +1773,9 @@ export function createDirector(options: DirectorOptions): Director {
     };
     // A move made while reactions to the last one are still arriving starts once they have
     // landed, so the record keeps its order.
-    queuedMove = true;
+    setQueuedMove(true);
     enqueue(0, () => {
-      queuedMove = false;
+      setQueuedMove(false);
       return start();
     });
   };
@@ -1580,8 +1788,7 @@ export function createDirector(options: DirectorOptions): Director {
     const last = state()
       .projection.resolutions.filter((r) => r.status === 'committed')
       .at(-1);
-    if (last && !last.reactions && (last.compile?.policies.length ?? 0) > 0)
-      enqueue(0, () => aftermath(last.id));
+    if (last && !last.reactions) enqueue(0, () => aftermath(last.id));
   }
 
   // ---------------------------------------------------------------------------------- the view
@@ -1763,7 +1970,9 @@ export function createDirector(options: DirectorOptions): Director {
           routine: isRoutine(e),
           story: storyOf(e),
           headline: said
-            ? `${said.actorName} ${said.kind === 'action' ? 'acted' : said.kind === 'silence' ? 'stayed silent' : 'responded'}`
+            ? said.unprompted
+              ? `${said.actorName} ${said.kind === 'action' ? 'made a move' : 'spoke out'}`
+              : `${said.actorName} ${said.kind === 'action' ? 'acted' : said.kind === 'silence' ? 'stayed silent' : 'responded'}`
             : e.summary,
           cites: [e.id],
           ...(e.place ? { place: e.place } : {}),
@@ -1805,7 +2014,7 @@ export function createDirector(options: DirectorOptions): Director {
             step: RESOLUTION_STEPS.find((x) => active[x] === undefined) ?? 'commit',
             done: RESOLUTION_STEPS.filter((x) => active[x] !== undefined),
           }
-        : queuedMove
+        : waiting
           ? { id: 'queued', kind: 'advance', step: 'compile', done: [] }
           : null,
       blocked:
@@ -1887,7 +2096,8 @@ export function createDirector(options: DirectorOptions): Director {
           )
         : {},
       arriving: {
-        reactions: arrivingReactions,
+        reactions: arriving,
+        writing: writingReactions,
         entries: [...writing],
         later: committed.reduce(
           (sum, r) => sum + (r.reactions?.reactions.length ?? 0) - landedReactions(r, p).length,
@@ -1927,7 +2137,7 @@ export function createDirector(options: DirectorOptions): Director {
   return {
     view() {
       // The view depends on the ledger and on what is still in flight.
-      const key = `${ledger.version()}|${arrivingReactions}|${queuedMove}|${[...writing].join()}`;
+      const key = `${ledger.version()}|${arriving}|${waiting}|${[...writing].join()}|${writingReactions.length}`;
       if (viewCache?.key !== key) viewCache = { key, view: buildView() };
       return viewCache.view;
     },
@@ -2000,6 +2210,7 @@ export function createDirector(options: DirectorOptions): Director {
       if (!event) throw new DirectorError('not_found', 'No such entry.');
       if (projection.expanded.has(eventId) || writing.has(eventId)) return;
       writing.add(eventId);
+      notify();
       enqueue(0, async () => {
         try {
           const all = allEvents(state().projection);
@@ -2054,11 +2265,14 @@ export function createDirector(options: DirectorOptions): Director {
               level: 'standard',
             },
             { resolution: 'entries', brief: scenario.brief },
+            { onDraft: (strings) => setDraft(eventId, strings.body ?? '') },
           );
           // Saved once: opening the entry again shows the same text (REQ-READ-18).
           ledger.append({ type: 'entry.expanded', eventId, body: output.body, via });
         } finally {
           writing.delete(eventId);
+          setDraft(eventId, null);
+          notify();
         }
       });
     },
@@ -2133,6 +2347,7 @@ export function createDirector(options: DirectorOptions): Director {
               .map((t) => ({ question: t.question, reply: t.reply ?? '' })),
           },
           { resolution: 'talks', brief: scenario.brief },
+          { onDraft: (strings) => setDraft(id, strings.reply ?? '') },
         );
         ledger.append({
           type: 'talk.replied',
@@ -2141,6 +2356,7 @@ export function createDirector(options: DirectorOptions): Director {
           via,
           ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
         });
+        setDraft(id, null);
       });
     },
     cancel() {
@@ -2219,6 +2435,10 @@ export function createDirector(options: DirectorOptions): Director {
         apply.toDay,
         apply.world,
       );
+      // The turn now ends on this day, so whoever answers it or moves at its close does so
+      // here, as they would have had the clock been stopped on this day in the first place.
+      setArriving(true);
+      enqueue(0, () => aftermath(again.id).finally(() => setArriving(false)));
     },
     moment(turnId) {
       const { projection, world } = requireCampaign();
@@ -2246,5 +2466,14 @@ export function createDirector(options: DirectorOptions): Director {
     async idle() {
       while (working || queue.length > 0) await (working ?? Promise.resolve());
     },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    watchDrafts(listener) {
+      draftListeners.add(listener);
+      return () => draftListeners.delete(listener);
+    },
+    drafts: () => Object.fromEntries(drafting),
   };
 }

@@ -105,6 +105,9 @@ export async function checkModel(
     ...(env ? { env } : {}),
   });
   const context = { resolution: 'model-check', brief };
+  // Load the model and learn what the server accepts first, so the figures below measure
+  // the model answering rather than the weights coming off disk.
+  await harness.warmUp();
   const results = [
     await harness.run(policyRead, readIn, context),
     await harness.run(policyCompile, compileIn, context),
@@ -122,13 +125,43 @@ export async function checkModel(
     via: r.via,
     ms: r.record.ms,
     errors: r.record.errors,
+    schemaEnforced: r.record.schemaEnforced === true,
+    ...(r.record.ttftMs === undefined ? {} : { ttftMs: r.record.ttftMs }),
+    ...(r.record.tokensPerSecond === undefined
+      ? {}
+      : { tokensPerSecond: r.record.tokensPerSecond }),
+    reasoningTokens: r.record.reasoningTokens ?? 0,
+    ...(r.record.fixes?.length ? { fixes: r.record.fixes } : {}),
   }));
+  const mean = (values: number[]) =>
+    values.length === 0
+      ? undefined
+      : Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+  const ttft = mean(jobs.flatMap((j) => (j.ttftMs === undefined ? [] : [j.ttftMs])));
+  const rate = mean(
+    jobs.flatMap((j) => (j.tokensPerSecond === undefined ? [] : [j.tokensPerSecond])),
+  );
+  const speed: ModelCheck['speed'] = {
+    ...(ttft === undefined ? {} : { ttftMs: ttft }),
+    ...(rate === undefined ? {} : { tokensPerSecond: rate }),
+    reasoningTokens: jobs.reduce((total, j) => total + (j.reasoningTokens ?? 0), 0),
+  };
+  const schemaEnforced = jobs.some((j) => j.schemaEnforced);
   const failed = jobs.filter((j) => j.via === 'fallback');
   const unreachable =
     failed.length === jobs.length &&
     failed.every((j) => j.errors.some((e) => /^(network|timeout|auth)/.test(e)));
   const judgeFailed = jobs[2]?.via === 'fallback';
   const refused = jobs[3]?.errors.some((e) => e.startsWith('refusal')) ?? false;
+
+  const pace =
+    speed.tokensPerSecond === undefined
+      ? ''
+      : ` About ${speed.tokensPerSecond} tokens a second, ${
+          speed.ttftMs === undefined
+            ? ''
+            : `${(speed.ttftMs / 1000).toFixed(1)} s to the first token, `
+        }${schemaEnforced ? 'with the schema enforced by the server' : 'with the shape asked for in the prompt'}.`;
 
   let verdict: ModelCheck['verdict'];
   let summary: string;
@@ -137,7 +170,7 @@ export async function checkModel(
     summary = failed[0]?.errors[0]?.replace(/^\w+: /, '') ?? 'The model could not be reached.';
   } else if (failed.length === 0 && jobs.every((j) => j.via === 'model')) {
     verdict = 'suitable';
-    summary = 'This model handled every job on the first try.';
+    summary = `This model handled every job on the first try.${pace}`;
   } else if (judgeFailed || failed.length >= 2) {
     verdict = 'unsuitable';
     summary =
@@ -145,8 +178,15 @@ export async function checkModel(
   } else {
     verdict = 'usable';
     summary = refused
-      ? 'This model works but declines to narrate violent events; those entries will use built-in wording.'
-      : 'This model works, with some answers needing a second try. Expect slower turns.';
+      ? `This model works but declines to narrate violent events; those entries will use built-in wording.${pace}`
+      : `This model works, with some answers needing a second try. Expect slower turns.${pace}`;
   }
-  return { ok: verdict === 'suitable' || verdict === 'usable', verdict, summary, jobs };
+  return {
+    ok: verdict === 'suitable' || verdict === 'usable',
+    verdict,
+    summary,
+    schemaEnforced,
+    speed,
+    jobs,
+  };
 }

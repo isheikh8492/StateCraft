@@ -36,6 +36,11 @@ interface Game {
 }
 
 const GameContext = createContext<Game | null>(null);
+/**
+ * Prose still being written, by the id of what it will become. Kept apart from the game's
+ * state because it changes many times a second, and only what shows it should redraw.
+ */
+const DraftsContext = createContext<Readonly<Record<string, string>>>({});
 
 /** Keeps one copy of the game's state on screen, refreshed quickly while a resolution runs. */
 export function GameProvider({
@@ -51,14 +56,25 @@ export function GameProvider({
   const [policy, setPolicy] = useState<string | null>(null);
   const [timeOpen, setTimeOpen] = useState(false);
   const [moment, setMoment] = useState<Moment | null>(null);
-  const busy =
-    view?.running != null ||
-    view?.arriving.reactions === true ||
-    (view?.arriving.entries.length ?? 0) > 0 ||
-    Object.values(view?.talks ?? {}).some((thread) =>
-      thread.some((turn) => turn.reply === undefined),
-    );
+  const [drafts, setDrafts] = useState<Readonly<Record<string, string>>>({});
   const alive = useRef(true);
+
+  const onDraft = useCallback((id: string, text: string | null) => {
+    if (text !== null) {
+      setDrafts((all) => (all[id] === text ? all : { ...all, [id]: text }));
+      return;
+    }
+    // The finished text arrives with the next state a moment later. Holding the draft until
+    // then keeps the words on screen instead of flashing back to "waiting".
+    setTimeout(() => {
+      if (!alive.current) return;
+      setDrafts((all) => {
+        if (!(id in all)) return all;
+        const { [id]: _ended, ...rest } = all;
+        return rest;
+      });
+    }, 3000);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -71,15 +87,34 @@ export function GameProvider({
     }
   }, []);
 
+  // The server pushes down one live line whenever anything changes, so a turn's results
+  // appear as they are committed rather than at the next poll. The slow timer below is only
+  // a safety net for a line that has dropped.
   useEffect(() => {
     alive.current = true;
     void refresh();
-    const timer = setInterval(() => void refresh(), busy ? 600 : 4000);
+    const controller = new AbortController();
+    let stopped = false;
+    const listen = async () => {
+      while (!stopped) {
+        try {
+          await api.stream({ onChange: () => void refresh(), onDraft }, controller.signal);
+        } catch {
+          // The line dropped: the timer keeps the screen current until it is back.
+        }
+        if (stopped) return;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    };
+    void listen();
+    const timer = setInterval(() => void refresh(), 10_000);
     return () => {
+      stopped = true;
       alive.current = false;
+      controller.abort();
       clearInterval(timer);
     };
-  }, [refresh, busy]);
+  }, [refresh, onDraft]);
 
   const act = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -121,7 +156,18 @@ export function GameProvider({
     }),
     [view, error, act, place, policy, timeOpen, moment, onOpenWindow],
   );
-  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
+  return (
+    <GameContext.Provider value={value}>
+      <DraftsContext.Provider value={drafts}>{children}</DraftsContext.Provider>
+    </GameContext.Provider>
+  );
+}
+
+/** The words written so far for something still being written, or undefined if none yet. */
+export function useDraft(id: string | undefined): string | undefined {
+  const drafts = useContext(DraftsContext);
+  const text = id === undefined ? undefined : drafts[id];
+  return text === '' ? undefined : text;
 }
 
 export function useGame(): Game {
