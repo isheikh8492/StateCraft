@@ -124,6 +124,15 @@ The speed slice and the first part of M1, built together.
 | Not built | Moves that reach your inbox as a demand to answer; "to next major event" stopping on a move; actors with private motives and plots. The chances and weights are placeholders, like every other number. |
 | Not verified | No real model has written a move or judged a period under the new instructions. With no model and with the stand-in, moves come from templates. |
 
+## Advisers that help (2026-11-12)
+
+| Area | State |
+| --- | --- |
+| Advice | Your own office is told to get done what you have decided: steps, who to square, how to guard against the main risk, and no repeating an objection you have heard. Answers run to 90, 160 or 260 words by the Detail setting. |
+| Draft orders | An adviser can draft up to three orders in your voice. Each shows under the answer with "Put on desk", which adds it as a box to edit or send. |
+| No repetition | Any actor's sentence already said word for word is taken out; an answer that only repeats is asked for again. |
+| Verified | On the owner's own six questions, on the local model: `docs/research/sessions/2026-11-12-adviser.md`. Checked in a browser. |
+
 ## Built after that, on request
 
 | Area | State |

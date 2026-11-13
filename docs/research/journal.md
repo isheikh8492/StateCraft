@@ -3,6 +3,58 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 4: advisers that help
+
+**From the owner, playing it.** A conversation with the Principal Secretary about a
+ceasefire in Balochistan: six questions, and from the second on the same paragraph came back
+each time ("I recommend maintaining troop presence until credible intelligence confirms...").
+Asked for a framework, then told "you are not helpful", then asked outright to suggest
+something, it objected again in the same words. The answers sat in a column a third of the
+width of the window.
+
+**Why.** The job told every actor to "give a view" and that it "may disagree"; it showed the
+model its own earlier answers with nothing said about them; an adviser had 120 words and
+nothing to do with them but talk.
+
+**Built.**
+
+- An adviser works for the player: it is told to get done what the player has decided, to
+  give the steps, who must be squared and how to guard against the main risk, to mention a
+  risk once, and to drop an objection the player has already heard.
+- Every actor is told to answer what was just asked and never to reuse a sentence from
+  earlier. Sentences already said word for word are taken out of a reply; a reply with
+  nothing else in it is asked for again.
+- An adviser can draft up to three orders in the player's voice. They show under the answer
+  with a button that puts one on the desk as written, to edit or send. Nothing happens until
+  the player does.
+- Answers run to 90, 160 or 260 words by the Detail setting (was 120 for everyone).
+- Nothing said to your own adviser is filed as an offer or a threat.
+- A plan may name its own deadlines ("within 48 hours") without that counting as an invented
+  figure; list numbers survive mending; formatting marks are taken out; the answer uses the
+  width of the window.
+
+**Played.** The owner's six questions, word for word, on `openai/gpt-oss-20b`, from
+`plans/adviser.json`. Transcript: `sessions/2026-11-12-adviser.md`.
+
+**Measured.** 7 answers, all first try. 23 to 31 s each for an adviser's plan of about 350
+tokens, streamed; the first words arrive after 5 to 10 s.
+
+**Learned.**
+
+1. *It answers now.* "Is there a constitution to draft?" got "no separate constitutional
+   framework for Balochistan; the federal constitution applies", then three projects. Asked
+   for a way to announce a conditional withdrawal, it gave numbered steps and an order to
+   put on the desk. Told it was not helpful, it produced a plan.
+2. *Plans still overlap* from one answer to the next in substance, though not word for word.
+3. *The model sometimes writes its other fields inside the reply* (`orders:[...]` at the end
+   of the text). Cut locally now.
+4. *Draft orders are often outside the catalogue* ("set up an inter-ministerial task
+   force"), so putting one on the desk gives a small generic effect. This is the freedom of
+   action gap again, now one click away from the player.
+
+**Decided.** Next: ways to lose office. After that, the catalogue: the orders advisers
+draft and players type should have consequences of their own.
+
 ## 2026-11-12, pass 3: the engine draws the news
 
 **Built.** What the world does on its own is drawn by the engine from a deck, weighted by

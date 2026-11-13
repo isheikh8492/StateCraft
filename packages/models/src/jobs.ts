@@ -842,23 +842,60 @@ const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
  * correction, and on a local model asking for the paragraph again costs as long as it took
  * to write. Returns nothing when no sentence would be left: that reply is asked for again.
  */
+/**
+ * Text cut into sentences, each with the white space that followed it, so that what is kept
+ * can be put back together as it was written. A list number stays with its item: "2." on
+ * its own is not a sentence, and taking the item away must take its number too.
+ */
+function sentencesOf(text: string): { sentence: string; gap: string }[] {
+  const parts = text.split(/(?<=[.!?]["'”’)*]*)(\s+)/);
+  const out: { sentence: string; gap: string }[] = [];
+  let carry = '';
+  for (let i = 0; i < parts.length; i += 2) {
+    const sentence = carry + (parts[i] ?? '');
+    const gap = parts[i + 1] ?? '';
+    if (/^\s*(\d+[.)]|[-*•])\s*$/.test(sentence) && i + 2 < parts.length) {
+      carry = `${sentence} `;
+      continue;
+    }
+    carry = '';
+    if (sentence.trim() !== '') out.push({ sentence, gap });
+  }
+  return out;
+}
+const rejoin = (kept: { sentence: string; gap: string }[]) =>
+  kept
+    .map((part) => part.sentence + part.gap)
+    .join('')
+    .trim();
+
+/**
+ * Figures that are a proposal, not a claim about the world: "within 48 hours", "for thirty
+ * days", "in 3 phases". Somebody setting out a plan may name them freely.
+ */
+const PROPOSED =
+  /\b\d+(?:[.,]\d+)?[- ](?:hours?|days?|weeks?|months?|years?|phases?|stages?|steps?)\b/gi;
+
+/**
+ * Takes out the sentences that state a figure found nowhere in the input. A model that adds
+ * "a 30% rise" to an otherwise sound paragraph has made one mistake with one obvious
+ * correction, and on a local model asking for the paragraph again costs as long as it took
+ * to write. Returns nothing when no sentence would be left: that reply is asked for again.
+ */
 export function dropInvented(
   text: string,
   known: unknown,
+  plans = false,
 ): { text: string; dropped: number } | undefined {
-  if (inventedNumbers(text, known).length === 0) return { text, dropped: 0 };
-  const sentences = text.split(/(?<=[.!?]["'”’)]*)(\s+)/);
-  const kept: string[] = [];
-  let dropped = 0;
-  for (let i = 0; i < sentences.length; i += 2) {
-    const sentence = sentences[i] ?? '';
-    if (inventedNumbers(sentence, known).length > 0) dropped++;
-    else kept.push(sentence + (sentences[i + 1] ?? ''));
-  }
-  const rest = kept.join('').trim();
-  return rest === '' || inventedNumbers(rest, known).length > 0
+  const invented = (part: string) =>
+    inventedNumbers(plans ? part.replace(PROPOSED, '') : part, known).length > 0;
+  if (!invented(text)) return { text, dropped: 0 };
+  const all = sentencesOf(text);
+  const kept = all.filter((part) => !invented(part.sentence));
+  const rest = rejoin(kept);
+  return rest === '' || invented(rest)
     ? undefined
-    : { text: rest, dropped };
+    : { text: rest, dropped: all.length - kept.length };
 }
 
 /**
@@ -1300,11 +1337,23 @@ export interface ReplyIn {
   state: Record<string, number | string>;
   policies: string[];
   earlier: { question: string; reply: string }[];
+  /** The most the reply may run to, in words. Set by the player's detail setting. */
+  words: number;
+  /**
+   * For the asker's own advisers: the kinds of order the asker can issue, and where, so
+   * that advice can end in something that can be done.
+   */
+  canOrder?: { instruments: string[]; regions: string[] };
 }
 const LEVERS = ['offer', 'threat', 'none'] as const;
 const ReplyOut = z.object({
   why: z.string().default(''),
   reply: z.string().min(1),
+  /**
+   * From an adviser: orders the asker could issue to do what was discussed, in the asker's
+   * own voice. They are drafts: nothing happens until the player puts one on the desk.
+   */
+  orders: z.array(z.string()).default([]),
   /** What the asker put on the table, if anything. The engine holds them to an offer. */
   lever: z
     .object({ kind: z.enum(LEVERS), claim: z.string().default('') })
@@ -1312,48 +1361,131 @@ const ReplyOut = z.object({
 });
 export type ReplyOut = z.infer<typeof ReplyOut>;
 
-const REPLY_WORDS = 120;
+/** A sentence as it is compared: without its list number, its case or its punctuation. */
+const plain = (sentence: string) =>
+  sentence
+    .toLowerCase()
+    .replace(/^\s*(\d+[.)]|[-*•])\s*/, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim();
+
+/**
+ * Takes out the sentences an actor has already said to the asker, word for word. A model
+ * shown its own earlier answers copies them, and a player who asks a new question and gets
+ * the old paragraph back has been told nothing. Returns the text unchanged if nothing was
+ * repeated, and nothing at all if every sentence was.
+ */
+export function dropRepeated(
+  text: string,
+  earlier: readonly string[],
+): { text: string; dropped: number } | undefined {
+  const said = new Set(
+    earlier
+      .flatMap((reply) => sentencesOf(reply))
+      .map((part) => plain(part.sentence))
+      .filter((sentence) => sentence.length > 30),
+  );
+  const all = sentencesOf(text);
+  const kept = all.filter((part) => !said.has(plain(part.sentence)));
+  if (kept.length === all.length) return { text, dropped: 0 };
+  return kept.length === 0 ? undefined : { text: rejoin(kept), dropped: all.length - kept.length };
+}
+
+/** Numbers the steps of a list 1, 2, 3 again, after mending has taken some of them out. */
+export function renumber(text: string): string {
+  const step = /(^|\n|(?<=[.!?:"”] ))(\d{1,2})\.(?= )/g;
+  if ((text.match(step) ?? []).length < 2) return text;
+  let n = 0;
+  return text.replace(step, (_all, lead: string) => `${lead}${++n}.`);
+}
 
 export const actorReply: Job<ReplyIn, ReplyOut> = {
   name: 'actor.reply',
-  shape: '{"why":string,"reply":string,"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
+  shape:
+    '{"why":string,"reply":string,"orders":string[],"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 2,
+  version: 3,
   role: 'narrator',
-  maxTokens: 1500,
-  rules: `You speak as one person or body in a political simulation, answering a question put by the head of government ("asker").
-- Answer in the first person, in that actor's voice, from its interests and its stance toward the asker. An adviser is candid; a rival is guarded or sharp; an official of another country is diplomatic.
+  maxTokens: 2000,
+  rules: `You speak as one person or body in a political simulation, answering the head of government ("asker").
+- Answer in the first person, in that actor's voice, from its interests and its stance toward the asker. A rival is guarded or sharp; an official of another country is diplomatic.
+- Answer what was just asked. Read "question" again before you write: if it asks for a plan, give a plan; if it asks how, say how; if it asks whether something exists, say yes or no first.
+- Never repeat yourself. "earlier" holds what you have already said to the asker. Do not reuse a sentence, a recommendation or a warning from it: the asker has read it. Every reply must say something new.
 - Use only what is in "knows", "state", "policies" and the world brief. If you do not know, say so in character. Never invent events, decisions or figures.
-- Give a view, not a list: what this means, what worries you, what you would do. You may disagree with the asker.
-- At most 120 words. No stage directions, no narration, just what is said.
-- "lever": did the asker put something on the table? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments and questions are "none". An offer does not change your position by itself: say what you would need to see.`,
+- If "actor.kind" is "advisor", you work for the asker and your job is to get done what they have decided, not to talk them out of it. Give a concrete way to do it: the steps in order, who must be squared first, what to say in public, and how to guard against the one thing most likely to go wrong. Mention a risk once, in a clause, and move on. If the asker has heard your objection and still wants it done, drop the objection completely and help. Be candid, brief and practical, like a senior official who wants the boss to succeed.
+- Otherwise, give a view, not a list: what this means to you, what you want, what you would need to see. You may disagree with the asker.
+- Up to "words" words. No stage directions, no narration, just what is said. Plain text only: no asterisks, no headings. Numbered steps, each on its own line, are fine.
+- "orders": only if "actor.kind" is "advisor" and something can be done: up to three orders the asker could issue to carry out what was discussed, each one sentence in the asker's own voice as an instruction ("Announce that...", "Offer...", "Withdraw..."), specific about what and where, and of a kind listed in "canOrder" where one fits. Whenever your reply sets out steps, put the ones the asker can issue themselves here. They are drafts for the asker to use or ignore. Otherwise an empty list.
+- "lever": did the asker put something on the table for you? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments, questions, and anything said to their own adviser are "none". An offer does not change your position by itself: say what you would need to see.`,
   output: ReplyOut,
-  schema: () =>
+  schema: (input) =>
     obj({
       why: WHY,
-      reply: str(roomFor(REPLY_WORDS)),
+      reply: str(roomFor(input.words)),
+      orders: list(str(240), 3),
       lever: obj({ kind: pick(LEVERS), claim: str(200) }),
     }),
   mend(input, out) {
     const fixes: string[] = [];
-    const sound = dropInvented(out.reply, input);
+    const adviser = input.actor.kind === 'advisor';
+    const fresh = dropRepeated(
+      out.reply,
+      input.earlier.map((turn) => turn.reply),
+    );
+    if (fresh && fresh.dropped > 0) {
+      out.reply = fresh.text;
+      fixes.push(`reply: took out ${fresh.dropped} sentence(s) it had already said word for word`);
+    }
+    // A reply that runs on into the fields that should have followed it is cut where they begin.
+    const spill = out.reply.search(/\s*"?\b(orders|lever)"?\s*:\s*[[{]/);
+    if (spill > 0) {
+      out.reply = out.reply.slice(0, spill).trimEnd();
+      fixes.push('reply: cut where it ran on into its other fields');
+    }
+    // No screen here renders markup, so emphasis marks are taken out rather than shown raw.
+    if (/\*\*|__|^#+ /m.test(out.reply)) {
+      out.reply = out.reply.replace(/\*\*|__/g, '').replace(/^#+ /gm, '');
+      fixes.push('reply: took out formatting marks');
+    }
+    const sound = dropInvented(out.reply, input, true);
     if (sound && sound.dropped > 0) {
       out.reply = sound.text;
       fixes.push(`reply: took out ${sound.dropped} sentence(s) stating figures it was not given`);
     }
-    if (words(out.reply) > 150) {
+    if (words(out.reply) > Math.round(input.words * 1.25)) {
       const before = words(out.reply);
-      out.reply = clipWords(out.reply, REPLY_WORDS);
+      out.reply = clipWords(out.reply, input.words);
       fixes.push(`reply: trimmed from ${before} to ${words(out.reply)} words`);
     }
+    const tidy = renumber(out.reply);
+    if (tidy !== out.reply) {
+      out.reply = tidy;
+      fixes.push('reply: steps numbered again after some were taken out');
+    }
+    // Only the asker's own office drafts orders, and nothing said to it is a bargain.
+    if (!adviser && out.orders.length > 0) {
+      out.orders = [];
+      fixes.push('orders: dropped, since only an adviser drafts orders');
+    }
+    if (adviser && out.lever.kind !== 'none') {
+      out.lever = { kind: 'none', claim: '' };
+      fixes.push('lever: dropped, since nothing said to your own adviser is an offer or a threat');
+    }
+    out.orders = out.orders.map((order) => order.trim()).filter((order) => order.length >= 12);
     return fixes;
   },
   check(input, out) {
-    const invented = inventedNumbers(out.reply, input);
-    return invented.length > 0
-      ? [`The figures ${invented.join(', ')} are not in what you know.`]
-      : [];
+    const problems: string[] = [];
+    const invented = inventedNumbers(out.reply.replace(PROPOSED, ''), input);
+    if (invented.length > 0)
+      problems.push(`The figures ${invented.join(', ')} are not in what you know.`);
+    const earlier = input.earlier.map((turn) => turn.reply);
+    if (earlier.length > 0 && dropRepeated(out.reply, earlier) === undefined)
+      problems.push(
+        'You repeated what you said before, word for word. Answer the latest question with something new.',
+      );
+    return problems;
   },
   fallback(input) {
     const recent = input.knows.slice(-3).map((k) => k.summary);
@@ -1372,11 +1504,13 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
         reply: threat
           ? 'That is noted, and it will not be forgotten.'
           : 'I have heard what you undertake. I will judge it by what follows.',
+        orders: [],
         lever: { kind: threat ? 'threat' : 'offer', claim: input.question.slice(0, 200) },
       };
     }
     return {
       lever: { kind: 'none' as const, claim: '' },
+      orders: [],
       why: 'No model: the record only.',
       reply:
         recent.length > 0

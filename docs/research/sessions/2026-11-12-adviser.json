@@ -1,0 +1,360 @@
+{
+ "summary": {
+  "model": "openai/gpt-oss-20b",
+  "finalDate": "2026-11-08",
+  "calls": 10,
+  "firstTry": 10,
+  "repaired": 0,
+  "fellBack": 0,
+  "schemaEnforced": 10,
+  "fixedLocally": 4,
+  "tokensIn": 20327,
+  "tokensOut": 3336,
+  "thinkingTokens": 688,
+  "meanFirstTokenMs": 5952.8,
+  "meanTokensPerSecond": 19.1,
+  "meanTurnWaitS": 40.3,
+  "maxTurnWaitS": 40.32,
+  "meanSettledS": 63.7,
+  "perJob": {
+   "policy.compile v2": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 13234,
+    "meanOut": 202
+   },
+   "turn.adjudicate v5": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 26930,
+    "meanOut": 453
+   },
+   "turn.reactions v2": {
+    "calls": 1,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 23077,
+    "meanOut": 366
+   },
+   "actor.reply v3": {
+    "calls": 7,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 24535.4,
+    "meanOut": 330.7
+   }
+  },
+  "events": 10,
+  "moves": 1,
+  "failedSteps": 0
+ },
+ "model": "openai/gpt-oss-20b",
+ "steps": [
+  {
+   "label": "2. {\"move\":{\"days\":7}}",
+   "date": "2026-11-08",
+   "committedMs": 40320,
+   "settledMs": 63737,
+   "calls": [
+    "17430091-eb3e-4db5-b7a0-b9324a7459b4",
+    "c1ccac38-70e4-42f3-a252-e3cc72f32134",
+    "ac0dd27f-1e04-484e-bce5-63d3ccc14ec7"
+   ]
+  },
+  {
+   "label": "3. {\"ask\":[\"principal_secretary\",\"do we have a constitution to draft in balochistan? and some infrastructural spending that we can do?\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 31596,
+   "calls": [
+    "1ba9d51b-d860-49f3-9571-b94d837bf838"
+   ]
+  },
+  {
+   "label": "4. {\"ask\":[\"principal_secretary\",\"i want to announce a deal that if they even give me a hint that they will withdraw their attacks i will withdraw army\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 23480,
+   "calls": [
+    "5fdac789-b9d5-428b-b3cc-01b87bcf5a74"
+   ]
+  },
+  {
+   "label": "5. {\"ask\":[\"principal_secretary\",\"hwo about something public? i want to reach out to the otherside\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 22470,
+   "calls": [
+    "82f36ac8-34a2-4688-ad73-71aaaa9e0257"
+   ]
+  },
+  {
+   "label": "6. {\"ask\":[\"principal_secretary\",\"lets work on an initial framework for a ceasefire only...lets start with only public dialogues via press....I am going to say I am prepared to withdraw my troops from KPK, upon which I would hope they come to a rsponse that will be somewhat positive\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 27007,
+   "calls": [
+    "78689fbe-90e9-4163-a2d4-beec7cdab8fa"
+   ]
+  },
+  {
+   "label": "7. {\"ask\":[\"principal_secretary\",\"You are not helpful\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 27543,
+   "calls": [
+    "193636c3-294c-4d05-a072-a9b50131b073"
+   ]
+  },
+  {
+   "label": "8. {\"ask\":[\"principal_secretary\",\"Your recommendation is duly noted but I still need you to suggest me\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 30634,
+   "calls": [
+    "21136535-3a42-4154-804b-4818ddde04b5"
+   ]
+  },
+  {
+   "label": "9. {\"ask\":[\"ppp\",\"Would your party back talks with the Baloch insurgents?\"]}",
+   "date": "2026-11-08",
+   "committedMs": 0,
+   "settledMs": 10680,
+   "calls": [
+    "6c0ba417-6d6a-4c2e-8e1f-3d230e9ae5c2"
+   ]
+  }
+ ],
+ "calls": [
+  {
+   "step": "2. {\"move\":{\"days\":7}}",
+   "id": "17430091-eb3e-4db5-b7a0-b9324a7459b4",
+   "resolution": "r3",
+   "job": "policy.compile v2",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1005,
+   "tokensOut": 202,
+   "reasoningTokens": 84,
+   "ms": 13234,
+   "promptHash": "115846271bc909cd",
+   "ttftMs": 3056,
+   "tokensPerSecond": 19.9,
+   "inputChars": 2287,
+   "outputChars": 392
+  },
+  {
+   "step": "2. {\"move\":{\"days\":7}}",
+   "id": "c1ccac38-70e4-42f3-a252-e3cc72f32134",
+   "resolution": "r3",
+   "job": "turn.adjudicate v5",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1471,
+   "tokensOut": 453,
+   "reasoningTokens": 294,
+   "ms": 26930,
+   "promptHash": "877404f9ef162c9f",
+   "ttftMs": 3343,
+   "tokensPerSecond": 19.2,
+   "inputChars": 2067,
+   "outputChars": 596
+  },
+  {
+   "step": "2. {\"move\":{\"days\":7}}",
+   "id": "ac0dd27f-1e04-484e-bce5-63d3ccc14ec7",
+   "resolution": "r3",
+   "job": "turn.reactions v2",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1779,
+   "tokensOut": 366,
+   "reasoningTokens": 99,
+   "ms": 23077,
+   "promptHash": "9c2340b30b671f61",
+   "ttftMs": 3752,
+   "tokensPerSecond": 18.9,
+   "inputChars": 3146,
+   "outputChars": 1256
+  },
+  {
+   "step": "3. {\"ask\":[\"principal_secretary\",\"do we have a constitution to draft in balochistan? and some infrastructural spending that we can do?\"]}",
+   "id": "1ba9d51b-d860-49f3-9571-b94d837bf838",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "reply: took out 2 sentence(s) stating figures it was not given"
+   ],
+   "tokensIn": 1883,
+   "tokensOut": 442,
+   "reasoningTokens": 96,
+   "ms": 31115,
+   "promptHash": "760a2db8c2fc9d53",
+   "ttftMs": 8227,
+   "tokensPerSecond": 19.3,
+   "inputChars": 3493,
+   "outputChars": 1803
+  },
+  {
+   "step": "4. {\"ask\":[\"principal_secretary\",\"i want to announce a deal that if they even give me a hint that they will withdraw their attacks i will withdraw army\"]}",
+   "id": "5fdac789-b9d5-428b-b3cc-01b87bcf5a74",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "reply: took out 1 sentence(s) stating figures it was not given"
+   ],
+   "tokensIn": 2117,
+   "tokensOut": 356,
+   "reasoningTokens": 19,
+   "ms": 23390,
+   "promptHash": "93d95e5f642ab37f",
+   "ttftMs": 5047,
+   "tokensPerSecond": 19.4,
+   "inputChars": 4821,
+   "outputChars": 1656
+  },
+  {
+   "step": "5. {\"ask\":[\"principal_secretary\",\"hwo about something public? i want to reach out to the otherside\"]}",
+   "id": "82f36ac8-34a2-4688-ad73-71aaaa9e0257",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2365,
+   "tokensOut": 312,
+   "reasoningTokens": 21,
+   "ms": 22302,
+   "promptHash": "51727487353153dc",
+   "ttftMs": 5770,
+   "tokensPerSecond": 18.9,
+   "inputChars": 6093,
+   "outputChars": 1440
+  },
+  {
+   "step": "6. {\"ask\":[\"principal_secretary\",\"lets work on an initial framework for a ceasefire only...lets start with only public dialogues via press....I am going to say I am prepared to withdraw my troops from KPK, upon which I would hope they come to a rsponse that will be somewhat positive\"]}",
+   "id": "78689fbe-90e9-4163-a2d4-beec7cdab8fa",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "reply: took out 1 sentence(s) stating figures it was not given"
+   ],
+   "tokensIn": 2600,
+   "tokensOut": 317,
+   "reasoningTokens": 18,
+   "ms": 26932,
+   "promptHash": "9d78090b1bb3ac69",
+   "ttftMs": 10289,
+   "tokensPerSecond": 19,
+   "inputChars": 7286,
+   "outputChars": 1419
+  },
+  {
+   "step": "7. {\"ask\":[\"principal_secretary\",\"You are not helpful\"]}",
+   "id": "193636c3-294c-4d05-a072-a9b50131b073",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "reply: took out 2 sentence(s) stating figures it was not given"
+   ],
+   "tokensIn": 2833,
+   "tokensOut": 360,
+   "reasoningTokens": 40,
+   "ms": 27453,
+   "promptHash": "80facc4cb4a4f828",
+   "ttftMs": 7869,
+   "tokensPerSecond": 18.4,
+   "inputChars": 8437,
+   "outputChars": 1526
+  },
+  {
+   "step": "8. {\"ask\":[\"principal_secretary\",\"Your recommendation is duly noted but I still need you to suggest me\"]}",
+   "id": "21136535-3a42-4154-804b-4818ddde04b5",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2755,
+   "tokensOut": 387,
+   "reasoningTokens": 13,
+   "ms": 30368,
+   "promptHash": "5c1d4e582b578d82",
+   "ttftMs": 9387,
+   "tokensPerSecond": 18.4,
+   "inputChars": 7875,
+   "outputChars": 1827
+  },
+  {
+   "step": "9. {\"ask\":[\"ppp\",\"Would your party back talks with the Baloch insurgents?\"]}",
+   "id": "6c0ba417-6d6a-4c2e-8e1f-3d230e9ae5c2",
+   "resolution": "talks",
+   "job": "actor.reply v3",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 1519,
+   "tokensOut": 141,
+   "reasoningTokens": 4,
+   "ms": 10188,
+   "promptHash": "ef6f982de037b9bb",
+   "ttftMs": 2788,
+   "tokensPerSecond": 19.1,
+   "inputChars": 1853,
+   "outputChars": 659
+  }
+ ]
+}

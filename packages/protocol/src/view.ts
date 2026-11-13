@@ -94,6 +94,8 @@ export interface TalkTurn {
   incoming?: boolean;
   /** Missing while the answer is being written. */
   reply?: string;
+  /** Orders an adviser drafted with the answer. One click puts one on the desk as written. */
+  orders?: string[];
 }
 
 /** One move of the clock: what you did, and what the world did in return. */

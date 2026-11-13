@@ -34,9 +34,40 @@ function Reply({ id, reply }: { id: string; reply: string | undefined }) {
   if (reply === undefined && !draft)
     return <p className="mt-1 text-fg-subtle">Waiting for an answer…</p>;
   return (
-    <blockquote className="prose-read mt-1 border-l-2 border-accent pl-3 whitespace-pre-wrap text-fg-muted">
+    <blockquote className="prose-read mt-1 max-w-none border-l-2 border-accent pl-3 whitespace-pre-wrap text-fg-muted">
       {reply ?? <Writing text={draft ?? ''} />}
     </blockquote>
+  );
+}
+
+/** Orders an adviser drafted: each can be put on the desk as written, to edit or send. */
+function DraftOrders({ orders }: { orders: string[] }) {
+  const { act, openWindow } = useGame();
+  const [added, setAdded] = useState<string[]>([]);
+  return (
+    <ul aria-label="Draft orders" className="mt-2 flex flex-col gap-1.5">
+      {orders.map((order) => (
+        <li
+          key={order}
+          className="flex items-start gap-2 rounded-control border border-border bg-surface-2 px-2 py-1.5"
+        >
+          <span className="min-w-0 flex-1 text-xs text-fg">{order}</span>
+          <Button
+            size="sm"
+            disabled={added.includes(order)}
+            onClick={() =>
+              void act(() => api.addCard(order)).then((ok) => {
+                if (!ok) return;
+                setAdded((all) => [...all, order]);
+                openWindow('desk');
+              })
+            }
+          >
+            {added.includes(order) ? 'On your desk' : 'Put on desk'}
+          </Button>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -142,6 +173,7 @@ export function People() {
                 )}
               </p>
               <Reply id={turn.id} reply={turn.reply} />
+              {turn.orders && turn.orders.length > 0 && <DraftOrders orders={turn.orders} />}
             </li>
           ))}
         </ol>

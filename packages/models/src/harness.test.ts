@@ -5,12 +5,15 @@ import { adapterFor } from './adapters.ts';
 import { createHarness, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
+  actorReply,
   dropInvented,
+  dropRepeated,
   INSTRUMENT_REFS,
   policyCompile,
   policyReact,
   policyRead,
   type ReadIn,
+  renumber,
   turnAdjudicate,
   turnReactions,
 } from './jobs.ts';
@@ -388,5 +391,124 @@ describe('reading orders', () => {
     // Two words that say nothing are still too vague, and are answered as such in the world.
     expect(out.needsDetail).toEqual([{ card: 'c3', question: 'Fix what?' }]);
     expect(policyCompile.check(compileIn, out)).toEqual([]);
+  });
+});
+
+describe('answers from people', () => {
+  const said =
+    'I recommend maintaining troop presence until credible intelligence confirms a sustained de-escalation. Only then can we consider scaling back operations without jeopardising national integrity.';
+  const replyIn = {
+    actor: {
+      id: 'ps',
+      name: 'Your Principal Secretary',
+      kind: 'advisor',
+      stance: 'friendly',
+      voice: 'dry',
+    },
+    asker: 'The Prime Minister',
+    question: 'Your recommendation is noted, but I still need you to suggest a way.',
+    knows: [],
+    state: {},
+    policies: [],
+    earlier: [
+      { question: 'Can I withdraw the army?', reply: `A withdrawal risks a vacuum. ${said}` },
+    ],
+    words: 160,
+  };
+
+  // Seen in play: the same paragraph came back four answers running.
+  it('takes out what was already said word for word, and asks again if nothing else was said', () => {
+    expect(
+      dropRepeated(`Here is how to do it. ${said}`, [replyIn.earlier[0]?.reply ?? '']),
+    ).toEqual({
+      text: 'Here is how to do it.',
+      dropped: 2,
+    });
+    expect(dropRepeated(said, [replyIn.earlier[0]?.reply ?? ''])).toBeUndefined();
+    const parrot = {
+      why: '',
+      reply: said,
+      orders: [],
+      lever: { kind: 'none' as const, claim: '' },
+    };
+    actorReply.mend?.(replyIn, parrot);
+    expect(actorReply.check(replyIn, parrot)).toEqual([
+      'You repeated what you said before, word for word. Answer the latest question with something new.',
+    ]);
+  });
+
+  it('lets an adviser draft orders, and nobody else; nothing said to an adviser is a bargain', () => {
+    const helpful = {
+      why: '',
+      reply: `Announce it in stages. ${said}`,
+      orders: [
+        'Announce that troops will pull back from two districts if attacks stop for thirty days.',
+        'ok',
+      ],
+      lever: { kind: 'threat' as const, claim: 'x' },
+    };
+    const fixes = actorReply.mend?.(replyIn, helpful) ?? [];
+    expect(helpful.reply).toBe('Announce it in stages.');
+    expect(helpful.orders).toHaveLength(1);
+    expect(helpful.lever.kind).toBe('none');
+    expect(fixes).toHaveLength(2);
+    expect(actorReply.check(replyIn, helpful)).toEqual([]);
+
+    const rival = { ...helpful, orders: ['Withdraw the army from the province at once.'] };
+    actorReply.mend?.({ ...replyIn, actor: { ...replyIn.actor, kind: 'opposition' } }, rival);
+    expect(rival.orders).toEqual([]);
+    // The schema leaves an adviser room to give a plan.
+    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
+    const schema = actorReply.schema(replyIn) as any;
+    expect(schema.properties.orders.maxItems).toBe(3);
+    expect(schema.properties.reply.maxLength).toBeGreaterThan(1000);
+  });
+});
+
+describe('mending a plan', () => {
+  it('takes a list item out with its number, keeps line breaks, and lets a plan name its own deadlines', () => {
+    const plan =
+      '1. Brief the army chief on the timetable for the withdrawal.\n2. Announce a pull-back within 48 hours of a verified lull.\n3. Tell the press that 73% of the province backs it.';
+    // A deadline is a proposal; a statistic nobody gave is a claim.
+    expect(dropInvented(plan, {}, true)).toEqual({
+      text: '1. Brief the army chief on the timetable for the withdrawal.\n2. Announce a pull-back within 48 hours of a verified lull.',
+      dropped: 1,
+    });
+    // The same step said before goes, number and all, without leaving "1. 2." behind.
+    expect(
+      dropRepeated(plan, ['Brief the army chief on the timetable for the withdrawal. Then wait.'])
+        ?.text,
+    ).toBe(
+      '2. Announce a pull-back within 48 hours of a verified lull.\n3. Tell the press that 73% of the province backs it.',
+    );
+  });
+});
+
+describe('tidying a plan', () => {
+  it('numbers the steps again, and cuts a reply that ran on into its other fields', () => {
+    expect(renumber('2. Convene a task force.\n4. Prepare a fallback.')).toBe(
+      '1. Convene a task force.\n2. Prepare a fallback.',
+    );
+    expect(renumber('We met on 5. November was cold.')).toBe('We met on 5. November was cold.');
+    const reply = {
+      why: '',
+      reply: '1. Announce it.\n2. Record it in the Gazette.\norders:["Announce it."\n]',
+      orders: [],
+      lever: { kind: 'none' as const, claim: '' },
+    };
+    actorReply.mend?.(
+      {
+        actor: { id: 'ps', name: 'PS', kind: 'advisor', stance: 'friendly', voice: '' },
+        asker: 'The Prime Minister',
+        question: 'How?',
+        knows: [],
+        state: {},
+        policies: [],
+        earlier: [],
+        words: 160,
+      },
+      reply,
+    );
+    expect(reply.reply).toBe('1. Announce it.\n2. Record it in the Gazette.');
   });
 });

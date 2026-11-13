@@ -1,6 +1,6 @@
 # Scorecard: StateCraft against Modern Day 2026
 
-Last scored: 2026-11-12 (pass 3). Rules for this file are in `docs/GOAL.md`.
+Last scored: 2026-11-12 (pass 4). Rules for this file are in `docs/GOAL.md`.
 
 **Sources for the other game.** `[MD]` is its own page, <https://worldos.cc/worlds/modern-day-2026>,
 read on 2026-11-12 (the page was cut short by the reader, so absence of a feature there is
@@ -34,7 +34,7 @@ well enough to say. "Ahead" needs evidence on our side and a source on theirs.
 | Saves, rewind, branches | Runs keep their own history `[MD]`; rewind not stated | Snapshot every turn, rewind to any turn or date onto a new branch, old line kept (tests; session `month-1` step 15) | **ahead** on what is stated |
 | Offline, no key, local model | Browser only; runs on a metered allowance of "Zaps", with subscriptions `[MD]` | Runs locally, with no model at all, or on a local model: 21 of 21 calls answered by the local model, none fell back (session `month-1`) | **ahead** |
 | Scenarios and start dates | Kept current to the month (v8 opens after the November 2026 US midterms); the same author runs WW1, WW2 and 350 BC worlds; one-click remix `[MD]` | One scenario, sourced, starting November 2026. Packs are data files but there is no second pack and no guide | **behind** |
-| Characters you can talk to | Any character, privately or in groups `[MD]` | Sixteen, one at a time; armed groups cannot be reached | **behind** |
+| Characters you can talk to | Any character, privately or in groups `[MD]` | Sixteen, one at a time; armed groups cannot be reached. Your own advisers give plans and draft orders you can put on the desk in one click (session `adviser`) | **behind** in number; drafting orders is not something their page describes |
 | Cutscenes and presentation | Cards, cutscenes `[MD]` | Windows over a map; text only | **behind** |
 
 ## The full system

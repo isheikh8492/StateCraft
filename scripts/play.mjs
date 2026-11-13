@@ -208,6 +208,7 @@ for (const [n, step] of plan.entries()) {
       const reply = view.talks[actor]?.at(-1)?.reply ?? '(no reply)';
       say(`**${view.cast.find((c) => c.id === actor)?.name ?? actor}:** ${reply}`);
       say('');
+      for (const order of view.talks[actor]?.at(-1)?.orders ?? []) say(`- *Draft order:* ${order}`);
       const person = view.cast.find((c) => c.id === actor);
       say(
         `Stance ${person?.stance}, ${person?.trend}. Undertakings: ${JSON.stringify(person?.undertakings ?? [])}`,

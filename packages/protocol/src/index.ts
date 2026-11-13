@@ -128,6 +128,8 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     via: z.string(),
     /** What the player put on the table, as the engine will hold them to it. */
     lever: z.object({ kind: z.enum(['offer', 'threat', 'none']), claim: z.string() }).optional(),
+    /** Orders an adviser drafted for the player to use or ignore. */
+    orders: z.array(z.string().max(2000)).max(3).optional(),
   }),
   z.object({ type: z.literal('resolution.cancelled'), id: z.string() }),
   z.object({ type: z.literal('policy.repealed'), policyId: z.string(), day: z.number().int() }),

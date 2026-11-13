@@ -182,6 +182,7 @@ interface TalkRecord {
   reply?: string;
   incoming?: boolean;
   lever?: { kind: 'offer' | 'threat' | 'none'; claim: string };
+  orders?: string[];
 }
 /** A follow-up the dice will decide on its day. */
 interface Beat {
@@ -372,6 +373,7 @@ function project(events: readonly StoredEvent[]): Projection {
           if (turn) {
             turn.reply = event.reply;
             if (event.lever) turn.lever = event.lever;
+            if (event.orders) turn.orders = event.orders;
           }
         }
         break;
@@ -449,6 +451,8 @@ const MOVE_DAILY_CHANCE = 0.25;
 const MOVE_REST_DAYS = 14;
 /** Words a reaction may run to, and how far a full account is stretched, at each detail level. */
 const REACTION_WORDS = { brief: 60, standard: 150, rich: 250 } as const;
+/** Words an answer in conversation may run to. An adviser asked for a plan needs the room. */
+const REPLY_WORDS = { brief: 90, standard: 160, rich: 260 } as const;
 const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
 const ACCOUNT_WORDS = { minor: 50, significant: 150, major: 400 } as const;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
@@ -2160,6 +2164,7 @@ export function createDirector(options: DirectorOptions): Director {
                 question: t.question,
                 ...(t.incoming ? { incoming: true } : {}),
                 ...(t.reply !== undefined ? { reply: t.reply } : {}),
+                ...(t.orders?.length ? { orders: t.orders } : {}),
               })),
             ]),
           )
@@ -2415,6 +2420,15 @@ export function createDirector(options: DirectorOptions): Director {
               .filter((t) => t.id !== id && t.reply !== undefined)
               .slice(-4)
               .map((t) => ({ question: t.question, reply: t.reply ?? '' })),
+            words: REPLY_WORDS[detail()],
+            ...(insider
+              ? {
+                  canOrder: {
+                    instruments: CATALOGUE.map((c) => c.title),
+                    regions: now.world.regions.map((x) => x.name),
+                  },
+                }
+              : {}),
           },
           { resolution: 'talks', brief: scenario.brief },
           { onDraft: (strings) => setDraft(id, strings.reply ?? '') },
@@ -2425,6 +2439,7 @@ export function createDirector(options: DirectorOptions): Director {
           reply: output.reply,
           via,
           ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
+          ...(output.orders.length > 0 ? { orders: output.orders.slice(0, 3) } : {}),
         });
         setDraft(id, null);
       });
