@@ -25,6 +25,8 @@ export interface WorldEventView {
   id: string;
   day: number;
   date: string;
+  /** The hour of that day it happened at, 0 to 23. Missing on events from older saves. */
+  hour?: number;
   kind: string;
   size: 'colour' | 'minor' | 'significant' | 'major';
   summary: string;
@@ -41,6 +43,8 @@ export interface ChronicleEntry {
   turn: string;
   day: number;
   date: string;
+  /** The hour it happened at, 0 to 23, where known. */
+  hour?: number;
   size: 'colour' | 'minor' | 'significant' | 'major';
   /** A notice that needs no telling: shown as one compact line. */
   routine: boolean;
@@ -235,6 +239,11 @@ export interface View {
     ms: number;
     stoppedEarly?: string;
   };
+  /**
+   * Why the clock stopped where it did, after a move to the next thing that needs you:
+   * who answered, what happened, or that a quiet night has passed.
+   */
+  stoppedFor?: string;
 }
 
 export interface ModelCheck {

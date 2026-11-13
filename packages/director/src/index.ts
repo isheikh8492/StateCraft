@@ -145,6 +145,10 @@ interface AdjudicateData {
     summary: string;
     place?: string;
     inDays: number;
+    /** The hour of its day it happens at. */
+    hour?: number;
+    /** The deck entry it was drawn from, so the same thing does not come up again too soon. */
+    deck?: string;
     picks: Record<string, number>;
     causes: string[];
   }[];
@@ -216,6 +220,8 @@ interface Resolution {
   startSeq?: number;
   hours?: number;
   untilMajor?: boolean;
+  /** A move to the next thing that needed the player. */
+  next?: boolean;
   /** The hour of day the turn ended on. */
   hour?: number;
   reactions?: ReactionData;
@@ -234,6 +240,8 @@ interface Projection {
   talks: Map<string, TalkRecord[]>;
   /** How many incoming messages from each actor the player has seen. */
   seen: Map<string, number>;
+  /** News first recorded in its plain line and worded properly afterwards, by event id. */
+  worded: Map<string, string>;
 }
 
 function project(events: readonly StoredEvent[]): Projection {
@@ -245,6 +253,7 @@ function project(events: readonly StoredEvent[]): Projection {
     expanded: new Map(),
     talks: new Map(),
     seen: new Map(),
+    worded: new Map(),
   };
   const byId = new Map<string, Resolution>();
   for (const { seq, event } of events) {
@@ -314,6 +323,7 @@ function project(events: readonly StoredEvent[]): Projection {
           startSeq: seq,
           ...(event.hours ? { hours: event.hours } : {}),
           ...(event.untilMajor ? { untilMajor: true } : {}),
+          ...(event.next ? { next: true } : {}),
         };
         byId.set(r.id, r);
         p.resolutions.push(r);
@@ -360,6 +370,9 @@ function project(events: readonly StoredEvent[]): Projection {
       }
       case 'entry.expanded':
         p.expanded.set(event.eventId, { body: event.body, via: event.via });
+        break;
+      case 'news.worded':
+        for (const [eventId, line] of Object.entries(event.lines)) p.worded.set(eventId, line);
         break;
       case 'talk.asked': {
         const thread = p.talks.get(event.actorId) ?? [];
@@ -437,6 +450,11 @@ const FLAG_TEXT: Readonly<Record<string, [string, string]>> = {
 const named = (sentence: string, name: string) =>
   sentence.replace(/^(It|They|The group|The party)\b/, name);
 
+/** Kinds of event that are the morning's news: reported at seven, whatever else the day holds. */
+const MORNING_NEWS =
+  /^(figures|policy\.|unrest\.|control\.|threshold|legislature\.|court|commitment\.|beat)/;
+/** The hour a quiet night ends at: the latest a move to "the next thing" will run to. */
+const MORNING = 9;
 /** How many of a period's happenings a model is asked to word. */
 const MAX_WORDED = 8;
 /** How many actors answer one order in full; the rest are noted by name. */
@@ -465,6 +483,11 @@ const ROUTINE_KINDS = new Set([
 /** Notices that need no telling: they are reported in built-in wording, without a model. */
 const isRoutine = (e: WorldEventView) =>
   ROUTINE_KINDS.has(e.kind) || (e.kind === 'legislature.vote' && e.size === 'minor');
+/**
+ * Whether an event is worth stopping the clock for: anything that is news. Routine notices
+ * and colour (the weather, a cricket match) are read in passing when their hour comes.
+ */
+const needsYou = (e: WorldEventView) => !isRoutine(e) && e.size !== 'colour';
 
 export interface DirectorOptions {
   ledger: Ledger;
@@ -659,13 +682,44 @@ export function createDirector(options: DirectorOptions): Director {
   const landedReactions = (r: Resolution, p: Projection) =>
     (r.reactions?.reactions ?? []).filter((x) => landed(x, p));
 
+  /**
+   * Whether something timed for an hour has happened yet. The engine works a day out as the
+   * day begins, but nothing in it is known to anyone until the clock reaches its hour: not
+   * to the player, not to the cast, not to whoever writes the news.
+   */
+  const reached = (day: number, hour: number | undefined, p: Projection) =>
+    hour === undefined || day < currentDay(p) || (day === currentDay(p) && hour <= currentHour(p));
+  /** Things that need the player and are timed for later today, by the hour they fall at. */
+  const comingToday = (p: Projection): number[] => {
+    const day = currentDay(p);
+    const hour = currentHour(p);
+    const committed = p.resolutions.filter((r) => r.status === 'committed');
+    return [
+      ...committed.flatMap((r) =>
+        (r.reactions?.reactions ?? []).flatMap((x) =>
+          x.dueDay === day && (x.dueHour ?? 0) > hour ? [x.dueHour ?? 0] : [],
+        ),
+      ),
+      ...committed.flatMap((r) =>
+        (r.apply?.events ?? []).flatMap((e) =>
+          e.day === day && (e.hour ?? 0) > hour && needsYou(e) ? [e.hour ?? 0] : [],
+        ),
+      ),
+    ].sort((a, b) => a - b);
+  };
+
   const allEvents = (p: Projection): WorldEventView[] =>
     p.resolutions
       .filter((r) => r.status === 'committed')
       .flatMap((r) => {
         const here = new Set(landedReactions(r, p).map((x) => x.id));
         return [
-          ...(r.apply?.events ?? []),
+          ...(r.apply?.events ?? [])
+            .filter((e) => reached(e.day, e.hour, p))
+            .map((e) => {
+              const worded = p.worded.get(e.id);
+              return worded ? { ...e, summary: worded } : e;
+            }),
           ...(r.reactions?.events ?? []).filter((e) => here.has(e.id)),
         ];
       });
@@ -916,8 +970,30 @@ export function createDirector(options: DirectorOptions): Director {
     // What the world does on its own account over these days is settled now, by the engine:
     // what kind of thing, where, when, how grave, and what it moves. So is what each order
     // stirs up among ordinary people. A model words them; with none, the plain line stands.
+    // The pace follows the tension: what came up lately does not come up again, something
+    // grave is not followed at once by another, and a government that has just acted is
+    // answered by more of the country than one that has not.
+    const lately = p.resolutions.filter(
+      (x) => x.status === 'committed' && (x.apply?.toDay ?? x.fromDay) > r.fromDay - 4,
+    );
+    const pace = {
+      hot:
+        active.length > 0 ||
+        lately.some(
+          (x) => x.fromDay >= r.fromDay - 2 && (x.compile?.policies ?? []).some((y) => !y.vague),
+        ),
+      recent: new Set(
+        lately.flatMap((x) => (x.adjudicate?.events ?? []).flatMap((e) => e.deck ?? [])),
+      ),
+      grave: !lately.some(
+        (x) =>
+          (x.apply?.toDay ?? x.fromDay) > r.fromDay - 3 &&
+          (x.adjudicate?.events ?? []).some((e) => e.size === 'significant' && e.deck),
+      ),
+    };
+    const nowHour = currentHour(p);
     const happenings: Happening[] = [
-      ...forecast(world, scenario.cast, r.fromDay, days),
+      ...forecast(world, scenario.cast, r.fromDay, days, pace),
       ...active.flatMap((x, n) => {
         const how = actions.find((a) => a.id === x.id)?.landed ?? 'partial';
         return (
@@ -926,10 +1002,11 @@ export function createDirector(options: DirectorOptions): Director {
             { id: x.id, title: x.title, region: x.region, landed: how },
             days,
             n + 1,
+            nowHour,
           ) ?? []
         );
       }),
-    ].sort((a, b) => a.inDays - b.inDays);
+    ].sort((a, b) => a.inDays - b.inDays || (a.hour ?? 0) - (b.hour ?? 0));
     const asEvents = (wording: Record<string, string>): AdjudicateData['events'] =>
       happenings.map((h) => ({
         kind: h.kind,
@@ -937,6 +1014,8 @@ export function createDirector(options: DirectorOptions): Director {
         summary: wording[h.id] ?? h.gist,
         ...(h.place ? { place: h.place } : {}),
         inDays: h.inDays,
+        ...(h.hour === undefined ? {} : { hour: h.hour }),
+        ...(h.deck ? { deck: h.deck } : {}),
         picks: h.picks,
         causes: h.causes,
       }));
@@ -1013,6 +1092,7 @@ export function createDirector(options: DirectorOptions): Director {
     const days = periodDays(r, active);
     const events: WorldEventView[] = [];
     let n = 0;
+    const startHour = currentHour(p);
     const emit = (
       day: number,
       kind: string,
@@ -1021,10 +1101,21 @@ export function createDirector(options: DirectorOptions): Director {
       causes: string[],
       extra: Partial<WorldEventView> = {},
     ) => {
+      const id = `${r.id}-e${++n}`;
+      // Everything has a time of day, and reaches the player when the clock gets there.
+      // What is done as the turn begins happens now. The day's figures, votes and changes
+      // on the ground are the morning's news. The rest falls where the dice put it.
+      const hour =
+        day === r.fromDay
+          ? startHour
+          : MORNING_NEWS.test(kind)
+            ? 7
+            : 8 + Math.floor(roll(start.seed, `hour:${id}`) * 14);
       const event: WorldEventView = {
-        id: `${r.id}-e${++n}`,
+        id,
         day,
         date: dateOf(start.startDate, day),
+        hour,
         kind,
         size,
         summary,
@@ -1263,6 +1354,22 @@ export function createDirector(options: DirectorOptions): Director {
       })),
     ];
 
+    /** One of the period's drawn events takes place, at its own hour. */
+    const happen = (e: (typeof planned)[number]) => {
+      const event = emit(world.day, e.kind, e.size, e.summary, e.causes, {
+        ...(e.place ? { place: e.place } : {}),
+        ...(e.hour === undefined ? {} : { hour: e.hour }),
+      });
+      if (Object.keys(e.picks).length > 0) {
+        world = addEffects(
+          world,
+          resolveNovel(world, e.picks, { day: world.day, causes: [event.id], idPrefix: event.id }),
+        );
+      }
+    };
+    // In a move of hours no day is run, and what is drawn for later today still happens.
+    if (days === 0) for (const e of planned.filter((x) => x.day === r.fromDay)) happen(e);
+
     for (let i = 0; i < days && !stoppedEarly; i++) {
       // Everything from here on happened today, whoever caused it.
       const dayStart = events.length;
@@ -1301,26 +1408,6 @@ export function createDirector(options: DirectorOptions): Director {
               }),
             );
           }
-        }
-      }
-      for (const e of planned.filter((x) => x.day === world.day)) {
-        const event = emit(
-          world.day,
-          e.kind,
-          e.size,
-          e.summary,
-          e.causes,
-          e.place ? { place: e.place } : {},
-        );
-        if (Object.keys(e.picks).length > 0) {
-          world = addEffects(
-            world,
-            resolveNovel(world, e.picks, {
-              day: world.day,
-              causes: [event.id],
-              idPrefix: event.id,
-            }),
-          );
         }
       }
       for (const u of owed.filter(
@@ -1438,6 +1525,9 @@ export function createDirector(options: DirectorOptions): Director {
           policy.region ? { place: policy.region } : {},
         );
       }
+      // What was drawn for the day the clock has now reached takes place, each thing at its
+      // hour, so that it unfolds through that day instead of being found already over.
+      for (const e of planned.filter((x) => x.day === world.day)) happen(e);
       // "To the next event that matters": stop the day something notable happens.
       if (r.untilMajor && !stoppedEarly) {
         const notable = events
@@ -1515,7 +1605,20 @@ export function createDirector(options: DirectorOptions): Director {
     if (!r?.apply || stopIfCancelled()) return;
     // The world changes here and only here: the event and its snapshot commit together.
     // Nothing is written before this point, so the turn never waits for prose (REQ-PERF-03).
-    const hour = r.hours ? (currentHour(projection) + r.hours) % 24 : currentHour(projection);
+    // A move to the next thing that carried into a new day stops at that day's first thing
+    // worth stopping for, or at nine if the night was quiet. Any other move of days lands
+    // at the same hour it left.
+    const firstThing = Math.min(
+      ...r.apply.events.flatMap((e) =>
+        e.day === r.apply?.toDay && needsYou(e) && e.hour !== undefined ? [e.hour] : [],
+      ),
+      MORNING,
+    );
+    const hour = r.hours
+      ? (currentHour(projection) + r.hours) % 24
+      : r.next
+        ? firstThing
+        : currentHour(projection);
     ledger.appendWithSnapshot(
       { type: 'resolution.committed', id, toDay: r.apply.toDay, hour },
       r.apply.toDay,
@@ -1534,8 +1637,87 @@ export function createDirector(options: DirectorOptions): Director {
     enqueue(0, () =>
       aftermath(id).finally(() => {
         setArriving(false);
+        // The news is worded off to one side. It is only better wording, so it must never
+        // hold up the clock: the next move does not wait for it.
+        const wording = wordNews(id)
+          .catch((error) => console.error('[director]', error))
+          .finally(() => background.delete(wording));
+        background.add(wording);
       }),
     );
+  }
+  /** Work under way that nothing waits for, kept so that `idle` can tell when it is over. */
+  const background = new Set<Promise<void>>();
+
+  /**
+   * A quiet turn commits at once, with the day's news in the plain lines the engine drew it
+   * in. Afterwards, while the player reads or waits for the hour, a model writes each line
+   * properly. Most of them are timed for later in the day, so by the time the clock reaches
+   * them they read as they should. With no model, the plain lines stand.
+   */
+  async function wordNews(id: string): Promise<void> {
+    const { projection: p, world, scenario } = state();
+    const r = p.resolutions.find((x) => x.id === id);
+    if (
+      r?.status !== 'committed' ||
+      !r.adjudicate?.quiet ||
+      !r.adjudicate.drawn ||
+      !world ||
+      !scenario ||
+      !harness.ready('adjudicator')
+    )
+      return;
+    const drawn = new Set(r.adjudicate.events.map((e) => e.summary));
+    const plain = (r.apply?.events ?? [])
+      .filter((e) => drawn.has(e.summary) && !p.worded.has(e.id))
+      .slice(0, MAX_WORDED);
+    if (plain.length === 0) return;
+    const branch = ledger.currentBranch();
+    const { output, via } = await harness.run(
+      turnAdjudicate,
+      {
+        period: {
+          from: dateOf(world.startDate, r.fromDay),
+          to: dateOf(world.startDate, r.apply?.toDay ?? r.fromDay),
+          days: (r.apply?.toDay ?? r.fromDay) - r.fromDay,
+        },
+        state: {
+          ...Object.fromEntries(economyRows(world).map((row) => [row.label, round1(row.value)])),
+          ...Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage])),
+        },
+        regions: world.regions.map((x) => ({ id: x.id, label: x.name })),
+        actions: [],
+        happenings: plain.map((e, i) => {
+          const where = world.regions.find((x) => x.id === e.place)?.name;
+          const who = scenario.cast.find((c) => e.causes.includes(`actor:${c.id}`))?.name;
+          return {
+            id: `h${i + 1}`,
+            kind: e.kind,
+            size: e.size,
+            when: e.date,
+            ...(where ? { where } : {}),
+            ...(who ? { who } : {}),
+            gist: e.summary,
+          };
+        }),
+        recent: allEvents(p)
+          .slice(-8)
+          .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
+      },
+      { resolution: id, brief: scenario.brief },
+    );
+    // The clock may have moved on while the lines were being written, which is fine. But if
+    // the campaign was rewound onto another line, the turn they belong to is gone: drop them.
+    const still = state().projection.resolutions.find((x) => x.id === id);
+    if (via === 'fallback' || ledger.currentBranch() !== branch || still?.status !== 'committed')
+      return;
+    const lines = Object.fromEntries(
+      plain.flatMap((e, i) => {
+        const line = output.events[`h${i + 1}`];
+        return line && line !== e.summary ? [[e.id, line]] : [];
+      }),
+    );
+    if (Object.keys(lines).length > 0) ledger.append({ type: 'news.worded', id, lines });
   }
 
   /**
@@ -1682,7 +1864,7 @@ export function createDirector(options: DirectorOptions): Director {
     let answers: (Answer | undefined)[];
     // The words are shown as they are written, unless the answers are due over the coming
     // hours: those must not be read before they arrive.
-    const live = !r.hours;
+    const live = !r.hours && days !== 1;
     const draftId = (n: number) => `${id}-x${n + 1}`;
     if (live) {
       writingReactions = asked.map(({ policy, actor }, n) => ({
@@ -1780,6 +1962,18 @@ export function createDirector(options: DirectorOptions): Director {
           resolveNovel(next, picks, { day: next.day, causes: [eventId], idPrefix: eventId }),
         );
       }
+      // An answer to an order comes in over the hours after it. Somebody moving first on a
+      // day the clock has just reached does so later that day, at an hour the dice pick.
+      const nowHour = r.hour ?? currentHour(p);
+      const due: { dueDay?: number; dueHour?: number } = policy
+        ? dueAt(n)
+        : days === 1 && nowHour < 23
+          ? {
+              dueDay: world.day,
+              dueHour:
+                nowHour + 1 + Math.floor(roll(world.seed, `move:${id}:${n}:hour`) * (22 - nowHour)),
+            }
+          : {};
       data.reactions.push({
         id: eventId,
         actor: actor.id,
@@ -1788,14 +1982,16 @@ export function createDirector(options: DirectorOptions): Director {
         ...(policy ? {} : { unprompted: true }),
         kind: out.kind,
         text: out.text,
-        ...(policy ? dueAt(n) : {}),
+        ...due,
       });
-      // An answer is dated to the order; a move of the actor's own happens as the turn ends.
-      const day = policy ? r.fromDay : world.day;
+      // An answer is dated to when it reaches the player; a move of the actor's own to the
+      // hour it is made, or to the end of a longer turn.
+      const day = due.dueDay ?? (policy ? r.fromDay : world.day);
       data.events.push({
         id: eventId,
         day,
         date: dateOf(world.startDate, day),
+        ...(due.dueHour === undefined ? {} : { hour: due.dueHour }),
         kind: policy ? 'reaction' : 'move',
         // Nobody asked for it, so it is news in its own right.
         size: out.kind === 'action' || !policy ? 'significant' : 'minor',
@@ -1823,24 +2019,35 @@ export function createDirector(options: DirectorOptions): Director {
     days: number | null,
     cardIds: string[],
     mixedSignals: boolean,
-    extra: { hours?: number; untilMajor?: boolean } = {},
+    extra: { hours?: number; untilMajor?: boolean; next?: boolean } = {},
   ) => {
     requireCampaign();
     requireQuiet();
     if (waiting) throw new DirectorError('busy', 'A move is already waiting to start.');
     const start = () => {
-      const now = state().world;
-      if (!now) return Promise.resolve();
+      const now = state();
+      if (!now.world) return Promise.resolve();
       const id = `r${ledger.count() + 1}`;
+      // "To the next thing that needs you" is worked out only now, when everything the last
+      // move set in train has been written: the next answer or event due today, or one hour
+      // on if orders are going out, so that the first answer to them can land. With nothing
+      // left today the clock carries into tomorrow.
+      let span: { days: number | null; hours?: number } = { days };
+      if (extra.next) {
+        const hour = currentHour(now.projection);
+        const due = comingToday(now.projection)[0];
+        const target = Math.min(due ?? 24, cardIds.length > 0 ? hour + 1 : 24);
+        span = target < 24 ? { days: 0, hours: target - hour } : { days: 1 };
+      }
       ledger.append({
         type: 'resolution.started',
         id,
         kind,
-        fromDay: now.day,
-        days,
+        fromDay: now.world.day,
         cardIds,
         mixedSignals,
         ...extra,
+        ...span,
       });
       return runResolution(id);
     };
@@ -2039,6 +2246,7 @@ export function createDirector(options: DirectorOptions): Director {
           turn: turnOf.get(e.id) ?? '',
           day: e.day,
           date: e.date,
+          ...(e.hour === undefined ? {} : { hour: e.hour }),
           size: e.size,
           routine: isRoutine(e),
           story: storyOf(e),
@@ -2058,7 +2266,22 @@ export function createDirector(options: DirectorOptions): Director {
             : {}),
         };
       })
-      .sort((a, b) => b.day - a.day);
+      .sort((a, b) => b.day - a.day || (b.hour ?? 0) - (a.hour ?? 0));
+
+    // Why the clock stopped where it did, after a move to the next thing that needed you.
+    const stoppedFor = (() => {
+      if (!lastCommitted?.next || !world) return undefined;
+      const hour = currentHour(p);
+      const answer = committed
+        .flatMap((x) => x.reactions?.reactions ?? [])
+        .find((x) => x.dueDay === world.day && x.dueHour === hour);
+      if (answer) return `${answer.actorName} ${answer.unprompted ? 'made a move' : 'answered'}.`;
+      const event = events.find((e) => e.day === world.day && e.hour === hour && needsYou(e));
+      if (event) return event.summary;
+      if (!lastCommitted.hours) return 'A new morning.';
+      // Orders went out and nobody has answered yet: the clock still says how far it ran.
+      return lastCommitted.hours === 1 ? 'An hour on.' : `${lastCommitted.hours} hours on.`;
+    })();
 
     return {
       campaign:
@@ -2191,12 +2414,21 @@ export function createDirector(options: DirectorOptions): Director {
               : {}),
           }
         : null,
+      ...(stoppedFor ? { stoppedFor } : {}),
     };
   }
 
   const moveLabel = (r: Resolution): string => {
     const days = (r.apply?.toDay ?? r.fromDay) - r.fromDay;
-    const span = r.hours ? 'an hour' : days === 1 ? 'a day' : `${days} days`;
+    const span = r.hours
+      ? r.hours === 1
+        ? 'an hour'
+        : `${r.hours} hours`
+      : r.next
+        ? 'to the next morning'
+        : days === 1
+          ? 'a day'
+          : `${days} days`;
     const count = r.compile?.policies.length ?? 0;
     const ran = r.untilMajor
       ? `ran the clock to the next event that mattered (${span})`
@@ -2276,6 +2508,7 @@ export function createDirector(options: DirectorOptions): Director {
         if (currentHour(projection) + span.hours >= 24) begin(kind, 1, fresh, mixedSignals);
         else begin(kind, 0, fresh, mixedSignals, { hours: span.hours });
       } else if ('days' in span) begin(kind, span.days, fresh, mixedSignals);
+      else if ('next' in span) begin(kind, null, fresh, mixedSignals, { next: true });
       else begin(kind, MAX_ADVANCE_DAYS, fresh, mixedSignals, { untilMajor: true });
     },
     expandEntry(eventId) {
@@ -2549,7 +2782,8 @@ export function createDirector(options: DirectorOptions): Director {
     },
     debugWorld: () => state().world,
     async idle() {
-      while (working || queue.length > 0) await (working ?? Promise.resolve());
+      while (working || queue.length > 0 || background.size > 0)
+        await (working ?? Promise.all(background));
     },
     subscribe(listener) {
       listeners.add(listener);

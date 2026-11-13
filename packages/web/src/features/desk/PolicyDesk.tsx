@@ -3,7 +3,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  FastForward,
   LoaderCircle,
   Pencil,
   Pin,
@@ -30,7 +29,7 @@ const STEP_LABEL: Record<string, string> = {
 
 /** Where policy is set: type what you want to do, press +, and it becomes a box. */
 export function PolicyDesk() {
-  const { view, act, error, clearError, setTimeOpen, moment, lookAt } = useGame();
+  const { view, act, error, clearError, moment, lookAt } = useGame();
   const [draft, setDraft] = useState('');
   const cards = view?.cards ?? [];
   const fresh = cards.filter((c) => !c.sent).length;
@@ -214,19 +213,46 @@ export function PolicyDesk() {
         </Button>
       </form>
 
+      {/* One press: whatever is on the desk goes out, and the clock runs to the next thing
+          that needs you. It moves in hours and never past the next morning. To skip further
+          ahead on purpose, the date control at the top is the place. */}
       <div className="flex items-center gap-2 border-t border-border bg-surface px-3 py-2">
-        <span className="min-w-0 flex-1 text-xs text-fg-muted">
-          {fresh > 0
-            ? 'Orders go out when you move time forward.'
-            : 'Move time forward with the date control.'}
-        </span>
+        <p
+          role="status"
+          aria-label="Why the clock stopped"
+          className="min-w-0 flex-1 text-xs text-fg-muted"
+        >
+          {view?.stoppedFor ? (
+            <>
+              <span className="label-caps mr-2 text-fg-subtle">
+                {String(view.campaign?.hour ?? 0).padStart(2, '0')}:00
+              </span>
+              <span className="text-fg">{view.stoppedFor}</span>
+            </>
+          ) : fresh > 0 ? (
+            `${fresh} ${fresh === 1 ? 'box' : 'boxes'} to send.`
+          ) : (
+            'Nothing to send. Play runs the clock to the next thing that needs you.'
+          )}
+        </p>
         <Button
           variant="primary"
+          size="icon"
+          className="size-9 shrink-0 rounded-full"
+          aria-label={
+            fresh > 0
+              ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'} and run to the next thing`
+              : 'Run to the next thing'
+          }
+          title={
+            fresh > 0
+              ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'}, then run to the next thing that needs you`
+              : 'Run to the next thing that needs you'
+          }
           disabled={running !== null || view?.campaign == null || moment !== null}
-          onClick={() => setTimeOpen(true)}
+          onClick={() => void act(() => api.move({ next: true }))}
         >
-          {fresh > 0 ? <Play /> : <FastForward />}
-          {fresh > 0 ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'}…` : 'Move time…'}
+          <Play />
         </Button>
       </div>
     </div>

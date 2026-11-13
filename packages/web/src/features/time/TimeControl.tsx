@@ -1,5 +1,5 @@
 import type { MoveSpan } from '@statecraft/protocol';
-import { ArrowRight, CalendarClock, ChevronsLeft, ChevronsRight, History, Zap } from 'lucide-react';
+import { ArrowRight, CalendarClock, ChevronsLeft, ChevronsRight, History } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { formatDate, useGame } from '@/lib/game';
@@ -7,7 +7,6 @@ import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
 
 const JUMPS: { label: string; span: MoveSpan; days: number }[] = [
-  { label: '1 hour later', span: { hours: 1 }, days: 0 },
   { label: '1 day later', span: { days: 1 }, days: 1 },
   { label: '1 week later', span: { days: 7 }, days: 7 },
   { label: '1 month later', span: { days: 30 }, days: 30 },
@@ -21,8 +20,10 @@ const addDays = (iso: string, days: number) =>
 const clock = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 
 /**
- * The one control for time. The pill shows the date; the right arrow opens the ways to move
- * forward, the left arrow opens history. Moving forward sends whatever is on the desk first.
+ * The date, and the way to skip ahead. Ordinary play is the play button on the desk, which
+ * runs the clock by the hour to the next thing that needs you. This control overrides that:
+ * the right arrow opens a choice of how far to run instead (a day, a week, a date), for when
+ * time should simply pass. The left arrow opens history.
  */
 export function TimeControl() {
   const { view, act, timeOpen, setTimeOpen, openWindow, moment } = useGame();
@@ -65,6 +66,7 @@ export function TimeControl() {
           size="icon"
           className="rounded-full"
           aria-label="Move time forward"
+          title="Skip ahead: choose how far to run the clock"
           aria-expanded={timeOpen}
           disabled={busy}
           onClick={() => setTimeOpen(!timeOpen)}
@@ -95,26 +97,13 @@ export function TimeControl() {
             </Button>
           </div>
           <p className="mt-1 text-xs text-fg-muted">
-            {waiting > 0
-              ? `Whichever you choose sends your ${waiting} ${waiting === 1 ? 'box' : 'boxes'} first.`
-              : 'Nothing on your desk: this only runs the clock.'}
+            Skip ahead without stopping for each thing that happens. To take things as they come,
+            use the play button on the policy desk.{' '}
+            {waiting > 0 &&
+              `Whichever you choose sends your ${waiting} ${waiting === 1 ? 'box' : 'boxes'} first.`}
           </p>
 
-          <button
-            type="button"
-            onClick={() => go({ untilMajor: true })}
-            className="mt-3 flex w-full items-center gap-3 rounded-control border border-border bg-surface-2 p-3 text-left hover:border-accent"
-          >
-            <Zap className="size-5 shrink-0 text-accent" />
-            <span>
-              <span className="block font-semibold text-fg">To next major event</span>
-              <span className="text-xs text-fg-muted">
-                Runs until something happens that needs you, up to a year
-              </span>
-            </span>
-          </button>
-
-          <p className="label-caps mt-3 text-fg-subtle">Jump to</p>
+          <p className="label-caps mt-3 text-fg-subtle">Run the clock to</p>
           <div className="mt-1 grid grid-cols-2 gap-2">
             {JUMPS.map((jump) => (
               <button
@@ -125,9 +114,7 @@ export function TimeControl() {
               >
                 <span className="block font-medium text-fg">{jump.label}</span>
                 <span className="tabular text-2xs text-fg-subtle">
-                  {jump.days === 0
-                    ? clock((campaign.hour + 1) % 24)
-                    : formatDate(addDays(campaign.date, jump.days))}
+                  {formatDate(addDays(campaign.date, jump.days))}
                 </span>
               </button>
             ))}

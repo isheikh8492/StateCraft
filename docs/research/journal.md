@@ -3,6 +3,42 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-12, pass 5: the clock by the hour
+
+**From the owner.** "Send" opened the time panel instead of sending. Asked for a plan first
+(noted: propose interface changes before building them). The owner then set the direction:
+the pill should only override how far to run; sending should be a play button; and time
+should not pass in days or weeks at all, because events happen quicker than that.
+
+**Built.** Decision record 0013: a play button that runs to the next thing that needs you,
+by the hour and never past the next morning; every event with a time of day, hidden until
+the clock reaches it; a pace that follows the tension; the cast moving within hours; quiet
+turns worded in the background; the date control as the override only.
+
+**Played.** Three days hour by hour and a week's skip, on `openai/gpt-oss-20b`, from
+`plans/by-the-hour.json`. Transcript: `sessions/2026-11-12-by-the-hour.md`.
+
+**Measured.** 16 presses of play: 13 returned in about 0.1 s; the two that sent orders took
+22 and 23 s; two others took 14 and 19 s because the background wording of the news was in
+the same queue as the next move. That is fixed: the wording now runs to one side.
+
+**Learned.**
+
+1. *It reads like a day.* 1 November: the order at nine, the insurgents' rejection at ten,
+   a religious party's offer to mediate at noon, China's statement at three. 3 November: an
+   order stalls, a coalition partner answers, the opposition at noon, an armed group makes a
+   move at one, the business lobby at three, a roadside bomb at nine in the evening.
+2. *Planned events were being dropped for one-day turns.* They were emitted before the day
+   was stepped, for the day just left, so a one-day forecast never took place. Found by the
+   new clock test; they now take place on the day the clock reaches.
+3. *"By turn" in the chronicle became a list of empty presses.* Moves with no orders and
+   nothing to show are left out.
+4. *The first lines of a new day are sometimes read in their plain form,* before the model
+   has worded them, when the player presses on quickly.
+
+**Decided.** Next: grow the deck (thirty entries is thin when it is drawn from several times
+a day); then ways to lose office.
+
 ## 2026-11-12, pass 4: advisers that help
 
 **From the owner, playing it.** A conversation with the Principal Secretary about a

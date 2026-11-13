@@ -16,3 +16,4 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0010](0010-no-second-opinion-before-the-commit.md) | No second opinion before the commit | 2026-11-12 |
 | [0011](0011-the-dice-decide-how-an-order-lands.md) | The dice decide how an order lands, and the game decides what is too vague | 2026-11-12 |
 | [0012](0012-the-engine-draws-the-news.md) | The engine draws the news; a model only words it | 2026-11-12 |
+| [0013](0013-the-clock-runs-by-the-hour-to-the-next-thing.md) | The clock runs by the hour, to the next thing that needs you | 2026-11-12 |

@@ -164,11 +164,16 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   page,
 }) => {
   await page.goto('/');
-  // An hour passes without the date changing.
+  // The play button on the desk sends what is there and runs to the next thing that needs
+  // you: here an hour on, when the first answer comes in, without the date changing.
   await expect(page.getByTestId('game-hour')).toHaveText('09:00');
-  await move(page, /1 hour later/);
+  await addBox(page, 'Increase development spending on roads.');
+  await page.getByRole('button', { name: 'Send 1 box and run to the next thing' }).click();
   await expect(page.getByTestId('game-hour')).toHaveText('10:00');
   await expect(date(page)).toHaveText('8 December 2026');
+  await expect(page.getByRole('status', { name: 'Why the clock stopped' })).toContainText(
+    /answered\.|An hour on\./,
+  );
 
   await move(page, /3 months later/);
   await expect(date(page)).toHaveText('9 March 2027');
@@ -283,9 +288,13 @@ test('rewinding goes back to an earlier day on a new line of history', async ({ 
   await page.reload();
   await expect(date(page)).toHaveText('1 November 2026');
 
-  // From a clean start, the clock can run to whatever happens next.
-  await move(page, /To next major event/);
-  await expect(date(page)).not.toHaveText('1 November 2026');
+  // From a clean start, play runs the clock to whatever happens next and says why it stopped.
+  // It moves by the hour and at most to the next morning, so it is still early November.
+  await page.getByRole('button', { name: 'Run to the next thing' }).click();
+  await expect(page.getByRole('status', { name: 'Why the clock stopped' })).not.toContainText(
+    'Nothing to send',
+  );
+  await expect(date(page)).toHaveText(/^[12] November 2026$/);
 });
 
 test('windows can be minimised and reopened, and the gallery opens', async ({ page }) => {

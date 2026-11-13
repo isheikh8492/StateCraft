@@ -17,6 +17,10 @@ export interface Happening {
   size: Size;
   /** Days after the period starts. */
   inDays: number;
+  /** The hour of that day it happens at, 0 to 23. */
+  hour?: number;
+  /** The deck entry it was drawn from, so the same thing is not drawn again too soon. */
+  deck?: string;
   /** A plain line saying what happened, used as written when no model words it. */
   gist: string;
   place?: string;
@@ -51,8 +55,10 @@ interface Context {
   crisis: boolean;
 }
 
-/** The chance, each day, that something of the world's own happens: about one a week. */
-const DAILY_CHANCE = 0.15;
+/** The chance that something of the world's own happens on a calm day. */
+const CALM_CHANCE = 0.7;
+/** The chance of one thing more, for each source of tension. */
+const TENSE_CHANCE = 0.8;
 const between = (month: number, from: number, to: number) =>
   from <= to ? month >= from && month <= to : month >= from || month <= to;
 
@@ -281,16 +287,31 @@ function pick<T>(items: readonly T[], weights: readonly number[], r: number): T 
 const monthOf = (startDate: string, day: number) =>
   new Date(Date.parse(`${startDate}T00:00:00Z`) + day * 86_400_000).getUTCMonth() + 1;
 
+/** What shapes a forecast beyond the state of the country. */
+export interface Pace {
+  /** The player has just given orders: the country is paying attention, and answers back. */
+  hot?: boolean;
+  /** Deck entries that came up in the last few days, which do not come up again so soon. */
+  recent?: ReadonlySet<string>;
+  /** False when something grave happened very recently: it is not followed by another at once. */
+  grave?: boolean;
+}
+
 /**
  * Everything of the world's own that will happen over a stretch of days, drawn from the
  * state of the country as the stretch begins. Each day has its own dice, so the same
  * campaign draws the same things for the same stretch every time.
+ *
+ * The pace follows the tension. A calm day may bring nothing. A day in a country with a
+ * province in revolt, or in the days after its government has acted, can bring two or three
+ * things, each at its own hour.
  */
 export function forecast(
   world: World,
   cast: Scenario['cast'],
   fromDay: number,
   days: number,
+  pace: Pace = {},
 ): Happening[] {
   const urban = world.groups.filter((g) =>
     g.tags.some((t) => t === 'urban_poor' || t === 'urban_middle'),
@@ -306,62 +327,74 @@ export function forecast(
   const out: Happening[] = [];
   // The same thing does not happen twice in one stretch, and a grave thing not too often.
   const used = new Set<Entry>();
-  let significant = 1 + Math.floor(days / 14);
-  for (let i = 1; i <= days; i++) {
-    const day = fromDay + i;
-    const key = `happening:${day}`;
-    if (roll(world.seed, key) >= DAILY_CHANCE) continue;
-    const ctx: Context = { ...base, month: monthOf(world.startDate, day) };
-    const deck = DECK.filter(
-      (e) =>
-        !used.has(e) &&
-        (significant > 0 || e.size !== 'significant') &&
-        (e.who === undefined || cast.some((c) => c.kind === e.who)),
-    );
-    const entry = pick(
-      deck,
-      deck.map((e) => e.weight(ctx)),
-      roll(world.seed, `${key}:what`),
-    );
-    if (!entry) continue;
-
-    const actors = entry.who ? cast.filter((c) => c.kind === entry.who) : [];
-    const actor = pick(
-      actors,
-      actors.map(() => 1),
-      roll(world.seed, `${key}:who`),
-    );
-    let place: string | undefined;
-    if (entry.where) {
-      // Somebody tied to a place acts there; otherwise the kind of place decides.
-      const home = actor?.cares.regions ?? [];
-      const pool = (
-        entry.where === 'insurgent'
-          ? world.regions.filter((r) => r.stage === 'insurgency' || r.status !== 'held')
-          : world.regions
-      ).filter((r) => home.length === 0 || home.includes(r.id));
-      const weights = pool.map((r) =>
-        entry.where === 'restive' ? 5 + r.unrest : entry.where === 'any' ? r.population : 1,
+  let significant = pace.grave === false ? 0 : 1 + Math.floor(days / 14);
+  // One chance of something on any day, a second where there is fighting or unrest, and a
+  // third in the days after the government has acted.
+  const chances = [
+    CALM_CHANCE,
+    ...(base.fighting || world.regions.some((r) => r.stage === 'riot') ? [TENSE_CHANCE] : []),
+    ...(pace.hot ? [TENSE_CHANCE] : []),
+  ];
+  for (let i = 1; i <= days; i++)
+    for (const [slot, chance] of chances.entries()) {
+      const day = fromDay + i;
+      const key = `happening:${day}:${slot}`;
+      if (roll(world.seed, key) >= chance) continue;
+      const ctx: Context = { ...base, month: monthOf(world.startDate, day) };
+      const deck = DECK.filter(
+        (e) =>
+          !used.has(e) &&
+          !pace.recent?.has(e.text) &&
+          (significant > 0 || e.size !== 'significant') &&
+          (e.who === undefined || cast.some((c) => c.kind === e.who)),
       );
-      place = pick(pool, weights, roll(world.seed, `${key}:where`))?.id;
-      if (!place) continue;
+      const entry = pick(
+        deck,
+        deck.map((e) => e.weight(ctx)),
+        roll(world.seed, `${key}:what`),
+      );
+      if (!entry) continue;
+
+      const actors = entry.who ? cast.filter((c) => c.kind === entry.who) : [];
+      const actor = pick(
+        actors,
+        actors.map(() => 1),
+        roll(world.seed, `${key}:who`),
+      );
+      let place: string | undefined;
+      if (entry.where) {
+        // Somebody tied to a place acts there; otherwise the kind of place decides.
+        const home = actor?.cares.regions ?? [];
+        const pool = (
+          entry.where === 'insurgent'
+            ? world.regions.filter((r) => r.stage === 'insurgency' || r.status !== 'held')
+            : world.regions
+        ).filter((r) => home.length === 0 || home.includes(r.id));
+        const weights = pool.map((r) =>
+          entry.where === 'restive' ? 5 + r.unrest : entry.where === 'any' ? r.population : 1,
+        );
+        place = pick(pool, weights, roll(world.seed, `${key}:where`))?.id;
+        if (!place) continue;
+      }
+      used.add(entry);
+      if (entry.size === 'significant') significant--;
+      const region = world.regions.find((r) => r.id === place)?.name ?? '';
+      out.push({
+        id: `h${out.length + 1}`,
+        kind: entry.kind,
+        size: entry.size,
+        inDays: i,
+        // Between eight in the morning and nine at night.
+        hour: 8 + Math.floor(roll(world.seed, `${key}:hour`) * 14),
+        deck: entry.text,
+        gist: entry.text.replace('{region}', region).replace('{actor}', actor?.name ?? ''),
+        ...(place ? { place } : {}),
+        ...(actor ? { actor: actor.id } : {}),
+        picks: entry.picks?.(place ?? '') ?? {},
+        causes: actor ? [`actor:${actor.id}`] : ['world'],
+      });
     }
-    used.add(entry);
-    if (entry.size === 'significant') significant--;
-    const region = world.regions.find((r) => r.id === place)?.name ?? '';
-    out.push({
-      id: `h${out.length + 1}`,
-      kind: entry.kind,
-      size: entry.size,
-      inDays: i,
-      gist: entry.text.replace('{region}', region).replace('{actor}', actor?.name ?? ''),
-      ...(place ? { place } : {}),
-      ...(actor ? { actor: actor.id } : {}),
-      picks: entry.picks?.(place ?? '') ?? {},
-      causes: actor ? [`actor:${actor.id}`] : ['world'],
-    });
-  }
-  return out;
+  return out.sort((a, b) => a.inDays - b.inDays || (a.hour ?? 0) - (b.hour ?? 0));
 }
 
 /**
@@ -373,9 +406,14 @@ export function aftershock(
   order: { id: string; title: string; region?: string | undefined; landed: string },
   days: number,
   n: number,
+  /** The hour the order went out. In a move of hours, people react later the same day. */
+  nowHour = 9,
 ): Happening | undefined {
-  if (days < 1 || order.landed === 'stalled') return undefined;
+  if (order.landed === 'stalled') return undefined;
+  // Too late in the day for the street to answer before midnight.
+  if (days < 1 && nowHour > 20) return undefined;
   const backfired = order.landed === 'backfired';
+  const when = roll(world.seed, `aftershock:${order.id}:when`);
   if (!backfired && roll(world.seed, `aftershock:${order.id}`) >= 0.5) return undefined;
   const pool = world.regions;
   const place =
@@ -390,7 +428,11 @@ export function aftershock(
     id: `o${n}`,
     kind: 'public',
     size: backfired ? 'significant' : 'minor',
-    inDays: Math.min(days, 1 + Math.floor(roll(world.seed, `aftershock:${order.id}:when`) * 6)),
+    inDays: days < 1 ? 0 : Math.min(days, 1 + Math.floor(when * 6)),
+    hour:
+      days < 1
+        ? Math.min(23, nowHour + 2 + Math.floor(when * 4))
+        : 9 + Math.floor(roll(world.seed, `aftershock:${order.id}:hour`) * 12),
     gist: backfired
       ? `Crowds in ${region} turned out against the order: ${order.title}.`
       : `People in ${region} made their feelings known about the order: ${order.title}.`,

@@ -1,0 +1,27 @@
+[
+  { "order": "Offer the Baloch insurgents a ninety-day ceasefire and talks in Quetta." },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  {
+    "ask": [
+      "interior_minister",
+      "What has happened since the ceasefire offer, and what should I do next?"
+    ]
+  },
+  { "order": "Cut the fuel subsidy by a third." },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "next": true } },
+  { "move": { "days": 7 } },
+  { "move": { "next": true } },
+  { "move": { "next": true } }
+]

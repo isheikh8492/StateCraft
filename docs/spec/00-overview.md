@@ -284,6 +284,8 @@ Policies persist. A standing policy keeps acting every turn until you repeal it,
 
 ## The time control
 
+**As built (decision record 0013).** Ordinary play is one play button on the policy desk. It sends whatever is on the desk and runs the clock to the next thing that needs you: an answer to an order, somebody making a move, an event that is news. It moves by the hour and never past the next morning, and the desk says why it stopped. Every event has a time of day and is known to nobody until the clock reaches it. The date control described below is the override: it offers how far to run instead (a day, a week, a month, a date), for when time should simply pass. What follows is the original design, kept for the parts that still hold.
+
 A pill at the top of the screen shows the date, with an arrow on each side. Right moves forward; left looks back.
 
 **Forward.** The right arrow opens a panel:

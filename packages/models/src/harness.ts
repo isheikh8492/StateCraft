@@ -31,6 +31,11 @@ export interface Harness {
    * asked for in one call there (spec: Speed, "Reactions run after the commit").
    */
   oneAtATime(role: ModelRole): boolean;
+  /**
+   * True when a model is set for a role at all. Work whose only point is better wording is
+   * not worth starting when the answer can only be the built-in wording it already has.
+   */
+  ready(role: ModelRole): boolean;
   /** A tiny call that loads the model and learns what the server accepts, before play. */
   warmUp(role?: ModelRole): Promise<void>;
 }
@@ -123,6 +128,12 @@ export function createHarness(options: HarnessOptions): Harness {
     oneAtATime(role) {
       const settings = options.settings(role);
       return settings.kind !== 'none' && isLocal(settings);
+    },
+    ready(role) {
+      const settings = options.settings(role);
+      return (
+        options.adapter !== undefined || (settings.kind !== 'none' && settings.model.trim() !== '')
+      );
     },
 
     /**

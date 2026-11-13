@@ -91,7 +91,7 @@ The speed slice and the first part of M1, built together.
 | Area | State |
 | --- | --- |
 | Speed | A turn commits after two model calls at most (reading the boxes, judging the period). Nothing is written before the commit. A move of under a week with nothing ordered calls no model. Prompts carry a compact output shape, and the world brief only where needed. |
-| The time control | A date pill with the hour. Right arrow: to next major event, 1 hour, 1 day, 1 week, 1 month, 3 months, 6 months, 1 year, or a specific date; any of them sends the desk first. Left arrow opens history. |
+| The time control | A date pill with the hour. Right arrow: skip ahead 1 day, 1 week, 1 month, 3 months, 6 months, 1 year, or to a specific date; any of them sends the desk first. Ordinary play is the play button on the desk (see "The clock by the hour"). Left arrow opens history. |
 | History | By turn (your move, then the world's response) and by time. |
 | Depth on demand | Entries are short. "Read the full account" on any entry, including a reaction, writes the long piece once and saves it. A Detail setting (Brief, Standard, Rich) sets how long reactions and accounts run. |
 | The cast | Sixteen Pakistani stakeholders with interests, stance and voice (authored; see the scenario's SOURCES.md). |
@@ -123,6 +123,19 @@ The speed slice and the first part of M1, built together.
 | A more eventful judge | Told to write what the world does on its own account: about one event a week, at least one that matters in any period of a week or more. One significant event a fortnight (was one in 45 days), one major event in any period of two weeks or more (was 30 days). A significant event no longer has to cite an earlier one. |
 | Not built | Moves that reach your inbox as a demand to answer; "to next major event" stopping on a move; actors with private motives and plots. The chances and weights are placeholders, like every other number. |
 | Not verified | No real model has written a move or judged a period under the new instructions. With no model and with the stand-in, moves come from templates. |
+
+## The clock by the hour (decision record 0013)
+
+| Area | State |
+| --- | --- |
+| Play | One button on the desk: sends what is there and runs to the next thing that needs you, by the hour and never past the next morning. The desk says why the clock stopped. |
+| Time of day | Every event has an hour and is hidden from everyone until the clock reaches it. The chronicle shows the time. |
+| Pace | One chance of something on a calm day, a second where there is fighting or rioting, a third in the days after the government acts. Nothing repeats within four days. |
+| The cast | Answers arrive one, three and six hours after an order; somebody moving first does so later the same day. |
+| Quiet turns | Commit at once in plain lines; a model words the news afterwards, off to one side. |
+| The date control | Override only: run to a day, a week, a month or a date. |
+| Verified | Tests ("the clock by the hour"), a browser check, and three days played by the hour on the local model: `docs/research/sessions/2026-11-12-by-the-hour.md`. |
+| Known limits | Figures still move at dawn while the news of them is spread over the day. The deck of events is thin for this pace. |
 
 ## Advisers that help (2026-11-12)
 

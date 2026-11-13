@@ -24,8 +24,8 @@ export function Chronicle() {
   if (turns.length === 0) {
     return (
       <EmptyState icon={ScrollText} title="Nothing has happened yet">
-        Write an order and move time forward with the date control at the top. Each move appears
-        here, followed by what the world did in return.
+        Write an order and press play on the policy desk. Each move appears here, followed by what
+        the world did in return.
       </EmptyState>
     );
   }
@@ -101,7 +101,12 @@ export function Chronicle() {
           </ol>
         ) : (
           turns.map((turn) => {
-            const mine = entries.filter((e) => e.turn === turn.id).sort((a, b) => a.day - b.day);
+            const mine = entries
+              .filter((e) => e.turn === turn.id)
+              .sort((a, b) => a.day - b.day || (a.hour ?? 0) - (b.hour ?? 0));
+            // The clock moves by the hour now, and most presses of play only pass time. A
+            // move with no orders and nothing to show for it is not worth a heading.
+            if (turn.orders.length === 0 && mine.length === 0) return null;
             return (
               <section
                 key={turn.id}
@@ -156,6 +161,10 @@ export function Chronicle() {
   );
 }
 
+/** The time of day an entry happened at, to follow its date; nothing for older entries. */
+const when = (hour: number | undefined) =>
+  hour === undefined ? '' : `, ${String(hour).padStart(2, '0')}:00`;
+
 function Entry({ entry }: { entry: ChronicleEntry }) {
   const { view, act, place, setPlace, openPolicy } = useGame();
   const event = view?.events.find((e) => e.id === entry.id);
@@ -169,6 +178,7 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
       <li className="flex items-baseline gap-2 border-b border-border px-4 py-1.5 text-xs text-fg-muted">
         <time dateTime={entry.date} className="tabular shrink-0 text-2xs text-fg-subtle">
           {formatDate(entry.date)}
+          {when(entry.hour)}
         </time>
         <span className="min-w-0 flex-1">{entry.headline}</span>
       </li>
@@ -184,6 +194,7 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
       <div className="flex items-center gap-2">
         <time dateTime={entry.date} className="tabular text-2xs text-fg-subtle">
           {formatDate(entry.date)}
+          {when(entry.hour)}
         </time>
         {entry.size === 'major' && <Badge tone="bad">Major</Badge>}
         {entry.place && (

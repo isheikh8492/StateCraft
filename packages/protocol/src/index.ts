@@ -82,6 +82,11 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     hours: z.number().int().min(1).max(23).optional(),
     /** Stop at the first event that matters. */
     untilMajor: z.boolean().optional(),
+    /**
+     * A move to the next thing that needs the player: some hours within the day, or over
+     * into the next day, where the clock stops at that day's first such thing or at nine.
+     */
+    next: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('resolution.step'),
@@ -104,6 +109,15 @@ export const LedgerEvent = z.discriminatedUnion('type', [
     eventId: z.string(),
     body: z.string(),
     via: z.string(),
+  }),
+  /**
+   * News that was recorded in its plain line when a quiet turn committed, worded properly
+   * afterwards so that the turn did not wait for it. Keyed by event id.
+   */
+  z.object({
+    type: z.literal('news.worded'),
+    id: z.string(),
+    lines: z.record(z.string(), z.string().max(400)),
   }),
   /** A message a member of the cast sends unasked. */
   z.object({
@@ -165,6 +179,8 @@ export const MoveRequest = z.object({
     z.object({ hours: z.literal(1) }),
     z.object({ days: z.number().int().min(1).max(MAX_ADVANCE_DAYS) }),
     z.object({ untilMajor: z.literal(true) }),
+    /** To the next thing that needs you: hours, never past the next morning. */
+    z.object({ next: z.literal(true) }),
   ]),
   mixedSignals: z.boolean().default(false),
 });

@@ -25,11 +25,32 @@ describe('what the world does on its own', () => {
     );
   });
 
-  it('happens about once a week, and never the same thing twice in one stretch', () => {
-    const perWeek = drawn.length / ((5 * 24 * 30) / 7);
-    expect(perWeek).toBeGreaterThan(0.7);
-    expect(perWeek).toBeLessThan(1.5);
+  it('fills the day: most days bring something in a tense country, each at its own hour', () => {
+    // Pakistan begins with a province contested, so there is a second chance each day.
+    const perDay = drawn.length / (5 * 24 * 30);
+    expect(perDay).toBeGreaterThan(0.5);
+    expect(perDay).toBeLessThan(1.2);
     expect(new Set(drawn.map((h) => h.kind)).size).toBeGreaterThan(15);
+    for (const h of drawn) {
+      expect(h.hour).toBeGreaterThanOrEqual(8);
+      expect(h.hour).toBeLessThanOrEqual(21);
+    }
+  });
+
+  it('follows the tension: more happens after the government acts, and nothing repeats soon', () => {
+    const world = createWorld(scenario, 'a');
+    const count = (pace: Parameters<typeof forecast>[4]) =>
+      Array.from({ length: 60 }, (_, day) => forecast(world, scenario.cast, day, 1, pace)).flat();
+    expect(count({ hot: true }).length).toBeGreaterThan(count({}).length);
+    // What came up lately does not come up again, and something grave is not followed by another.
+    const lately = new Set(
+      count({})
+        .slice(0, 5)
+        .map((h) => h.deck ?? ''),
+    );
+    expect(lately.size).toBeGreaterThan(1);
+    expect(count({ recent: lately }).some((h) => lately.has(h.deck ?? ''))).toBe(false);
+    expect(count({ grave: false }).some((h) => h.size === 'significant')).toBe(false);
   });
 
   it('keeps to the calendar', () => {

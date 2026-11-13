@@ -148,13 +148,17 @@ describe('director', () => {
     await director.idle();
     expect(director.view().campaign).toMatchObject({ day: 3, hour: 10 });
     expect(jobs()).toEqual([]);
-    // A day or a few days: nothing is read or judged, so the turn itself is instant. All that
-    // may follow it is somebody in the cast acting on their own, written after the commit.
+    // A day or a few days: nothing is read or judged before the turn commits, so the turn
+    // itself is instant. What follows it, after the commit, is somebody in the cast acting
+    // on their own and the day's news being worded properly: the judge is asked only for
+    // lines, with no action to judge.
     director.move({ days: 1 }, false);
     await director.idle();
     director.move({ days: 3 }, false);
     await director.idle();
-    expect(jobs().filter((job) => job !== 'turn.reactions')).toEqual([]);
+    expect(jobs().every((job) => job === 'turn.reactions' || job === 'turn.adjudicate')).toBe(true);
+    for (const call of calls.filter((c) => c.job.startsWith('turn.adjudicate')))
+      expect((JSON.parse(call.input) as { actions: unknown[] }).actions).toEqual([]);
 
     // A longer run is judged once. With two months gone, some of the cast have moved first.
     calls.length = 0;
@@ -388,7 +392,8 @@ describe('people', () => {
     director.move({ days: 1 }, false);
     await director.idle();
     expect(director.view().policies[0]?.reactions).toHaveLength(3);
-    expect(director.view().arriving.later).toBe(0);
+    // Nothing more is owed on the order. At most, somebody is about to move later today.
+    expect(director.view().arriving.later).toBeLessThanOrEqual(1);
 
     // Looking back shows the world as it was, without rewinding anything.
     const first = director.view().turns.at(-1);
@@ -612,4 +617,65 @@ describe('desk and time', () => {
       true,
     );
   });
+});
+
+describe('the clock by the hour', () => {
+  it('runs to the next thing that needs you: hours at a time, never past the next morning', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    const now = () => {
+      const c = director.view().campaign;
+      return { day: c?.day ?? 0, hour: c?.hour ?? 0 };
+    };
+    const next = async () => {
+      director.move({ next: true }, false);
+      await director.idle();
+      return director.view();
+    };
+
+    // Orders go out and the clock stops an hour on, when the first answer is in.
+    add('Launch a security operation in Khyber Pakhtunkhwa.');
+    let view = await next();
+    expect(now()).toEqual({ day: 0, hour: 10 });
+    expect(view.policies[0]?.reactions).toHaveLength(1);
+    expect(view.stoppedFor).toMatch(/ answered\.$/);
+    expect(view.turns[0]?.move).toBe('Sent 1 order and ran the clock an hour');
+    // The next press stops at the next answer, two hours later, not at some round interval.
+    view = await next();
+    expect(now()).toEqual({ day: 0, hour: 12 });
+    expect(view.policies[0]?.reactions).toHaveLength(2);
+
+    // Keep pressing for a fortnight of game time. Every stop is for a reason, time only ever
+    // moves forward, and no press skips more than a night.
+    const reasons: string[] = [];
+    for (let press = 0; press < 80 && now().day < 14; press++) {
+      const before = now();
+      view = await next();
+      const after = now();
+      expect(after.day * 24 + after.hour).toBeGreaterThan(before.day * 24 + before.hour);
+      expect(after.day).toBeLessThanOrEqual(before.day + 1);
+      if (after.day > before.day) expect(after.hour).toBeLessThanOrEqual(9);
+      expect(view.stoppedFor).toBeTruthy();
+      reasons.push(view.stoppedFor ?? '');
+      // Nothing timed for later today has been let out early.
+      for (const entry of view.chronicle)
+        expect(entry.day * 24 + (entry.hour ?? 0)).toBeLessThanOrEqual(after.day * 24 + after.hour);
+    }
+    expect(now().day).toBe(14);
+    // It stopped for answers, for people moving on their own, for events, and for quiet mornings.
+    expect(reasons.some((r) => r.endsWith('made a move.'))).toBe(true);
+    expect(reasons.some((r) => r.startsWith('A new morning'))).toBe(true);
+    expect(reasons.some((r) => !/answered\.$|made a move\.$|^A new morning/.test(r))).toBe(true);
+    // A day holds several things, each with its hour.
+    const days = new Map<number, number>();
+    for (const e of view.chronicle) days.set(e.day, (days.get(e.day) ?? 0) + 1);
+    expect(Math.max(...days.values())).toBeGreaterThan(2);
+    expect(view.chronicle.filter((e) => e.hour !== undefined).length).toBe(view.chronicle.length);
+
+    // Skipping ahead is still there for when it is wanted: a week lands at the same hour.
+    const hour = now().hour;
+    director.move({ days: 7 }, false);
+    await director.idle();
+    expect(now()).toEqual({ day: 21, hour });
+  }, 60_000);
 });
