@@ -8,7 +8,11 @@ how to decide what to do next, and when to stop.
 
 Make StateCraft a better geopolitics simulator than WorldOS's *Modern Day 2026*, or at the
 least its equal, and take it through every milestone on the roadmap (M0 to M4) to a
-finished, tagged 1.0.
+release candidate the owner can judge.
+
+**The owner decides when it is 1.0, not you.** Never set the version to 1.0.0, never create
+a `v1.0.0` tag, and never describe the game as finished or released. Your last act is to
+hand over a candidate and a report.
 
 "Better" is not a feeling. It is the scorecard in `docs/research/scorecard.md`, which you
 create in your first session and keep current (see "Research on yourself").
@@ -93,6 +97,7 @@ Create these in the first session and keep them current.
   - Saves, rewind, branches, replay
   - Works offline, with no key, on a local model
   - Start dates and scenarios other than the present
+  - Every row of "The full system" below
 - `docs/research/journal.md`: dated entries, newest first. Each has what was played, what
   was measured, what was learned, sources, and what was decided.
 - `docs/research/sessions/`: transcripts and numbers from play sessions.
@@ -116,14 +121,46 @@ passed with the evidence written into `docs/progress.md`.
 | M3 Conflict | Story and map agree in every replayed turn. |
 | M4 Breadth | A new country pack ships without code changes. |
 
-On top of the roadmap, parity needs these, which the roadmap does not name. Add them to the
-spec and requirements when M2 starts:
+## The full system
 
-- World-level conditions that every country feels (energy prices, an escalation level).
-- Each country acting on a private agenda that the player does not see.
-- A judge with memory of the whole campaign, not the last eight events.
-- Territory that changes hands by the engine's rules, drawn on the map from recorded
-  operations.
+The owner supplied a description of what a complete simulator of this kind contains, and of
+what *Modern Day 2026* is said to do. It came from an AI assistant's answer, not from the
+game's makers, so treat every claim about that game as something to verify in research
+before the scorecard relies on it. As a list of what a serious system needs, it stands.
+
+Each row below is a scorecard row. Each must end up built, or withdrawn with a decision
+record. Place each in the milestone shown; add it to the spec and requirements when that
+milestone starts. Where the description lets a model decide a fact, build it StateCraft's
+way: the engine decides, the model words it.
+
+| Capability | Where StateCraft stands | Milestone |
+| --- | --- | --- |
+| Rules in code, model only translates intent into bounded choices | Built: this is the core design | Keep |
+| Strict validation of every model reply, retry only when unusable | Built (decision 0008) | Keep |
+| Saves at every turn, rewind, branching timelines | Built | Keep |
+| Every prompt, reply and dice roll recorded; a campaign replays identically | Calls and dice are recorded; replay from recorded replies is not built (REQ-DATA-07) | M1 |
+| Golden-seed regression: fixed scenarios run many turns and figures stay in bounds | One 12-month golden run with no model; none through a model | M1 |
+| Refusals caught and retried with honest framing, never shown to the player | Built; never met a real refusal | M0 gate |
+| Prompt caching: fixed text first | Layout built; cache headers for Anthropic and Gemini not sent | M1 |
+| Fallback routing to a second model when the first fails mid-turn | Not built: a failed call falls back to built-in wording | M1 |
+| A living world: the cast and the world act when the player does nothing | First form built (decision 0009) | M1 |
+| Domestic factions whose ignored demands end in strikes, gridlock or a coup, and ways to lose office | Groups, legislature and courts exist; no demands that escalate, no loss of office | M1 |
+| Delayed causality: an order schedules a hidden result turns later, which others may detect first | Policies have stages and reactions have later beats; no general queue, no detection | M1 |
+| A pacing director: a shock when the world has been quiet too long, coalitions against a runaway player | Not built | M2 |
+| Other nations as full entities, each acting on a private agenda | Not built: foreign actors only speak | M2 |
+| Only the relevant slice of the world sent to a model each turn | True by construction for one country; needs a rule once there are many | M2 |
+| Cheap model for many small reactions, strong model for judging | Roles can be given different models; reactions are already one call locally | M2 |
+| World-level conditions every country feels (energy prices, an escalation level) | Not built | M2 |
+| Trade and supply chains as a graph: resources, chokepoints, shocks that travel downstream | Not built | M2 |
+| Media with several biased voices, feeding back into approval and polarisation | Not built: one neutral record | M2 |
+| Memory of the whole campaign, recalled by who is involved, not a rolling summary | Not built: the judge sees eight events. Prefer recall by id and actor from the ledger over embeddings; add a vector store only if that proves too weak, with a decision record | M1 start, M2 at scale |
+| Fog of war: true state apart from what the player's intelligence believes | Approval and standing are hidden; no intelligence picture of other states | M2 |
+| Covert operations decided by hidden dice, then narrated | Not built | M3 |
+| Sub-national map tiles with an adjacency graph, so fronts and chokepoints are real and nothing teleports | Regions exist for one country, with no adjacency | M3 |
+| Territory changing hands by the engine's rules, drawn from recorded map operations | Control status exists; no transfers, no stored operations | M3 |
+| A manual map correction tool | Not needed if the engine owns the map. Build only if research shows players want it; never let it bypass the record | M3, optional |
+| A desktop app: no terminal, point it at a key or a local model | Not built | M4 |
+| Scenarios as a folder of data files anyone can write and share, with a guide | Scenario packs are data already; no guide, no validation tool, no second pack | M4 |
 
 If a gate cannot be passed after three serious attempts, do not fake it and do not loop
 forever. Write a decision record with the evidence, cut or change the scope so that an
@@ -170,8 +207,13 @@ Stop, and say so, when all of these hold:
 3. A full in-game term has been played on the local model on the final build, and the
    transcript is in `docs/research/sessions/`.
 4. `npm run check` passes on a clean clone.
-5. `docs/FINAL.md` exists: what was built, the final scorecard, the measured numbers, what
-   was cut and why, and what a next version should do.
-6. The version is 1.0.0 and the commit is tagged `v1.0.0` and pushed.
+5. `docs/CANDIDATE.md` exists: what was built, the final scorecard, the measured numbers,
+   what was cut and why, what you are least sure of, and a short script the owner can follow
+   to play it and judge for themselves.
+6. "Waiting on the player" at the top of `docs/progress.md` says the candidate is ready for
+   the owner's verdict.
+
+Do not tag or version it as 1.0: that is the owner's call. If the owner comes back
+unsatisfied, their notes become the top of the work list and the loop resumes.
 
 Until then, the answer to "is there more to do?" is in the loop.
