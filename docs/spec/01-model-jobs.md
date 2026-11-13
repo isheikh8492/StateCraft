@@ -217,13 +217,14 @@ interface Out {
 
 **Changed after play-testing** (see "The chronicle" and "Speed" in the overview). The points below override the shapes and limits further down where they differ:
 
-- **Two modes.** `brief` runs after a turn commits and returns only a headline and one or two sentences per notable event, all events in one call. `full` runs when the player opens an entry and writes that one entry at length. Routine notices are never sent to either.
+- **One mode: the full account, on request.** The job runs only when the player opens an entry, and writes that one entry at length. There is no call for headlines: an event's own one-line summary is its headline. Routine notices are never sent. Reactions can be opened too; the input then carries `event.speaker`, and the account is built around what that actor said or did.
 - **Length follows weight, in `full` mode.** The input carries `weight: "minor" | "significant" | "major"`, and the limits are about 50, 150 and 400 words. A significant or major piece opens with a dateline (place, date, hour).
 - **Saved once.** A `full` piece is stored when written and never regenerated. Its input is the events and state recorded at the time, not the present.
 - **Quotes.** The input lists the actors who may speak: `speakers: { id, name, role, stance, voice }[]`. The output may include `quotes: { speaker: Id; text: string }[]`, each also appearing in the body. A quote from anyone not in `speakers` fails the check. Each quote is stored as an utterance by that actor.
 - **Detail figures.** The output carries `details: { label: string; value: string }[]` for every figure in the text that is not in the input. A figure that appears in the text and in neither the input nor `details` fails the check, and so does a detail that restates a quantity the engine owns. The input carries earlier `details` on the same thread, which must be reused, not changed.
 - **Streaming.** The body is streamed to the screen as it is written; the checks run when it is complete, and an entry that fails is replaced by its repair or by built-in wording.
-- **Never blocks the turn.** `brief` runs after the turn has committed; `full` runs only on request.
+- **Never blocks the turn.** It runs only on request.
+- **Length is set by the player.** The input carries `words`, the weight's normal length (about 50, 150 or 400) scaled by the Detail setting (0.6, 1 or 1.6).
 
 Writes the story of a resolved period from committed events. It adds nothing that is not in its input.
 
@@ -338,7 +339,7 @@ interface Out {
   why: string;
   kind: "statement" | "action" | "silence";
   public: boolean;
-  text: string;                       // at most 60 words, in the actor's voice; for silence, one plain sentence saying so
+  text: string;                       // up to `words` words (60, 150 or 250 by the Detail setting), a wire report of what the actor said, wants and will do, quoting it directly; for silence, one plain sentence saying so
   action?: { option: Id; effects: Effect[] };
   later?: { inDays: number; question: string; ifYes: string; ifNo: string };   // a beat the engine will roll
 }
@@ -349,6 +350,9 @@ interface Out {
 - **Blindness does not apply here.** This job voices one named actor answering a named order, so it knows who gave the order. Judging the period stays blind.
 
 ### `actor.reply`
+
+**As built.** Answers a question the player puts to one member of the cast, in that actor's voice, from what it could know: events that touch its concerns and what everyone has heard (an adviser sees the whole file). At most 120 words. The output also carries `lever: { kind: "offer" | "threat" | "none"; claim: string }`: whether the player put something on the table. The engine, not the model, decides what a lever is worth: an offer becomes an undertaking the player is held to, and only if it is something that actor wants; a threat lowers standing. Fallback: a recital of the record, with levers spotted by keyword. The fuller shape below (levers checked against state, position changes) is the target, not what is built.
+
 
 One character speaks once, in any conversation: a DM, a call, a meeting, an answer to a question you asked. This is the job that runs most often.
 
@@ -500,7 +504,7 @@ These are design targets, set so the smallest supported local model (an 8,000-to
 
 A model with a larger context window gets more history and more memories in the same layout.
 
-**Calls per turn.** Two before the turn commits: `policy.compile` (when orders were sent) and `turn.adjudicate` (when orders were sent or a week or more passes). After the commit: one `chronicle.write` in `brief` mode if anything notable happened, up to three `policy.react` per order from M1, and `turn.review` only for a major event. A move of a day or less with nothing ordered makes none. Everything else waits for the player to open or ask.
+**Calls per turn.** Two before the turn commits: `policy.compile` (when orders were sent) and `turn.adjudicate` (when orders were sent or a week or more passes). After the commit: up to three `policy.react` per order, written side by side, and `turn.review` only for a major event. A move of a day or less with nothing ordered makes none. Everything else waits for the player to open or ask.
 
 ## How to build from this tab
 

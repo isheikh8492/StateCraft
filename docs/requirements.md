@@ -137,8 +137,9 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-JOB-22 | `intel.report` must contain no fact beyond the items the engine supplied; errors in a report are decided by the engine.                                                            | M2  | J Later jobs                    | CHECK         |
 | REQ-JOB-23 | `scene.write` must never be called when the victim is a real, living person.                                                                                                       | M3  | J Later jobs; P Lethal          | CHECK         |
 | REQ-JOB-24 | A chronicle entry may introduce figures the engine does not hold only by declaring each as a detail; details must be stored, reused on the same thread, and must never restate or contradict an engine-owned quantity. | M1 | J chronicle.write | CHECK |
-| REQ-JOB-25 | Up front, a notable event must get only a headline and one or two sentences; its full piece (about 50, 150 or 400 words for minor, significant and major) must be written only when the player opens the entry. | M1 | J chronicle.write | CHECK |
+| REQ-JOB-25 | A notable event's one-line summary must serve as its headline with no model call; its full account (about 50, 150 or 400 words by weight, scaled by the Detail setting) must be written only when the player opens the entry. Reactions must be openable in the same way. | M1 | J chronicle.write | CHECK |
 | REQ-JOB-26 | A quote in the chronicle must belong to an actor listed as a speaker for that event, must be stored as that actor's utterance, and must be shown set apart and marked simulated. | M1 | J chronicle.write | CHECK, E2E |
+| REQ-JOB-27 | The player must be able to choose how much is written (Brief, Standard, Rich); the choice must set the length of reactions and full accounts and take effect on the next piece written. | M1 | O Speed | CHECK, E2E |
 
 ## 7. Policy desk (POL)
 
@@ -155,6 +156,7 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-POL-09 | Before execution, each affected advisor must be able to attach notes on cost, legality, likely reaction and time to a box.                                                                | M1  | O Policy desk                   | E2E         |
 | REQ-POL-10 | A policy with no catalogue entry must be resolved by analogy to named known policies and must not be penalised for being new.                                                             | M2  | E Open by design                | BENCH       |
 | REQ-POL-11 | An order too vague to act on must be sent as written and answered by an event in the world; the game must not stop to ask the player a question. | M0 | O Policy compiler | E2E |
+| REQ-POL-12 | Before a box is sent, the player's office must be able to add advice worked out by rules with no model call: that the order is outside the office's powers, that it needs a vote, or who is known to object. Advice must never hold a box back. | M1 | O Policy desk | INV, E2E |
 
 ## 8. Clock (CLK)
 
@@ -297,6 +299,13 @@ Requirements for M0 and M1 are written to be testable as they stand. Requirement
 | REQ-ACT-22 | A response may schedule a later beat decided by dice; each beat must be its own event citing the order as its cause. | M1 | O Every order gets an answer | INV |
 | REQ-ACT-23 | Responses must appear in the chronicle beside the order, on the policy's page, and in the inbox when addressed to the player. | M1 | O Every order gets an answer | E2E |
 | REQ-ACT-24 | Until other countries are modelled, foreign actors must be able to appear in the cast as reactors that speak and take positions only. | M1 | O Every order gets an answer | REVIEW |
+| REQ-ACT-25 | Each member of the cast must have a standing toward the player that moves only through recorded causes: orders it likes or dislikes, undertakings given, kept or lapsed, and threats. No model output may move it directly. | M1 | O Standing | INV |
+| REQ-ACT-26 | Standing must never be shown as a number; the player must see a stance word and whether it is warming or cooling. | M1 | O Standing | E2E |
+| REQ-ACT-27 | An offer made in conversation must be recorded as an undertaking with a due date, shown to the player, credited at once only if it is something that actor wants, and resolved as kept or lapsed by the engine. | M1 | O Standing | INV, E2E |
+| REQ-ACT-28 | A lapsed undertaking must cost more standing than keeping it would have earned, and must be recorded as a public event. | M1 | O Standing | INV |
+| REQ-ACT-29 | The standing of an actor that leads a bloc in the legislature must sway that bloc's votes. | M1 | O Standing | INV |
+| REQ-ACT-30 | Members of the cast must write to the player unasked on defined triggers (an order that cuts against a partner, an undertaking kept or lapsed, a crisis line, escalating unrest, a lost vote, a court stay); unread messages must be counted, and a move to the next major event must stop when one arrives. | M1 | O The world comes to you | INV, E2E |
+| REQ-ACT-31 | After an order sent with a move of less than a day, the cast's responses must reach the player one at a time over the following hours, and the number still expected must be shown. | M1 | O The world comes to you | INV |
 
 ## 15. Inbound events and intrigue (EVT)
 
@@ -451,15 +460,15 @@ These are named in the spec but not specified well enough to test:
 | DATA      | 11           |
 | ENG       | 25           |
 | HARN      | 11           |
-| JOB       | 26           |
-| POL       | 11           |
+| JOB       | 27           |
+| POL       | 12           |
 | CLK       | 13           |
 | READ      | 18           |
 | UI        | 9            |
 | PERF      | 20           |
 | MAP       | 13           |
 | WORLD     | 10           |
-| ACT       | 24           |
+| ACT       | 31           |
 | EVT       | 12           |
 | PLY       | 17           |
 | CONF      | 13           |
@@ -468,6 +477,6 @@ These are named in the spec but not specified well enough to test:
 | TEST      | 14           |
 | MEM       | 8            |
 | OPEN      | 8            |
-| **Total** | **303**      |
+| **Total** | **312**      |
 
 The total includes three withdrawn requirements (REQ-JOB-06, REQ-JOB-14 and REQ-POL-03), which keep their ids.

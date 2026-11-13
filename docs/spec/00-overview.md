@@ -188,7 +188,9 @@ Decided in play-testing: cost is not the constraint, waiting is. The game is tun
 - **Small prompts.** Each job is given a compact description of its output, not a full schema, and only the judge receives the world brief. Fixed text comes first so servers can reuse it.
 - **Short where it does not show.** Internal reasoning and structured fields are kept terse; length is spent only on prose the player reads.
 - **Fewer second tries.** Structured jobs get two repairs; prose gets one, then built-in wording.
-- **Up to three written reactions per order,** chosen by how strongly each actor is touched; the rest are summarised in one line.
+- **Up to three written reactions per order,** chosen by how strongly each actor is touched; the rest are named in one line.
+- **No call for headlines.** An event's own one-line summary is its headline, so nothing is written for the chronicle until you open an entry.
+- **You choose how much is written.** A Detail setting (Brief, Standard, Rich) sets how long reactions and full accounts run: about 60, 150 or 250 words for a reaction, and a full account 0.6, 1 or 1.6 times its normal length. Longer reads better and takes longer.
 - **Measured.** The Inspector shows, per turn, the time to first result, the time to last word, and every call.
 
 ## Responsiveness
@@ -293,6 +295,9 @@ A pill at the top of the screen shows the date, with an arrow on each side. Righ
 **Back.** The left arrow opens history, described under "Knowing what happened".
 
 ## Policy desk and advisors
+
+**A word before you send.** Under each unsent box your own office may add a line: that the order is outside your powers and why, that it needs a vote in the legislature, or who is known to object to this kind of measure. This is worked out by rules from the box's wording and the cast's known dislikes; no model is asked, and nothing is held back. It is advice, not a reading of what you meant, and you can ignore it.
+
 
 Setting policy is just typing. You write what you want in plain words and press **+**, and it becomes a card. Each card holds one idea, and before the turn resolves the game turns the pile of cards into a clean slate of distinct policies.
 
@@ -525,7 +530,43 @@ A policy is not a change to a number. It is an act that other people see, and th
 
 **Limits.** The engine caps responses per order and per resolution so a long advance stays affordable; actors that are only lightly touched are batched into one line. A response can never invent a number or change control of territory.
 
+## Standing, and being held to your word
+
+Every member of the cast has a standing toward you: a number from -100 to 100 that you never see. You see a stance word (hostile, wary, watchful, on your side) and whether it is warming or cooling.
+
+**It moves only for recorded reasons.** Nothing a model says can move it directly.
+
+| Cause | Effect (placeholder sizes) |
+| --- | --- |
+| You issue an order of a kind the actor likes | Rises a little |
+| You issue an order of a kind the actor dislikes | Falls a little more: losses count for more than gains |
+| You give the actor an undertaking in conversation | Rises on credit |
+| You keep the undertaking | Rises again, and the actor says so |
+| The undertaking lapses unkept | Falls by more than keeping it would have earned, and the actor says so in public |
+| You threaten the actor | Falls |
+
+- **Words of friendship move nobody.** Only something put on the table counts.
+- **An undertaking is a debt.** When you tell an actor you will do something it wants, the game records it, shows it to you with its due date (45 days), and holds you to it. It is kept when you issue an order of a kind that actor wants. (To be tightened: checking that you did the specific thing you said.)
+- **Only something the actor wants can be owed to it.** An offer of something it has no interest in earns nothing.
+- **Standing has consequences.** A party leader's standing sways how its bloc votes in the legislature. An actor's current stance is given to whoever writes its words, so a partner you have alienated answers your next order differently.
+- **Not yet built:** the fuller model described under "Persuasion" in the engine rules (information, third parties, public pressure, trust and red lines). This section is its first, simpler form.
+
 ## The world comes to you
+
+**Built first: messages from the cast.** After a turn, members of the cast write to you unasked when something calls for it:
+
+| Trigger | Who writes |
+| --- | --- |
+| An order cuts against a partner you rely on (an ally, the army, a lender, a province) | That partner, privately |
+| An undertaking is kept, or lapses | The actor it was given to |
+| A crisis line is crossed | Your finance adviser |
+| A region's unrest escalates | Your security adviser |
+| A measure is voted down, or an order is stayed by the courts | Your chief of staff |
+
+Messages appear in that person's conversation, unread ones are counted on the People button, and "to next major event" stops when one arrives. They are in built-in wording for now, so they cost no model call.
+
+**Answers arrive by the hour.** When you send an order with a move of less than a day, the cast's answers reach you one at a time over the following hours (after one, three and six hours), and the chronicle says how many are still expected. A move of a day or more brings them all.
+
 
 Most of what you deal with arrives unasked: leaders call, ministers resign, provinces defy you, markets panic. The Director generates inbound events from five sources, and paces them so every turn has something to answer and no turn is a flood.
 

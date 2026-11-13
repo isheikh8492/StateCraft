@@ -1,5 +1,21 @@
 # Progress
 
+## Start here
+
+If you are picking this project up cold, read this section, then the tables below.
+
+- **What exists:** a playable slice. You are Prime Minister of Pakistan from November 2026: write orders, move time, see who answers, ask people, give undertakings, look back, rewind.
+- **Not verified:** nothing has been run on Windows by the author of the code; CI has not run since the map moved to MapLibre; a full session on a real model has not been recorded. The M0 gate is still open for that reason.
+- **Next, in order:**
+  1. Check that an undertaking was kept by its specifics, not just by the kind of order issued.
+  2. Give the judge a memory beyond the last eight events, and carry detail figures forward (same mechanism).
+  3. Personas, plots and betrayal: actors with traits and motives who act first. With it, ways to lose office (a confidence vote, a coup, an election), so there is something to scheme for.
+  4. Two more persuasion levers: information, and pressure through a third party.
+  5. Model-written messages from advisers and allies, after the commit.
+  6. A turn report and a docked layout that keeps the map visible.
+- **Waiting on the player:** whether to keep the advice line under boxes.
+- **Ideas noted, not planned:** a coding-agent CLI as a fourth way to connect a model; a "look" action on a region; exporting a whole campaign's model calls for comparing models.
+
 Where the build stands and what comes next. Update this file in the same commit as the work it describes.
 
 ## Working agreement
@@ -16,8 +32,8 @@ Scope: one country (Pakistan), one position (head of government), policy only. G
 | --- | --- | --- |
 | 1. Skeleton, design system, first screen-to-ledger path | Done | |
 | 2. Engine: budget, approval, unrest, control | Done | Pakistan scenario pack with sources. Golden 12-month run. Decision record 0005. |
-| 3. Model harness and the seven M0 jobs | Done | Package `models`: OpenAI-compatible, Anthropic and Gemini adapters; parse, check, repair twice, fall back; refusal handling; call log; scripted stand-in model; in-app model check. |
-| 4. Clock and resolution | Done | Package `director`: compile, adjudicate, apply, narrate, report, each saved before the next; resume after a stop; cancel; conflicts held for a choice; blocked orders returned with the reason; advance up to six months; early stop on a crisis. |
+| 3. Model harness and jobs | Done | Package `models`: OpenAI-compatible, Anthropic and Gemini adapters; parse, check, repair, fall back; refusal handling; call log; scripted stand-in model; in-app model check. Jobs in use: `policy.compile`, `turn.adjudicate`, `turn.review`, `policy.react`, `actor.reply`, `chronicle.write` (on demand). |
+| 4. Clock and turns | Done | Package `director`: compile, adjudicate, apply, then commit; each step saved before the next; resume after a stop; cancel; conflicts held for a choice; blocked orders returned with the reason; reactions follow the commit. Decision records 0006 and 0007. |
 | 5. Reading the world | Done in part (see below) | Chronicle with links to events and policies, policy pages built from the record, briefing with state of play, monthly digests, MapLibre map of regions with no tile service. See gaps. |
 | 6. Saves and branches | Done | Snapshot at every commit, rewind to any saved point or any date onto a new branch, old line kept. Decision record 0006. |
 | 7. Developer tools | Done | Inspector with every model call and a cost meter; true numbers behind a developer switch. |
@@ -68,7 +84,7 @@ The speed slice and the first part of M1, built together.
 | Speed | A turn commits after two model calls at most (reading the boxes, judging the period). Nothing is written before the commit. A move of under a week with nothing ordered calls no model. Prompts carry a compact output shape, and the world brief only where needed. |
 | The time control | A date pill with the hour. Right arrow: to next major event, 1 hour, 1 day, 1 week, 1 month, 3 months, 6 months, 1 year, or a specific date; any of them sends the desk first. Left arrow opens history. |
 | History | By turn (your move, then the world's response) and by time. |
-| Depth on demand | Entries are short. "Read the full account" writes the long piece once and saves it. |
+| Depth on demand | Entries are short. "Read the full account" on any entry, including a reaction, writes the long piece once and saves it. A Detail setting (Brief, Standard, Rich) sets how long reactions and accounts run. |
 | The cast | Sixteen Pakistani stakeholders with interests, stance and voice (authored; see the scenario's SOURCES.md). |
 | Reactions | Every order that takes effect is answered: the engine picks who is touched, up to three answer in full after the turn commits, side by side, and the rest are named. An answer can be an action with bounded effects. |
 | Later beats | A reaction can set up a follow-up that the dice decide on its day (a lull holds or breaks), recorded as its own event citing the order. |
