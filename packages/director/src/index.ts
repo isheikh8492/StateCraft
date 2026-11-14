@@ -46,6 +46,8 @@ import {
   asksForOrders,
   type CompiledPolicy,
   chronicleWrite,
+  dropEchoes,
+  gist,
   type Harness,
   INSTRUMENT_REFS,
   policyCompile,
@@ -1802,9 +1804,17 @@ export function createDirector(options: DirectorOptions): Director {
       return { dueDay: r.fromDay + Math.floor(hour / 24), dueHour: hour % 24 };
     };
     const stateNow = Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage]));
+    // Background only: what has happened, not what anyone said about it. A model shown an
+    // actor's last statement gives it again, about whatever the new order is.
     const recent = allEvents(p)
+      .filter((e) => e.kind !== 'reaction' && e.kind !== 'move')
       .slice(-6)
-      .map((e) => ({ when: e.date, summary: e.summary }));
+      .map((e) => ({ when: e.date, summary: gist(e.summary, 200) }));
+    // What each actor has said so far in this campaign, newest last.
+    const saidBy = new Map<string, string[]>();
+    for (const past of p.resolutions.values())
+      for (const x of past.reactions?.reactions ?? [])
+        saidBy.set(x.actor, [...(saidBy.get(x.actor) ?? []), x.text]);
     const others: Record<string, string[]> = {};
     const asked: {
       policy?: PolicyRecord;
@@ -1904,6 +1914,8 @@ export function createDirector(options: DirectorOptions): Director {
     // and pay for the same prompt again and again: ask for the whole turn's answers at once.
     // A hosted model writes them side by side, which is faster there (REQ-PERF-05).
     let answers: (Answer | undefined)[];
+    // Answers that came from the built-in wording, not from a model.
+    const builtIn = new Set<number>();
     // The words are shown as they are written, unless the answers are due over the coming
     // hours: those must not be read before they arrive.
     const live = !r.hours && days !== 1;
@@ -1919,7 +1931,7 @@ export function createDirector(options: DirectorOptions): Director {
     try {
       // Asked for together: the given items, whose answers are filed by their place in `items`.
       const together = async (indexes: number[]) => {
-        const { output } = await harness.run(
+        const { output, via } = await harness.run(
           turnReactions,
           {
             items: indexes.flatMap((n) => items[n] ?? []),
@@ -1937,12 +1949,13 @@ export function createDirector(options: DirectorOptions): Director {
               }
             : undefined,
         );
+        if (via === 'fallback') for (const n of indexes) builtIn.add(n);
         return indexes.map((n) => [n, output.answers[items[n]?.key ?? '']] as const);
       };
       const alone = async (n: number) => {
         const item = items[n];
         if (!item?.order) return [n, undefined] as const;
-        const { output } = await harness.run(
+        const { output, via } = await harness.run(
           policyReact,
           {
             order: item.order,
@@ -1955,6 +1968,7 @@ export function createDirector(options: DirectorOptions): Director {
           context,
           live ? { onDraft: (strings) => setDraft(draftId(n), strings.text ?? '') } : undefined,
         );
+        if (via === 'fallback') builtIn.add(n);
         return [n, output] as const;
       };
       const all = [...items.keys()];
@@ -1987,6 +2001,12 @@ export function createDirector(options: DirectorOptions): Director {
     for (const [n, { policy, actor, motive }] of asked.entries()) {
       const out = answers[n];
       if (!out) continue;
+      // Whatever the model was told, a line this actor has used before is taken out. If
+      // nothing new is left, the actor has nothing to add and is not heard from this time.
+      // The built-in wording is the same every time by design, and is left alone.
+      const fresh = builtIn.has(n) ? out.text : dropEchoes(out.text, saidBy.get(actor.id) ?? []);
+      if (fresh === undefined) continue;
+      out.text = fresh;
       const eventId = `${id}-x${n + 1}`;
       const where = policy?.region ?? motive?.region ?? actor.cares.regions[0];
       // What the event follows from: the order it answers, or the actor's own initiative.

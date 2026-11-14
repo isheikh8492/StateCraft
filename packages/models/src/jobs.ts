@@ -867,7 +867,8 @@ const REACT_RULES = `You voice one actor in a political simulation answering an 
 - "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
 - "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
 - "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...".
-- Stay within what this actor could really do. Use no figures that are not in the input.`;
+- Stay within what this actor could really do. Use no figures that are not in the input.
+- Speak about this order and nothing else. Do not bring up an earlier order, an earlier grievance or an earlier demand unless this order is about the same thing: an answer to a tax rise is about the tax rise.`;
 
 const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
   obj(
@@ -1062,7 +1063,7 @@ export const turnReactions: Job<ReactBatchIn, ReactBatchOut> = {
     '{"why":string,"answers":{"<item key>":{"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}}}',
   usesBrief: true,
   repairs: 1,
-  version: 2,
+  version: 3,
   role: 'narrator',
   maxTokens: 6000,
   rules: `${REACT_RULES}
@@ -1460,6 +1461,70 @@ export function dropRepeated(
   const kept = all.filter((part) => !said.has(plain(part.sentence)));
   if (kept.length === all.length) return { text, dropped: 0 };
   return kept.length === 0 ? undefined : { text: rejoin(kept), dropped: all.length - kept.length };
+}
+
+/** What somebody was quoted as saying in a text: each quoted passage long enough to matter. */
+const quotesIn = (text: string) =>
+  [...text.matchAll(/["“]([^"“”]{25,})["”]/g)].map((m) => plain(m[1] ?? ''));
+
+/** The words of a sentence that carry its meaning: the longer ones, in lower case. */
+const contentWords = (sentence: string) =>
+  new Set(
+    sentence
+      .toLowerCase()
+      .replace(/[^a-z0-9 -]/g, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length > 4),
+  );
+/** Whether most of what a sentence says was already in an earlier one. */
+const mostlyIn = (sentence: Set<string>, earlier: Set<string>) => {
+  if (sentence.size < 6) return false;
+  let shared = 0;
+  for (const word of sentence) if (earlier.has(word)) shared += 1;
+  return shared / sentence.size >= 0.6;
+};
+
+/**
+ * Takes out of a statement what its speaker has said before: a sentence repeated word for
+ * word or nearly so, or one built around a quotation already used. A model shown, or remembering, an
+ * actor's last statement gives the same line again about an unrelated order. Returns
+ * nothing at all if nothing new is left.
+ */
+export function dropEchoes(text: string, earlier: readonly string[]): string | undefined {
+  const sentences = new Set(
+    earlier
+      .flatMap((e) => sentencesOf(e))
+      .map((part) => plain(part.sentence))
+      .filter((sentence) => sentence.length > 30),
+  );
+  const quotes = new Set(earlier.flatMap(quotesIn));
+  if (sentences.size === 0 && quotes.size === 0) return text;
+  const before = earlier.flatMap((e) => sentencesOf(e)).map((part) => contentWords(part.sentence));
+  // Quotations are checked over the whole text first: one can run across sentences.
+  let fresh = text;
+  for (const match of text.matchAll(/["“]([^"“”]{25,})["”]/g))
+    if (quotes.has(plain(match[1] ?? ''))) fresh = fresh.replace(match[0], '\u0000');
+  const kept = sentencesOf(fresh).filter(
+    (part) =>
+      !part.sentence.includes('\u0000') &&
+      !sentences.has(plain(part.sentence)) &&
+      !before.some((old) => mostlyIn(contentWords(part.sentence), old)),
+  );
+  return kept.length === 0 ? undefined : rejoin(kept);
+}
+
+/**
+ * The gist of a statement for a model to read as background: its first sentence, without
+ * the quotations. Enough to know what was said; nothing to copy a line from.
+ */
+export function gist(text: string, max = 160): string {
+  const bare = text
+    .replace(/["“][^"“”]{12,}["”]/g, '')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const first = sentencesOf(bare)[0]?.sentence.trim() ?? bare;
+  return first.length <= max ? first : `${first.slice(0, max).replace(/\s+\S*$/, '')}…`;
 }
 
 /** Numbers the steps of a list 1, 2, 3 again, after mending has taken some of them out. */

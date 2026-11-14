@@ -8,8 +8,10 @@ import {
   actorReply,
   asksForOrders,
   chronicleWrite,
+  dropEchoes,
   dropInvented,
   dropRepeated,
+  gist,
   INSTRUMENT_REFS,
   policyCompile,
   policyReact,
@@ -648,5 +650,39 @@ describe('full accounts', () => {
     };
     expect(chronicleWrite.mend?.(recorded, report)).toEqual([]);
     expect(chronicleWrite.check(recorded, report)).toEqual([]);
+  });
+});
+
+describe('an actor that has spoken before', () => {
+  // What the local model wrote in play, turn after turn, about unrelated orders.
+  const first =
+    'Pakistan Tehreek-e-Insaf slammed the Prime Minister’s order, calling it a sham move. The party leader declared, "The government appoints Jamiat Ulema-e-Islam as mediator while it hides its own failures and betrays the people of Balochistan." PTI vowed to stage mass street protests across major cities.';
+  const again =
+    'Pakistan Tehreek-e-Insaf blasted the new directive as a feeble attempt to placate Sindh. "The government appoints Jamiat Ulema-e-Islam as mediator while it hides its own failures and betrays the people of Balochistan," PTI leader declared, vowing protests. The party will mobilise supporters in Karachi on Friday.';
+
+  it('does not get to use the same line twice', () => {
+    expect(dropEchoes(again, [first])).toBe(
+      'Pakistan Tehreek-e-Insaf blasted the new directive as a feeble attempt to placate Sindh. The party will mobilise supporters in Karachi on Friday.',
+    );
+    // Nothing new at all: nothing is left, and the actor is not heard from.
+    expect(dropEchoes(first, [first])).toBeUndefined();
+    // Said again in slightly different words, as the model did next: still a repeat.
+    expect(
+      dropEchoes(
+        'Pakistan Tehreek-e-Insaf called street protests in Islamabad and major cities, demanding the dismissal of Jamiat Ulema-e-Islam as a mediator and accusing the government of illegitimacy. It wants the fuel price rise reversed by Friday.',
+        [
+          'Pakistan Tehreek-e-Insaf announced it would stage street protests in Islamabad and major cities, demanding the dismissal of Jamiat Ulema-e-Islam as a mediator.',
+        ],
+      ),
+    ).toBe('It wants the fuel price rise reversed by Friday.');
+    // Nothing said before: left as written.
+    expect(dropEchoes(again, [])).toBe(again);
+  });
+
+  it('is shown to a model only in gist, with no line to copy', () => {
+    expect(gist(first)).toBe(
+      'Pakistan Tehreek-e-Insaf slammed the Prime Minister’s order, calling it a sham move.',
+    );
+    expect(gist(again)).not.toContain('Jamiat');
   });
 });
