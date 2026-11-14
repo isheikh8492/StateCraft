@@ -1393,6 +1393,11 @@ export interface ReplyIn {
    * that advice can end in something that can be done.
    */
   canOrder?: { instruments: string[]; regions: string[] };
+  /**
+   * The asker asked for orders they can put on the desk. The game reads this from the
+   * question; when it is set, an adviser's reply must come with at least one.
+   */
+  wantOrders?: boolean;
   /** Who is who: the people and bodies of the country, so that advice can name them. */
   people?: string[];
   /**
@@ -1465,13 +1470,60 @@ export function renumber(text: string): string {
   return text.replace(step, (_all, lead: string) => `${lead}${++n}.`);
 }
 
+/**
+ * Whether a question asks, in any of the usual ways, for orders to put on the desk: by
+ * name ("draft the orders", "give me policy boxes"), or by asking what to do ("what should
+ * I do", "how do we...", "give me a plan"). The game decides this, not the model, so that
+ * someone who asks for boxes always gets them.
+ */
+export function asksForOrders(question: string): boolean {
+  const q = question.toLowerCase();
+  return (
+    /\b(orders?|box(es)?|polic(y|ies)|drafts?|draft (it|them|this|that)|decrees?|directives?|instructions?|measures?|action items?|steps?|plan|proposals?|propose|suggest(ions?)?|recommend(ations?)?|options?)\b/.test(
+      q,
+    ) ||
+    /\b(what (should|can|could|do|would|must) (i|we|you)\b.*\b(do|order|issue|announce|sign|send)|what (do|would) you (advise|have me do)|what now|what next|how (do|should|can|could|would) (i|we)\b|put (it|them|this|that) on (the|my) desk|write (it|them|this|that) up|make it happen|get it done)/.test(
+      q,
+    )
+  );
+}
+
+/** Words an instruction opens with: what marks a line of advice as something to order. */
+const IMPERATIVE =
+  /^(announce|send|offer|order|direct|instruct|convene|raise|cut|launch|deploy|appoint|open|release|freeze|expand|meet|call|issue|table|negotiate|suspend|establish|set up|create|publish|withdraw|increase|reduce|hold|invite|authori[sz]e|approve|ban|lift|impose|allocate|fund|task|summon|brief|sign|start|begin|declare|schedule|restore|remove|dismiss|replace|form|pass|introduce|extend|grant|pay|move|close|commission|require|review|audit|transfer|post|station|arrest|pardon|recall|dispatch|write|tell|ask|give|make|bring|put|keep|stop|end|double|halve|cap|subsidi[sz]e|tax|exempt|build|repair|buy|sell|import|export|secure|protect|reinforce|visit|address|broadcast|promise|commit|engage|reach out|work with|use|have)\b/i;
+
+/**
+ * Orders read out of an adviser's own advice: the steps of its lists that open with an
+ * instruction. Used when orders were asked for and the model wrote the advice but left
+ * the orders out, so that the advice still ends in something that can be put on the desk.
+ */
+export function ordersFromReply(reply: string): string[] {
+  const found: string[] = [];
+  for (const line of reply.split('\n')) {
+    const item = /^\s*(?:\d{1,2}[.)]|[-*•])\s+(.*)$/.exec(line);
+    if (!item?.[1]) continue;
+    // Without emphasis marks, and without a bold lead-in such as "Step one:".
+    let text = item[1]
+      .replace(/\*\*/g, '')
+      .replace(/^[^:.]{1,40}:\s+(?=[A-Z])/, '')
+      .trim();
+    if (!IMPERATIVE.test(text)) continue;
+    const first = sentencesOf(text)[0]?.sentence.trim() ?? text;
+    text = (first.length >= 30 ? first : text).slice(0, 280).trim();
+    if (text.length < 20 || found.includes(text)) continue;
+    found.push(/[.!?]$/.test(text) ? text : `${text}.`);
+    if (found.length === 5) break;
+  }
+  return found;
+}
+
 export const actorReply: Job<ReplyIn, ReplyOut> = {
   name: 'actor.reply',
   shape:
-    '{"why":string,"reply":string,"details":[{"label":string,"value":string}],"orders":string[],"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
+    '{"why":string,"details":[{"label":string,"value":string}],"orders":string[],"reply":string,"lever":{"kind":"offer"|"threat"|"none","claim":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 4,
+  version: 5,
   role: 'narrator',
   maxTokens: 3500,
   rules: `You speak as one person or body in a political simulation, answering the head of government ("asker").
@@ -1485,7 +1537,10 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
 - If "actor.kind" is "advisor", you work for the asker, like a senior official who wants the boss to succeed and tells them the truth. For a serious question write a briefing in headed sections that fit it, such as: what you are really asking; what will actually happen if you do it, and who will do what; what I would do instead, or how to do it well; my advice in two sentences. Say plainly when a step is a mistake and why, then show the better way to the same end. If the asker has heard your objection and still wants it done, drop it and give the best way to do it.
 - Otherwise, give a view, not a list: what this means to you, what you want, what you would need to see. You may disagree with the asker.
 - Layout: plain paragraphs. A section starts with a line "## Heading". A list item starts with "- " or "1. ". Put "**" around the few words that carry a point. Nothing else: no tables, no code, no stage directions, no narration. "reply" holds only what you say: the orders go in "orders", never in a section of the reply.
-- "orders": only if "actor.kind" is "advisor" and something can be done: up to five orders the asker could issue to carry out what was discussed, each one sentence in the asker's own voice as an instruction ("Announce that...", "Send...", "Offer..."), saying who, what, where and by when, and of a kind listed in "canOrder" where one fits. They are drafts for the asker to use or ignore. Otherwise an empty list.
+- "orders" comes before "reply": settle what the asker should order, then write the advice around it. Only if "actor.kind" is "advisor". Each is one sentence in the asker's own voice as an instruction ("Announce that...", "Send...", "Offer..."), saying who, what, where and by when, and of a kind listed in "canOrder" where one fits. They are drafts the asker can put on their desk with one click, or ignore. Up to five.
+  - If "wantOrders" is true the asker asked for them: give at least one, and one for each step you recommend. Never answer that request with advice alone.
+  - Otherwise use your judgment. Give them whenever your advice comes down to something the asker should do. Leave the list empty when the question is only a matter of fact (who someone is, what something means, what has happened) or when your advice is to wait and do nothing.
+  - If you are not an adviser: an empty list.
 - "lever": did the asker put something on the table for you? "offer" if they undertook to do something this actor wants (state it in "claim" as one plain sentence, "The Prime Minister will ..."); "threat" if they threatened this actor; otherwise "none". Words of friendship, arguments, questions, and anything said to their own adviser are "none". An offer does not change your position by itself: say what you would need to see.`,
   output: ReplyOut,
   schema: (input) =>
@@ -1493,8 +1548,10 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
       why: WHY,
       // Names are settled before the writing starts, so that what is written uses them.
       details: list(obj({ label: str(80), value: str(160) }), 10),
+      // Orders are settled before the advice is written, like names: left to the end of a
+      // long reply, they are the part a model leaves out. Asked for, there is at least one.
+      orders: list(str(280), 5, input.wantOrders && input.actor.kind === 'advisor' ? 1 : 0),
       reply: str(roomFor(input.words)),
-      orders: list(str(280), 5),
       lever: obj({ kind: pick(LEVERS), claim: str(200) }),
     }),
   mend(input, out) {
@@ -1548,6 +1605,12 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
       fixes.push('lever: dropped, since nothing said to your own adviser is an offer or a threat');
     }
     out.orders = out.orders.map((order) => order.trim()).filter((order) => order.length >= 12);
+    // Asked for and not given: read them out of the advice itself before asking again.
+    if (adviser && input.wantOrders && out.orders.length === 0) {
+      out.orders = ordersFromReply(out.reply);
+      if (out.orders.length > 0)
+        fixes.push(`orders: ${out.orders.length} read out of the advice, since none were drafted`);
+    }
     return fixes;
   },
   check(input, out) {
@@ -1555,6 +1618,10 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
     // date, an amount or an article is advice with nothing in it. The world's own figures
     // are kept honest by what the actor is given, and what it invents is put on record.
     const problems: string[] = [];
+    if (input.actor.kind === 'advisor' && input.wantOrders && out.orders.length === 0)
+      problems.push(
+        'The asker asked for orders to put on their desk and "orders" is empty. Give at least one: a single sentence each, as an instruction in the asker\'s own voice.',
+      );
     const earlier = input.earlier.map((turn) => turn.reply);
     if (earlier.length > 0 && dropRepeated(out.reply, earlier) === undefined)
       problems.push(

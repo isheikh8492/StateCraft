@@ -6,6 +6,7 @@ import { createHarness, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
   actorReply,
+  asksForOrders,
   chronicleWrite,
   dropInvented,
   dropRepeated,
@@ -465,6 +466,53 @@ describe('answers from people', () => {
     const schema = actorReply.schema(replyIn) as any;
     expect(schema.properties.orders.maxItems).toBe(5);
     expect(schema.properties.reply.maxLength).toBeGreaterThan(1000);
+  });
+
+  it('gives boxes whenever they are asked for, and leaves a matter of fact alone', () => {
+    // The game reads the request, however it is put.
+    for (const q of [
+      'Draft the orders for that.',
+      'Give me policy boxes I can send.',
+      'What should I do about the strike?',
+      'How do we calm Quetta?',
+      'Give me a plan.',
+    ])
+      expect(asksForOrders(q), q).toBe(true);
+    for (const q of ['Who is the Chief Justice?', 'Has the vote happened yet?'])
+      expect(asksForOrders(q), q).toBe(false);
+
+    const asked = { ...replyIn, wantOrders: true };
+    // Asked for, the schema will not accept an empty list, and they come before the advice.
+    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
+    const schema = actorReply.schema(asked) as any;
+    expect(schema.properties.orders.minItems).toBe(1);
+    const keys = Object.keys(schema.properties);
+    expect(keys.indexOf('orders')).toBeLessThan(keys.indexOf('reply'));
+    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
+    expect((actorReply.schema(replyIn) as any).properties.orders.minItems).toBe(0);
+
+    // A model that wrote the plan and left the orders out: they are read from its own steps.
+    const plan = {
+      why: '',
+      reply:
+        'Here is what I would do.\n\n1. **Send the Interior Minister to Quetta** on Thursday to meet the sardars.\n2. The mood there is bad.\n- Announce a thirty-day pause in operations in two districts.',
+      details: [],
+      orders: [] as string[],
+      lever: { kind: 'none' as const, claim: '' },
+    };
+    actorReply.mend?.(asked, plan);
+    expect(plan.orders).toEqual([
+      'Send the Interior Minister to Quetta on Thursday to meet the sardars.',
+      'Announce a thirty-day pause in operations in two districts.',
+    ]);
+    expect(actorReply.check(asked, plan)).toEqual([]);
+
+    // Nothing to read them from: the model is asked again.
+    const bare = { ...plan, reply: 'It is a hard question.', orders: [] as string[] };
+    actorReply.mend?.(asked, bare);
+    expect(actorReply.check(asked, bare)[0]).toMatch(/asked for orders/);
+    // Not asked for, an answer without orders is fine.
+    expect(actorReply.check(replyIn, { ...bare })).toEqual([]);
   });
 });
 

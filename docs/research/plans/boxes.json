@@ -1,0 +1,5 @@
+[
+  { "ask": ["principal_secretary", "Who is responsible for flood relief in Sindh?"] },
+  { "ask": ["finance_minister", "Flour prices keep rising. What should I do about it?"] },
+  { "ask": ["interior_minister", "Give me policy boxes I can send to calm Balochistan."] }
+]

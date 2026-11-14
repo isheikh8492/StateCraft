@@ -1,0 +1,134 @@
+{
+ "summary": {
+  "model": "openai/gpt-oss-20b",
+  "finalDate": "2026-11-01",
+  "calls": 3,
+  "firstTry": 3,
+  "repaired": 0,
+  "fellBack": 0,
+  "schemaEnforced": 3,
+  "fixedLocally": 2,
+  "tokensIn": 6410,
+  "tokensOut": 1184,
+  "thinkingTokens": 120,
+  "meanFirstTokenMs": 4820,
+  "meanTokensPerSecond": 19.8,
+  "meanTurnWaitS": null,
+  "maxTurnWaitS": null,
+  "meanSettledS": null,
+  "perJob": {
+   "actor.reply v5": {
+    "calls": 3,
+    "fellBack": 0,
+    "repaired": 0,
+    "meanMs": 24819,
+    "meanOut": 394.7
+   }
+  },
+  "events": 0,
+  "moves": 0,
+  "failedSteps": 0
+ },
+ "model": "openai/gpt-oss-20b",
+ "steps": [
+  {
+   "label": "1. {\"ask\":[\"principal_secretary\",\"Who is responsible for flood relief in Sindh?\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 15896,
+   "calls": [
+    "06aae69b-81cc-402e-990f-b06dfd906c04"
+   ]
+  },
+  {
+   "label": "2. {\"ask\":[\"finance_minister\",\"Flour prices keep rising. What should I do about it?\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 32237,
+   "calls": [
+    "7ab38e2d-f6c8-4c38-93cf-c8f1d3c50a17"
+   ]
+  },
+  {
+   "label": "3. {\"ask\":[\"interior_minister\",\"Give me policy boxes I can send to calm Balochistan.\"]}",
+   "date": "2026-11-01",
+   "committedMs": 0,
+   "settledMs": 27202,
+   "calls": [
+    "9223ba3f-c5f6-4019-8481-972a3b81c0d3"
+   ]
+  }
+ ],
+ "calls": [
+  {
+   "step": "1. {\"ask\":[\"principal_secretary\",\"Who is responsible for flood relief in Sindh?\"]}",
+   "id": "06aae69b-81cc-402e-990f-b06dfd906c04",
+   "resolution": "talks",
+   "job": "actor.reply v5",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [],
+   "tokensIn": 2128,
+   "tokensOut": 144,
+   "reasoningTokens": 37,
+   "ms": 15430,
+   "promptHash": "fa6354edc397445a",
+   "ttftMs": 8248,
+   "tokensPerSecond": 20.1,
+   "inputChars": 2385,
+   "outputChars": 522
+  },
+  {
+   "step": "2. {\"ask\":[\"finance_minister\",\"Flour prices keep rising. What should I do about it?\"]}",
+   "id": "7ab38e2d-f6c8-4c38-93cf-c8f1d3c50a17",
+   "resolution": "talks",
+   "job": "actor.reply v5",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "lever: dropped, since nothing said to your own adviser is an offer or a threat"
+   ],
+   "tokensIn": 2130,
+   "tokensOut": 565,
+   "reasoningTokens": 23,
+   "ms": 31867,
+   "promptHash": "5d39b3f6e02d52f9",
+   "ttftMs": 3058,
+   "tokensPerSecond": 19.6,
+   "inputChars": 2380,
+   "outputChars": 2548
+  },
+  {
+   "step": "3. {\"ask\":[\"interior_minister\",\"Give me policy boxes I can send to calm Balochistan.\"]}",
+   "id": "9223ba3f-c5f6-4019-8481-972a3b81c0d3",
+   "resolution": "talks",
+   "job": "actor.reply v5",
+   "model": "openai/gpt-oss-20b",
+   "strategy": "schema",
+   "schemaEnforced": true,
+   "via": "model",
+   "attempts": 1,
+   "errors": [],
+   "fixes": [
+    "lever: dropped, since nothing said to your own adviser is an offer or a threat"
+   ],
+   "tokensIn": 2152,
+   "tokensOut": 475,
+   "reasoningTokens": 60,
+   "ms": 27160,
+   "promptHash": "8c193b86286e90db",
+   "ttftMs": 3154,
+   "tokensPerSecond": 19.8,
+   "inputChars": 2472,
+   "outputChars": 1895
+  }
+ ]
+}

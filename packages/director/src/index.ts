@@ -43,6 +43,7 @@ import {
   type Allowed,
   type Answer,
   actorReply,
+  asksForOrders,
   type CompiledPolicy,
   chronicleWrite,
   type Harness,
@@ -2713,6 +2714,8 @@ export function createDirector(options: DirectorOptions): Director {
                     instruments: CATALOGUE.map((c) => c.title),
                     regions: now.world.regions.map((x) => x.name),
                   },
+                  // Whether boxes were asked for is the game's reading, not the model's.
+                  ...(asksForOrders(question) ? { wantOrders: true } : {}),
                 }
               : {}),
           },
