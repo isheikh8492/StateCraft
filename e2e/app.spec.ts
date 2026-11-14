@@ -43,7 +43,7 @@ test('a campaign starts: you take office and the map shows the country', async (
   await expect(win(page, 'Briefing').getByText('Inflation')).toBeVisible();
 });
 
-test('a policy box keeps your words, survives a reload, and can be edited, moved and deleted', async ({
+test('a policy box keeps your words, survives a reload, and can be edited and removed', async ({
   page,
 }) => {
   await page.goto('/');
@@ -64,12 +64,11 @@ test('a policy box keeps your words, survives a reload, and can be edited, moved
   await page.reload();
   await expect(boxes(page)).toHaveCount(2);
 
-  await boxes(page).nth(1).getByRole('button', { name: 'Move policy box up' }).click();
-  await expect(boxes(page).first()).toContainText('port union');
-  await boxes(page).first().getByRole('button', { name: 'Edit policy box' }).click();
+  // The plan is numbered; clicking a box's words edits them in place, and Enter saves.
+  await expect(page.getByText("This turn's plan · 2")).toBeVisible();
+  await boxes(page).nth(1).getByRole('button', { name: 'Edit policy box' }).click();
   await page.getByRole('textbox', { name: 'Edit policy box' }).fill('Raise the sales tax slightly');
-  await boxes(page).first().getByRole('button', { name: 'Save' }).click();
-  await boxes(page).first().getByRole('button', { name: 'Move policy box down' }).click();
+  await page.getByRole('textbox', { name: 'Edit policy box' }).press('Enter');
   await expect(boxes(page).nth(1)).toContainText('Raise the sales tax slightly');
 
   await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
@@ -86,7 +85,7 @@ test('moving time sends your orders; the world answers, and each order has a pag
   await move(page, /1 month later/);
 
   // The turn lands without a reload: the desk is clear and the date has moved.
-  await expect(page.getByText('No policy boxes yet')).toBeVisible();
+  await expect(boxes(page)).toHaveCount(0);
   await expect(date(page)).toHaveText('1 December 2026');
 
   // What happened, one card to an event, opening on the latest page. The first page holds
@@ -153,7 +152,7 @@ test('conflicting boxes are held until you choose', async ({ page }) => {
 
   await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
   await move(page, /1 week later/);
-  await expect(page.getByText('No policy boxes yet')).toBeVisible();
+  await expect(boxes(page)).toHaveCount(0);
   await expect(date(page)).toHaveText('8 December 2026');
 });
 
@@ -168,8 +167,8 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await page.getByRole('button', { name: 'Send 1 box and run to the next thing' }).click();
   await expect(page.getByTestId('game-hour')).toHaveText('10:00');
   await expect(date(page)).toHaveText('8 December 2026');
-  // The desk says only what is left to send; what happened is in the chronicle.
-  await expect(page.getByRole('status', { name: 'Desk status' })).toHaveText(/^Nothing to send/);
+  // With the plan sent, the button at the end of the line is play again.
+  await expect(page.getByRole('button', { name: 'Run to the next thing' })).toBeVisible();
 
   await move(page, /3 months later/);
   await expect(date(page)).toHaveText('9 March 2027');

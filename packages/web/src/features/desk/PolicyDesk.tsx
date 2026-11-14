@@ -1,23 +1,10 @@
 import { type CardView, RESOLUTION_STEPS } from '@statecraft/protocol';
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  LoaderCircle,
-  Pencil,
-  Pin,
-  Play,
-  Plus,
-  SquarePen,
-  Trash2,
-} from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, useState } from 'react';
+import { Check, LoaderCircle, Pin, Play, Plus, X } from 'lucide-react';
+import { type FormEvent, type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useGame } from '@/lib/game';
 import { Button } from '@/ui/button';
-import { EmptyState } from '@/ui/empty-state';
-import { Textarea } from '@/ui/textarea';
 
 const MAX_LENGTH = 2000;
 const STEP_LABEL: Record<string, string> = {
@@ -27,10 +14,27 @@ const STEP_LABEL: Record<string, string> = {
   commit: 'Saving',
 };
 
-/** Where policy is set: type what you want to do, press +, and it becomes a box. */
+/** A text box that grows with what is typed, up to a few lines. */
+function useGrow(value: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    box.style.height = 'auto';
+    box.style.height = `${Math.min(box.scrollHeight, 160)}px`;
+  }, [value]);
+  return ref;
+}
+
+/**
+ * Where policy is set. One line to type an action into; each action becomes a numbered
+ * row of this turn's plan; the button at the end of the line sends the plan and runs the
+ * clock to the next thing that needs you.
+ */
 export function PolicyDesk() {
   const { view, act, error, clearError, moment, lookAt } = useGame();
   const [draft, setDraft] = useState('');
+  const grow = useGrow(draft);
   const cards = view?.cards ?? [];
   const fresh = cards.filter((c) => !c.sent).length;
   const running = view?.running ?? null;
@@ -39,6 +43,7 @@ export function PolicyDesk() {
   const conflictStillOpen = (blocked?.conflicts ?? []).some((c) =>
     c.cards.every((id) => cards.some((card) => card.id === id)),
   );
+  const closed = view?.campaign == null || moment !== null;
 
   const add = async () => {
     const text = draft.trim();
@@ -56,51 +61,30 @@ export function PolicyDesk() {
       void add();
     }
   };
+  const send = fresh > 0 ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'}` : '';
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="min-h-0 flex-1 overflow-auto">
-        {view === null && <p className="p-4 text-fg-muted">Loading…</p>}
-        {view !== null && cards.length === 0 && (
-          <EmptyState icon={SquarePen} title="No policy boxes yet">
-            Type what you want your government to do, in your own words, and press + to add it as a
-            box. One idea per box works best.
-          </EmptyState>
-        )}
-        {cards.length > 0 && (
-          <ul aria-label="Policy boxes" className="flex flex-col gap-2 p-3">
+    <div className="flex h-full min-w-0 flex-col justify-end overflow-hidden">
+      {view === null && <p className="p-4 text-fg-muted">Loading…</p>}
+      {cards.length > 0 && (
+        <section aria-label="This turn's plan" className="min-h-0 overflow-auto px-3 pt-3">
+          <p className="label-caps mb-1.5 text-fg-subtle">This turn's plan · {cards.length}</p>
+          <ol aria-label="Policy boxes" className="flex flex-col gap-1.5">
             {cards.map((card, index) => (
-              <li
+              <Row
                 key={card.id}
-                className={cn(
-                  'rounded-control border bg-surface-2 p-3',
-                  inConflict.has(card.id) && conflictStillOpen ? 'border-warn/60' : 'border-border',
-                )}
-              >
-                <BoxHead
-                  card={card}
-                  locked={running !== null}
-                  previous={cards[index - 1]?.id}
-                  afterNext={index < cards.length - 1 ? (cards[index + 2]?.id ?? null) : undefined}
-                />
-                {card.advice?.map((a) => (
-                  <p
-                    key={a.text}
-                    data-testid="advice"
-                    className="mt-2 border-t border-border pt-2 text-xs text-fg-muted"
-                  >
-                    <span className="label-caps mr-2 text-fg-subtle">{a.from}</span>
-                    {a.text}
-                  </p>
-                ))}
-              </li>
+                card={card}
+                number={index + 1}
+                locked={running !== null}
+                conflict={inConflict.has(card.id) && conflictStillOpen}
+              />
             ))}
-          </ul>
-        )}
-      </div>
+          </ol>
+        </section>
+      )}
 
       {blocked && conflictStillOpen && (
-        <div role="alert" className="border-t border-warn/40 bg-warn-soft px-3 py-2">
+        <div role="alert" className="mx-3 mt-2 rounded-control bg-warn-soft px-3 py-2">
           <p className="font-medium text-warn">Some boxes pull against each other</p>
           {blocked.conflicts.map((c) => (
             <p key={c.cards.join()} className="mt-1 text-xs text-fg-muted">
@@ -109,7 +93,7 @@ export function PolicyDesk() {
           ))}
           <div className="mt-2 flex items-center gap-2">
             <span className="flex-1 text-xs text-fg-muted">
-              Delete one of the marked boxes, or send both.
+              Remove one of the marked boxes, or send both.
             </span>
             <Button size="sm" onClick={() => void act(() => api.move({ days: 7 }, true))}>
               Send both anyway
@@ -121,7 +105,7 @@ export function PolicyDesk() {
       {error !== null && (
         <div
           role="alert"
-          className="flex items-center gap-2 border-t border-bad/40 bg-bad-soft px-3 py-2 text-bad"
+          className="mx-3 mt-2 flex items-center gap-2 rounded-control bg-bad-soft px-3 py-2 text-bad"
         >
           <span className="flex-1">{error}</span>
           <Button size="sm" onClick={clearError}>
@@ -133,7 +117,7 @@ export function PolicyDesk() {
       {running && (
         <section
           aria-label="Resolution progress"
-          className="border-t border-border bg-surface-2 px-3 py-2"
+          className="mx-3 mt-2 rounded-control bg-surface-2 px-3 py-2"
         >
           <ol className="flex flex-col gap-1">
             {(running.kind === 'execute' ? RESOLUTION_STEPS : RESOLUTION_STEPS.slice(1)).map(
@@ -175,7 +159,7 @@ export function PolicyDesk() {
       {moment && (
         <div
           role="status"
-          className="flex items-center gap-2 border-t border-accent/40 bg-accent-soft px-3 py-2 text-accent"
+          className="mx-3 mt-2 flex items-center gap-2 rounded-control bg-accent-soft px-3 py-2 text-accent"
         >
           <span className="flex-1 text-xs">
             You are looking at the past. Orders can only be given in the present.
@@ -185,154 +169,136 @@ export function PolicyDesk() {
           </Button>
         </div>
       )}
-      <form
-        onSubmit={onSubmit}
-        className="flex items-end gap-2 border-t border-border bg-surface-2 p-3"
-      >
-        <label htmlFor="policy-composer" className="flex-1">
-          <span className="sr-only">New policy box</span>
-          <Textarea
+
+      <form onSubmit={onSubmit} className="flex items-end gap-2 p-3">
+        <label htmlFor="policy-composer" className="sr-only">
+          New policy box
+        </label>
+        <div className="flex min-w-0 flex-1 items-end rounded-2xl border border-border bg-bg pr-1 focus-within:border-accent hover:border-border-strong">
+          <textarea
             id="policy-composer"
-            rows={2}
+            ref={grow}
+            rows={1}
             value={draft}
             maxLength={MAX_LENGTH}
-            placeholder="What do you want to do next?"
+            placeholder="Add an action for this turn…"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
+            className="min-w-0 flex-1 resize-none bg-transparent px-3.5 py-2.5 text-ui text-fg placeholder:text-fg-subtle focus-visible:outline-none"
           />
-        </label>
-        <Button
-          type="submit"
-          variant="primary"
-          size="icon"
-          className="size-8"
-          aria-label="Add policy box"
-          disabled={draft.trim() === '' || view?.campaign == null || moment !== null}
-        >
-          <Plus />
-        </Button>
-      </form>
-
-      {/* One press: whatever is on the desk goes out, and the clock runs to the next thing
-          that needs you. It moves in hours and never past the next morning. To skip further
-          ahead on purpose, the date control at the top is the place. */}
-      <div className="flex items-center gap-2 border-t border-border bg-surface px-3 py-2">
-        <p role="status" aria-label="Desk status" className="min-w-0 flex-1 text-xs text-fg-muted">
-          {/* Only the desk's own state. What happened, including what stopped the clock,
-              is told in the chronicle and nowhere else. */}
-          {fresh > 0
-            ? `${fresh} ${fresh === 1 ? 'box' : 'boxes'} to send.`
-            : 'Nothing to send. Play runs the clock to the next thing that needs you.'}
-        </p>
+          <Button
+            type="submit"
+            variant="ghost"
+            size="icon"
+            className="mb-1.5 rounded-full"
+            aria-label="Add policy box"
+            disabled={draft.trim() === '' || closed}
+          >
+            <Plus />
+          </Button>
+        </div>
+        {/* One press: whatever is in the plan goes out, and the clock runs to the next thing
+            that needs you, in hours and never past the next morning. To skip further ahead on
+            purpose, the date control at the top is the place. */}
         <Button
           variant="primary"
-          size="icon"
-          className="size-9 shrink-0 rounded-full"
-          aria-label={
-            fresh > 0
-              ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'} and run to the next thing`
-              : 'Run to the next thing'
-          }
+          className={cn('h-10 shrink-0 rounded-full', fresh > 0 ? 'px-4' : 'w-10 px-0')}
+          aria-label={send ? `${send} and run to the next thing` : 'Run to the next thing'}
           title={
-            fresh > 0
-              ? `Send ${fresh} ${fresh === 1 ? 'box' : 'boxes'}, then run to the next thing that needs you`
+            send
+              ? `${send}, then run to the next thing that needs you`
               : 'Run to the next thing that needs you'
           }
-          disabled={running !== null || view?.campaign == null || moment !== null}
+          disabled={running !== null || closed}
           onClick={() => void act(() => api.move({ next: true }))}
         >
-          <Play />
+          {fresh > 0 ? 'Send' : <Play />}
         </Button>
-      </div>
+      </form>
     </div>
   );
 }
 
-interface BoxHeadProps {
+interface RowProps {
   card: CardView;
+  number: number;
   locked: boolean;
-  /** The box above, to move before; undefined at the top. */
-  previous: string | undefined;
-  /** The box to land before when moving down (null for the end); undefined at the bottom. */
-  afterNext: string | null | undefined;
+  conflict: boolean;
 }
 
-/** A box's own words with its controls: edit in place, move, pin as standing, delete. */
-function BoxHead({ card, locked, previous, afterNext }: BoxHeadProps) {
+/** One action in the plan: its number, its words (click to edit), and a cross to remove it. */
+function Row({ card, number, locked, conflict }: RowProps) {
   const { act } = useGame();
   const [draft, setDraft] = useState<string | null>(null);
+  const grow = useGrow(draft ?? '');
   const save = async () => {
     const text = (draft ?? '').trim();
-    if (text !== '' && text !== card.text) await act(() => api.patchCard(card.id, { text }));
     setDraft(null);
+    if (text !== '' && text !== card.text) await act(() => api.patchCard(card.id, { text }));
   };
 
-  if (draft !== null) {
-    return (
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        <label htmlFor={`edit-${card.id}`} className="sr-only">
-          Edit policy box
-        </label>
-        <Textarea
-          id={`edit-${card.id}`}
-          rows={3}
-          value={draft}
-          maxLength={MAX_LENGTH}
-          autoFocus
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" variant="primary" disabled={draft.trim() === ''}>
-            Save
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
-            Cancel
-          </Button>
-        </div>
-      </form>
-    );
-  }
   return (
-    <>
-      <p className="break-words whitespace-pre-wrap text-fg">{card.text}</p>
-      <div className="mt-1 flex items-center gap-0.5">
-        {card.pinned && (
-          <span className="label-caps mr-1 text-accent">
-            {card.sent ? 'Standing · in force' : 'Standing'}
-          </span>
-        )}
-        <div className="flex-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Move policy box up"
-          disabled={locked || previous === undefined}
-          onClick={() => void act(() => api.patchCard(card.id, { beforeId: previous ?? null }))}
+    <li className="group">
+      <div className="flex items-start gap-2">
+        <span className="tabular mt-2 flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-2 text-2xs text-fg-muted">
+          {number}
+        </span>
+        <div
+          className={cn(
+            'min-w-0 flex-1 rounded-control border bg-surface-2',
+            conflict ? 'border-warn/60' : 'border-border',
+          )}
         >
-          <ArrowUp />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Move policy box down"
-          disabled={locked || afterNext === undefined}
-          onClick={() => void act(() => api.patchCard(card.id, { beforeId: afterNext ?? null }))}
-        >
-          <ArrowDown />
-        </Button>
+          {draft !== null ? (
+            <>
+              <label htmlFor={`edit-${card.id}`} className="sr-only">
+                Edit policy box
+              </label>
+              <textarea
+                id={`edit-${card.id}`}
+                ref={grow}
+                rows={1}
+                value={draft}
+                maxLength={MAX_LENGTH}
+                // biome-ignore lint/a11y/noAutofocus: opened by a click on the words to edit them.
+                autoFocus
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={() => void save()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void save();
+                  }
+                  if (event.key === 'Escape') setDraft(null);
+                }}
+                className="block w-full resize-none bg-transparent px-2.5 py-1.5 text-ui text-fg focus-visible:outline-none"
+              />
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-label="Edit policy box"
+              title="Click to edit"
+              disabled={locked}
+              onClick={() => setDraft(card.text)}
+              className="block w-full px-2.5 py-1.5 text-left break-words whitespace-pre-wrap text-fg disabled:cursor-default"
+            >
+              {card.text}
+            </button>
+          )}
+        </div>
         <Button
           variant="ghost"
           size="icon"
           aria-label={card.pinned ? 'Unpin policy box' : 'Pin policy box as standing'}
           aria-pressed={card.pinned === true}
           title="A pinned box stays on your desk as a standing instruction after it is executed."
-          className={card.pinned ? 'text-accent' : undefined}
+          className={cn(
+            'mt-0.5',
+            card.pinned
+              ? 'text-accent'
+              : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+          )}
           disabled={locked}
           onClick={() => void act(() => api.patchCard(card.id, { pinned: !card.pinned }))}
         >
@@ -341,23 +307,29 @@ function BoxHead({ card, locked, previous, afterNext }: BoxHeadProps) {
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Edit policy box"
-          disabled={locked}
-          onClick={() => setDraft(card.text)}
-        >
-          <Pencil />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
           aria-label="Delete policy box"
-          className="hover:text-bad"
+          className="mt-0.5 hover:text-bad"
           disabled={locked}
           onClick={() => void act(() => api.deleteCard(card.id))}
         >
-          <Trash2 />
+          <X />
         </Button>
       </div>
-    </>
+      {(card.pinned || (card.advice?.length ?? 0) > 0) && (
+        <div className="ml-7 mr-16 mt-0.5 space-y-0.5">
+          {card.pinned && (
+            <p className="label-caps text-accent">
+              {card.sent ? 'Standing · in force' : 'Standing'}
+            </p>
+          )}
+          {card.advice?.map((a) => (
+            <p key={a.text} data-testid="advice" className="text-xs text-fg-muted">
+              <span className="label-caps mr-1.5 text-fg-subtle">{a.from}</span>
+              {a.text}
+            </p>
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
