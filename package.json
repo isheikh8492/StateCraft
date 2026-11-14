@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,yellow \"npm run dev -w @statecraft/server\" \"npm run dev -w @statecraft/web\"",
     "build": "npm run build -w @statecraft/web",
-    "start": "npm run build && npm run start -w @statecraft/server -- --open",
+    "start": "node scripts/start.mjs --open",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "biome check .",
     "format": "biome check --write .",

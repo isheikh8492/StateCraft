@@ -7,15 +7,6 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-if not exist node_modules (
-  echo Installing StateCraft. This takes a minute the first time...
-  call npm install
-  if errorlevel 1 (
-    echo Install failed. See the messages above.
-    pause
-    exit /b 1
-  )
-)
 echo Starting StateCraft...
-call npm start
-pause
+node scripts\start.mjs --open
+if errorlevel 1 pause

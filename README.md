@@ -13,11 +13,10 @@ You need [Node.js](https://nodejs.org) 22.13 or newer. Nothing else.
 **Any system:**
 
 ```
-npm install
 npm start
 ```
 
-The first run installs dependencies and builds the app, then opens it in your browser at `http://127.0.0.1:4317`. Your campaign is saved in `data/campaign.statecraft`.
+That is all, every time. It installs what is needed only on the first run or after the dependencies change, and rebuilds the app only after its code changes; otherwise it goes straight to opening StateCraft in your browser at `http://127.0.0.1:4317`. Your campaign is saved in `data/campaign.statecraft`.
 
 ## Connect a model
 
