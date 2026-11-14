@@ -228,7 +228,7 @@ describe('a per-call schema', () => {
     expect(fixed.shapeOk).toBe(false);
   });
 
-  it('asks for a whole turn of answers at once, each actor with only its own options', () => {
+  it('asks for a whole turn of answers at once, each actor with only its own reach', () => {
     const items = [
       {
         key: 'a1',
@@ -245,7 +245,7 @@ describe('a per-call schema', () => {
           stance: 'neutral' as const,
           voice: 'terse',
         },
-        options: [{ id: 'back_publicly', label: 'Back it' }],
+        reach: [{ id: 'approval.security', label: 'support among military families' }],
       },
       {
         key: 'a2',
@@ -262,25 +262,88 @@ describe('a per-call schema', () => {
           stance: 'hostile' as const,
           voice: 'threatening',
         },
-        options: [{ id: 'step_up_attacks', label: 'Step up attacks' }],
+        reach: [{ id: 'grievance.kp', label: 'unrest in Khyber Pakhtunkhwa' }],
       },
     ];
     const batch = { items, words: 60, state: {}, recent: [] };
     // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
     const schema = turnReactions.schema(batch) as any;
     expect(schema.properties.answers.required).toEqual(['a1', 'a2']);
-    expect(schema.properties.answers.properties.a1.properties.option.enum).toEqual([
-      'back_publicly',
-    ]);
-    expect(schema.properties.answers.properties.a2.properties.option.enum).toEqual([
-      'step_up_attacks',
-    ]);
+    // No list of things to do: only what each can press on, and never how hard.
+    const press = (key: string) =>
+      schema.properties.answers.properties[key].properties.move.properties.presses.items.properties;
+    expect(press('a1').on.enum).toEqual(['approval.security']);
+    expect(press('a2').on.enum).toEqual(['grievance.kp']);
+    expect(Object.keys(press('a1'))).toEqual(['on', 'way']);
+    expect(schema.properties.answers.properties.a1.properties.option).toBeUndefined();
 
     // With no model, every item still gets its own templated answer.
     const out = turnReactions.fallback(batch);
     expect(Object.keys(out.answers)).toEqual(['a1', 'a2']);
     expect(out.answers.a1).toMatchObject({ kind: 'action', option: 'back_publicly' });
     expect(turnReactions.check(batch, out)).toEqual([]);
+  });
+
+  it('lets an actor devise its own move, inside its reach, and leaves the size to the game', () => {
+    const reactIn = {
+      order: {
+        id: 'p1',
+        text: 'Raise the sales tax.',
+        summary: 'Tax.',
+        instrument: 'sales_tax_rise',
+      },
+      actor: {
+        id: 'pti',
+        name: 'PTI',
+        kind: 'opposition',
+        stance: 'hostile' as const,
+        voice: 'angry',
+      },
+      reach: [
+        { id: 'approval.urban_poor', label: 'support among the urban poor' },
+        { id: 'grievance.all', label: 'unrest across the country' },
+      ],
+      madeBefore: ['street protests'],
+      words: 60,
+      state: {},
+      recent: [],
+    };
+    const out = {
+      why: '',
+      kind: 'action' as const,
+      text: 'PTI petitioned the Supreme Court to strike the tax down.',
+      move: {
+        what: '  court petition ',
+        presses: [
+          { on: 'approval.urban_poor', way: 'lower' as const },
+          { on: 'growth', way: 'lower' as const },
+          { on: 'approval.urban_poor', way: 'raise' as const },
+        ],
+      },
+    };
+    const fixes = policyReact.mend?.(reactIn, out) ?? [];
+    // What is outside its reach, or pressed twice, is dropped; the move stands.
+    expect(fixes).toEqual(['move.presses: dropped 2 outside its reach or given twice']);
+    expect(out).toMatchObject({
+      kind: 'action',
+      move: { what: 'court petition', presses: [{ on: 'approval.urban_poor', way: 'lower' }] },
+    });
+    expect(policyReact.check(reactIn, out)).toEqual([]);
+
+    // A move that presses on nothing it can reach is only words.
+    const empty = {
+      ...out,
+      move: { what: 'coup', presses: [{ on: 'growth', way: 'lower' as const }] },
+    };
+    policyReact.mend?.(reactIn, empty);
+    expect(empty.kind).toBe('statement');
+    expect(empty.move).toBeUndefined();
+
+    // An actor with nothing in reach is not offered the choice of acting.
+    // biome-ignore lint/suspicious/noExplicitAny: walking a JSON schema in a test.
+    const mute = policyReact.schema({ ...reactIn, reach: [] }) as any;
+    expect(mute.properties.kind.enum).toEqual(['statement', 'silence']);
+    expect(mute.properties.move).toBeUndefined();
   });
 
   it('reads an action nobody can take as a statement instead of asking again', () => {
@@ -298,7 +361,7 @@ describe('a per-call schema', () => {
         stance: 'friendly' as const,
         voice: 'smooth',
       },
-      options: [{ id: 'demand_concessions', label: 'Demand concessions' }],
+      reach: [{ id: 'approval.urban_middle', label: 'support among the urban middle class' }],
       words: 60,
       state: {},
       recent: [],
@@ -311,7 +374,8 @@ describe('a per-call schema', () => {
     };
     const fixes = policyReact.mend?.(reactIn, out) ?? [];
     expect(fixes).toEqual([
-      'kind: read as a statement, since "walk_out" is not one of its options',
+      'kind: read as a statement, since "walk_out" is not a move it has',
+      'kind: read as a statement, since the move presses on nothing in its reach',
     ]);
     expect(out).toMatchObject({ kind: 'statement' });
     expect(out.option).toBeUndefined();

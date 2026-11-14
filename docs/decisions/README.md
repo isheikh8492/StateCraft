@@ -19,3 +19,4 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0013](0013-the-clock-runs-by-the-hour-to-the-next-thing.md) | The clock runs by the hour, to the next thing that needs you | 2026-11-12 |
 | [0014](0014-invented-detail-is-allowed-and-recorded.md) | Invented detail is allowed, and recorded | 2026-11-12 |
 | [0015](0015-accounts-are-written-unasked-and-never-speak-for-the-player.md) | Accounts are written unasked for events that matter, and never speak for the player | 2026-11-13 |
+| [0016](0016-the-cast-devises-its-own-moves-and-the-engine-sizes-them.md) | The cast devises its own moves, and the engine sizes them | 2026-11-14 |

@@ -17,6 +17,6 @@ export {
 export * from './jobs.ts';
 export { findRegion, matchInstrument, type Ref } from './match.ts';
 export { partialStrings } from './partial.ts';
-export { REACTION_OPTIONS, type ReactionOption } from './reactions.ts';
+export { REACH, REACTION_OPTIONS, type ReactionOption } from './reactions.ts';
 export { clipWords, mend, type Schema } from './shape.ts';
 export { startStandIn } from './standin.ts';

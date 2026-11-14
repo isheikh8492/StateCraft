@@ -1,6 +1,7 @@
 import { CATALOGUE, type Direction, type Landing, type Scale } from '@statecraft/engine';
 import { z } from 'zod';
 import { findRegion, matchInstrument, OPPOSITES, type Ref } from './match.ts';
+import { REACTION_OPTIONS } from './reactions.ts';
 import {
   bool,
   clipWords,
@@ -832,8 +833,14 @@ export interface ReactIn {
     stance: 'hostile' | 'wary' | 'neutral' | 'friendly';
     voice: string;
   };
-  /** Things this actor is able to do, beyond speaking. May be empty. */
-  options: Ref[];
+  /**
+   * The parts of the world this actor is able to move by acting, as the engine tracks
+   * them. Not a list of things to do: what it does is for the model to invent. Empty for
+   * an actor that can only speak.
+   */
+  reach: Ref[];
+  /** The kinds of move this actor has made lately, so that it does not make them again. */
+  madeBefore?: string[];
   /** The most the response may run to, in words. Set by the player's detail setting. */
   words: number;
   state: Record<string, number | string>;
@@ -846,10 +853,22 @@ const Later = z.object({
   ifYes: z.string().min(1),
   ifNo: z.string().min(1),
 });
+const WAYS = ['raise', 'lower'] as const;
+/**
+ * A move the actor devised for itself: what kind of move it is, in a few words, and the
+ * parts of the world it presses on. How hard it presses is the engine's to decide.
+ */
+const Move = z.object({
+  what: z.string().min(1),
+  presses: z.array(z.object({ on: z.string(), way: z.enum(WAYS) })).default([]),
+});
+export type Move = z.infer<typeof Move>;
 const Answer = z.object({
   kind: z.enum(KINDS),
   text: z.string().min(1),
+  /** One of the built-in moves. Only the wording used without a model sets this. */
   option: z.string().optional(),
+  move: Move.optional(),
   later: Later.optional(),
 });
 export type Answer = z.infer<typeof Answer>;
@@ -858,24 +877,38 @@ const ReactOut = z.object({
   kind: z.enum(KINDS),
   text: z.string().min(1),
   option: z.string().optional(),
+  move: Move.optional(),
   later: Later.optional(),
 });
 export type ReactOut = z.infer<typeof ReactOut>;
 
 const REACT_RULES = `You voice one actor in a political simulation answering an order the head of government has just given. Answer as that actor would: from its interests, its stance toward the government, and in its own voice.
 - Respond to what the order actually says ("order.text"), not to a generic policy.
-- "kind": "statement" (it speaks), "action" (it does one of the things in "options", and you set "option" to that id), or "silence" (it pointedly says nothing).
+- "kind": "statement" (it speaks), "action" (it does something, described in "move"), or "silence" (it pointedly says nothing).
+- "move", for an action only: what the actor does is yours to invent. Nothing is on a list. Think what this actor, with its people, its money, its seats, its guns or its pulpit, would really do about this order at this moment: a walkout, a petition to the courts, a boycott, a leak, a shutdown, a march, a blockade, a deal with a rival, an ultimatum with a date, a quiet instruction to its own people, something nobody expected. Make it fit the actor and the order, and make it different from "madeBefore", which lists the kinds of move it has made lately: escalate one of those only if that is what it would truly do.
+  - "what": the kind of move in two to five plain words, with no names ("court petition", "boycott of parliament").
+  - "presses": one to three of the things in "reach" that this move would shift, each with "way": "raise" or "lower". These are what the move puts pressure on. You do not say how hard: the game decides that from the actor's strength, and decides by chance whether the move comes off at all.
+  - If "reach" is empty the actor can only speak: use "statement".
 - "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
-- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...".
+- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...". Each says only what this actor, its followers or the public did. Never write that the government, the cabinet, parliament or the head of government did, decided, conceded or suspended anything: that is the player's to decide.
 - Stay within what this actor could really do. Use no figures that are not in the input.
 - Speak about this order and nothing else. Do not bring up an earlier order, an earlier grievance or an earlier demand unless this order is about the same thing: an answer to a tax rise is about the tax rise.`;
 
-const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
+const answerSchema = (reach: readonly Ref[], wordLimit: number): Schema =>
   obj(
     {
-      kind: pick(KINDS),
+      // An actor with nothing in reach can only speak or stay silent.
+      kind: pick(reach.length > 0 ? KINDS : KINDS.filter((k) => k !== 'action')),
+      // The move is settled before it is written up, so that the report describes it.
+      ...(reach.length > 0
+        ? {
+            move: obj({
+              what: str(60),
+              presses: list(obj({ on: pick(ids(reach)), way: pick(WAYS) }), 3, 1),
+            }),
+          }
+        : {}),
       text: str(roomFor(wordLimit)),
-      option: pick(ids(options)),
       later: obj({
         inDays: int(1, 90),
         question: str(160),
@@ -883,7 +916,7 @@ const answerSchema = (options: readonly Ref[], wordLimit: number): Schema =>
         ifNo: str(300),
       }),
     },
-    ['option', 'later'],
+    ['move', 'later'],
   );
 
 /**
@@ -954,9 +987,10 @@ export function dropInvented(
  */
 function mendAnswer(
   answer: Answer,
-  options: readonly Ref[],
+  reach: readonly Ref[],
   wordLimit: number,
   known: unknown,
+  kind?: string,
 ): string[] {
   const fixes: string[] = [];
   const sound = dropInvented(answer.text, known);
@@ -973,18 +1007,33 @@ function mendAnswer(
     delete answer.later;
     fixes.push('later: dropped, since it stated figures that are not in the input');
   }
-  const offered = options.some((o) => o.id === answer.option);
-  if (answer.kind === 'action' && !offered) {
-    fixes.push(
-      answer.option === undefined
-        ? 'kind: read as a statement, since no action was named'
-        : `kind: read as a statement, since "${answer.option}" is not one of its options`,
-    );
+  // A built-in move is one this kind of actor has; a devised one presses on what is in reach.
+  const builtIn = (REACTION_OPTIONS[kind ?? ''] ?? []).some((o) => o.id === answer.option);
+  if (answer.option !== undefined && !builtIn) {
+    if (answer.kind === 'action' && !answer.move)
+      fixes.push(`kind: read as a statement, since "${answer.option}" is not a move it has`);
+    delete answer.option;
+  }
+  if (answer.move) {
+    const within = answer.move.presses.filter((press) => reach.some((r) => r.id === press.on));
+    // One press on each thing: the last word on a thing pressed both ways is dropped.
+    const once = within.filter((press, i) => within.findIndex((x) => x.on === press.on) === i);
+    if (once.length !== answer.move.presses.length)
+      fixes.push(
+        `move.presses: dropped ${answer.move.presses.length - once.length} outside its reach or given twice`,
+      );
+    answer.move.presses = once.slice(0, 3);
+    answer.move.what = answer.move.what.trim().slice(0, 60);
+    if (answer.kind !== 'action') {
+      delete answer.move;
+      fixes.push('move: dropped, since this is not an action');
+    } else if (answer.move.presses.length === 0 || answer.move.what === '') {
+      delete answer.move;
+    }
+  }
+  if (answer.kind === 'action' && !answer.move && answer.option === undefined) {
+    fixes.push('kind: read as a statement, since the move presses on nothing in its reach');
     answer.kind = 'statement';
-    delete answer.option;
-  } else if (answer.kind !== 'action' && answer.option !== undefined) {
-    fixes.push('option: dropped, since this is not an action');
-    delete answer.option;
   }
   if (words(answer.text) > Math.round(wordLimit * 1.2)) {
     const before = words(answer.text);
@@ -997,22 +1046,22 @@ function mendAnswer(
 export const policyReact: Job<ReactIn, ReactOut> = {
   name: 'policy.react',
   shape:
-    '{"why":string,"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}',
+    '{"why":string,"kind":"statement"|"action"|"silence","move"?:{"what":string,"presses":[{"on":string,"way":"raise"|"lower"}]},"text":string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}',
   usesBrief: true,
   repairs: 1,
-  version: 2,
+  version: 3,
   role: 'narrator',
   maxTokens: 2000,
   rules: REACT_RULES,
   output: ReactOut,
   schema: (input) => {
-    const answer = answerSchema(input.options, input.words) as {
+    const answer = answerSchema(input.reach, input.words) as {
       properties: Record<string, Schema>;
       required: string[];
     };
-    return obj({ why: WHY, ...answer.properties }, ['option', 'later']);
+    return obj({ why: WHY, ...answer.properties }, ['move', 'later']);
   },
-  mend: (input, out) => mendAnswer(out, input.options, input.words, input),
+  mend: (input, out) => mendAnswer(out, input.reach, input.words, input, input.actor.kind),
   check(input, out) {
     const invented = inventedNumbers(
       `${out.text} ${out.later?.ifYes ?? ''} ${out.later?.ifNo ?? ''}`,
@@ -1044,7 +1093,8 @@ export interface ReactBatchIn {
      */
     motive?: { reason: string; region?: Ref };
     actor: ReactIn['actor'];
-    options: Ref[];
+    reach: Ref[];
+    madeBefore?: string[];
   }[];
   /** The most each response may run to, in words. */
   words: number;
@@ -1060,21 +1110,21 @@ export type ReactBatchOut = z.infer<typeof ReactBatchOut>;
 export const turnReactions: Job<ReactBatchIn, ReactBatchOut> = {
   name: 'turn.reactions',
   shape:
-    '{"why":string,"answers":{"<item key>":{"kind":"statement"|"action"|"silence","text":string,"option"?:string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}}}',
+    '{"why":string,"answers":{"<item key>":{"kind":"statement"|"action"|"silence","move"?:{"what":string,"presses":[{"on":string,"way":"raise"|"lower"}]},"text":string,"later"?:{"inDays":number,"question":string,"ifYes":string,"ifNo":string}}}}',
   usesBrief: true,
   repairs: 1,
-  version: 3,
+  version: 4,
   role: 'narrator',
   maxTokens: 6000,
   rules: `${REACT_RULES}
 
-You are given several items at once. Answer every one of them, in "answers", keyed by that item's "key". Each actor answers only its own item's order, in its own voice; do not let one answer echo another. "option" for an item must be an id from that item's own "options".
+You are given several items at once. Answer every one of them, in "answers", keyed by that item's "key". Each actor answers only its own item's order, in its own voice; do not let one answer echo another, and do not let two actors make the same kind of move. An item's "move" may press only on things in that item's own "reach".
 
-An item with a "motive" and no "order" is not an answer to anything. That actor is moving first, on its own initiative, for the reason given in "motive". Decide what it does and write it as news: a demand, a march, an attack, an ultimatum, a warning, a walkout, an offer, a visit, a leak. Make it specific, make it something the head of government will have to deal with, and do not present it as a response to an order. "silence" is not allowed for these items. Prefer "action" when one of its options fits, and give a "later" follow-up when the move could go either way.`,
+An item with a "motive" and no "order" is not an answer to anything. That actor is moving first, on its own initiative, for the reason given in "motive". Decide what it does and write it as news: a demand, a march, an attack, an ultimatum, a warning, a walkout, an offer, a visit, a leak. Make it specific, make it something the head of government will have to deal with, and do not present it as a response to an order. "silence" is not allowed for these items. Prefer "action" when the actor has anything in "reach". For every action, give a "later" follow-up: "ifYes" is the move coming off as the actor meant it, "ifNo" is it falling flat.`,
   output: ReactBatchOut,
   schema(input) {
     const answers: Record<string, Schema> = {};
-    for (const item of input.items) answers[item.key] = answerSchema(item.options, input.words);
+    for (const item of input.items) answers[item.key] = answerSchema(item.reach, input.words);
     return obj({
       why: WHY,
       answers: {
@@ -1095,11 +1145,13 @@ An item with a "motive" and no "order" is not an answer to anything. That actor 
         answer.kind = 'statement';
         fixes.push(`${item.key}.kind: read as a statement, since a move cannot be silence`);
       }
-      for (const fix of mendAnswer(answer, item.options, input.words, [
-        item,
-        input.state,
-        input.recent,
-      ]))
+      for (const fix of mendAnswer(
+        answer,
+        item.reach,
+        input.words,
+        [item, input.state, input.recent],
+        item.actor.kind,
+      ))
         fixes.push(`${item.key}.${fix}`);
     }
     return fixes;
@@ -1133,7 +1185,7 @@ An item with a "motive" and no "order" is not an answer to anything. That actor 
       const { why: _why, ...answer } = templateReaction({
         order: item.order,
         actor: item.actor,
-        options: item.options,
+        reach: item.reach,
         words: input.words,
         state: input.state,
         recent: input.recent,
@@ -1149,7 +1201,7 @@ function templateMove(item: ReactBatchIn['items'][number]): Answer {
   const { actor } = item;
   const name = actor.name;
   const where = item.motive?.region?.label ?? 'the country';
-  const has = (id: string) => item.options.some((o) => o.id === id);
+  const has = (id: string) => (REACTION_OPTIONS[actor.kind] ?? []).some((o) => o.id === id);
   const say = (text: string, later?: Answer['later']): Answer => ({
     kind: 'statement',
     text,
@@ -1235,7 +1287,7 @@ function templateReaction(input: ReactIn): ReactOut {
   const { actor, order } = input;
   const name = actor.name;
   const where = order.region?.label ?? 'the country';
-  const has = (id: string) => input.options.some((o) => o.id === id);
+  const has = (id: string) => (REACTION_OPTIONS[actor.kind] ?? []).some((o) => o.id === id);
   const security = order.instrument === 'security_operation';
   const settlement = order.instrument === 'regional_settlement';
   const austerity = ['fuel_subsidy_cut', 'sales_tax_rise', 'development_spending_cut'].includes(

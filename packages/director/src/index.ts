@@ -16,6 +16,7 @@ import {
   type EngineEvent,
   fiscalCost,
   type Instrument,
+  isValidTarget,
   type Landing,
   landed as landedRange,
   landing,
@@ -52,6 +53,7 @@ import {
   INSTRUMENT_REFS,
   policyCompile,
   policyReact,
+  REACH,
   REACTION_OPTIONS,
   type Size,
   turnAdjudicate,
@@ -177,6 +179,8 @@ interface ReactionRecord {
   unprompted?: boolean;
   kind: 'statement' | 'action' | 'silence';
   text: string;
+  /** For a move the actor devised: the kind of move, in a few words. */
+  what?: string;
   /** When word of it reaches the player. After a move of hours, answers come in one by one. */
   dueDay?: number;
   dueHour?: number;
@@ -191,6 +195,70 @@ interface TalkRecord {
   orders?: string[];
 }
 /** A follow-up the dice will decide on its day. */
+/** How strongly each kind of actor can move the world when it acts, before seats and mood. */
+const CLOUT: Readonly<Record<string, number>> = {
+  military: 0.9,
+  militant: 0.8,
+  lender: 0.8,
+  province: 0.6,
+  religious: 0.6,
+  business: 0.6,
+  ally: 0.5,
+  opposition: 0.5,
+};
+
+/**
+ * How hard an actor's move lands, from 0.2 to 1. The engine decides this, never a model:
+ * a party is as strong as its seats, and those who live off discontent are stronger the
+ * less the public likes the government (decision record 0016).
+ */
+function strengthOf(actor: Scenario['cast'][number], scenario: Scenario, world: World): number {
+  let strength = CLOUT[actor.kind] ?? 0;
+  const house = scenario.government?.legislature;
+  const bloc = house?.blocs.find((b) => b.id === actor.bloc);
+  if (house && bloc) strength = 0.3 + 0.7 * Math.min(1, bloc.seats / house.majority);
+  if (['opposition', 'militant', 'religious'].includes(actor.kind)) {
+    const liked = world.groups.reduce((sum, g) => sum + g.approval, 0) / world.groups.length;
+    strength *= 1 + (50 - liked) / 100;
+  }
+  return Math.min(1, Math.max(0.2, strength));
+}
+
+/**
+ * The parts of the world an actor can move by acting, named for a model to choose among.
+ * `regionId` is the region the matter concerns, if it concerns one.
+ */
+function reachOf(
+  actor: Scenario['cast'][number],
+  world: World,
+  regionId: string | undefined,
+): { id: string; label: string }[] {
+  const out = new Map<string, string>();
+  const unrest = (id: string) => {
+    const region = world.regions.find((x) => x.id === id);
+    if (region) out.set(`grievance.${id}`, `unrest in ${region.name}`);
+  };
+  const approval = (id: string) => {
+    const group = world.groups.find((g) => g.id === id);
+    if (group) out.set(`approval.${id}`, `the government's support among ${group.name}`);
+  };
+  for (const pattern of REACH[actor.kind] ?? []) {
+    if (pattern === 'approval.*') for (const g of world.groups) approval(g.id);
+    else if (pattern === 'grievance.*') {
+      out.set('grievance.all', 'unrest across the country');
+      for (const x of world.regions) unrest(x.id);
+    } else if (pattern === 'grievance.own') {
+      const own = regionId ? [regionId] : actor.cares.regions;
+      if (own.length === 0) out.set('grievance.all', 'unrest across the country');
+      for (const id of own) unrest(id);
+    } else if (pattern === 'grievance.all') out.set('grievance.all', 'unrest across the country');
+    else if (pattern.startsWith('approval.')) approval(pattern.slice('approval.'.length));
+    else if (pattern === 'growth') out.set('growth', 'economic growth');
+    else if (pattern === 'inflation') out.set('inflation', 'prices');
+  }
+  return [...out].filter(([id]) => isValidTarget(world, id)).map(([id, label]) => ({ id, label }));
+}
+
 interface Beat {
   id: string;
   dueDay: number;
@@ -198,6 +266,8 @@ interface Beat {
   place?: string;
   ifYes: string;
   ifNo: string;
+  /** The chance it goes the "yes" way. Even, unless the engine had reason to say otherwise. */
+  odds?: number;
 }
 interface ReactionData {
   reactions: ReactionRecord[];
@@ -1455,7 +1525,7 @@ export function createDirector(options: DirectorOptions): Director {
       }
       // Follow-ups set up by earlier reactions come due: the dice decide which way each goes.
       for (const beat of beats.filter((b) => b.dueDay === world.day)) {
-        const yes = roll(world.seed, `beat:${beat.id}`) < 0.5;
+        const yes = roll(world.seed, `beat:${beat.id}`) < (beat.odds ?? 0.5);
         emit(
           world.day,
           'beat',
@@ -1815,6 +1885,11 @@ export function createDirector(options: DirectorOptions): Director {
     for (const past of p.resolutions.values())
       for (const x of past.reactions?.reactions ?? [])
         saidBy.set(x.actor, [...(saidBy.get(x.actor) ?? []), x.text]);
+    // The kinds of move each has made, so that the next one is something else.
+    const madeBy = new Map<string, string[]>();
+    for (const past of p.resolutions.values())
+      for (const x of past.reactions?.reactions ?? [])
+        if (x.what) madeBy.set(x.actor, [...(madeBy.get(x.actor) ?? []), x.what]);
     const others: Record<string, string[]> = {};
     const asked: {
       policy?: PolicyRecord;
@@ -1906,7 +1981,9 @@ export function createDirector(options: DirectorOptions): Director {
           stance: stanceOf(standingNow.get(actor.id) ?? 0),
           voice: actor.voice,
         },
-        options: (REACTION_OPTIONS[actor.kind] ?? []).map((o) => ({ id: o.id, label: o.label })),
+        // What it can move, not what it can do: the move itself is the model's to invent.
+        reach: reachOf(actor, world, policy?.region ?? motive?.region),
+        ...(madeBy.has(actor.id) ? { madeBefore: (madeBy.get(actor.id) ?? []).slice(-3) } : {}),
       };
     });
     const before = ledger.latestSnapshot()?.seq;
@@ -1960,7 +2037,8 @@ export function createDirector(options: DirectorOptions): Director {
           {
             order: item.order,
             actor: item.actor,
-            options: item.options,
+            reach: item.reach,
+            ...(item.madeBefore ? { madeBefore: item.madeBefore } : {}),
             words: wordLimit,
             state: stateNow,
             recent,
@@ -2024,6 +2102,40 @@ export function createDirector(options: DirectorOptions): Director {
           resolveNovel(next, picks, { day: next.day, causes: [eventId], idPrefix: eventId }),
         );
       }
+      // A move the actor devised. The model said what it is and what it presses on; how
+      // hard, and whether it comes off at all, are decided here. Every such move has a
+      // follow-up, and the same throw of the dice decides both that and the effects, which
+      // begin on the day the follow-up is reported.
+      let later = out.later;
+      let odds: number | undefined;
+      if (out.kind === 'action' && out.move && !option) {
+        const strength = strengthOf(actor, scenario, world);
+        odds = 0.3 + 0.4 * strength;
+        later ??= {
+          inDays: 5,
+          question: 'Does it come off?',
+          ifYes: `${actor.name} carried through its ${out.move.what}, and it took hold.`,
+          ifNo: `The ${out.move.what} by ${actor.name} drew little support and faded.`,
+        };
+        if (roll(world.seed, `beat:${eventId}-b`) < odds) {
+          const share = strength / Math.sqrt(out.move.presses.length);
+          const picks = Object.fromEntries(
+            out.move.presses.map((press) => {
+              const limit = NOVEL_LIMITS[press.on.split('.')[0] ?? ''] ?? 0;
+              const amount = Math.round(limit * share * 100) / 100;
+              return [press.on, press.way === 'raise' ? amount : -amount];
+            }),
+          );
+          next = addEffects(
+            next,
+            resolveNovel(next, picks, {
+              day: world.day + later.inDays,
+              causes: [eventId],
+              idPrefix: eventId,
+            }),
+          );
+        }
+      }
       // An answer to an order comes in over the hours after it. Somebody moving first on a
       // day the clock has just reached does so later that day, at an hour the dice pick.
       const nowHour = r.hour ?? currentHour(p);
@@ -2044,6 +2156,7 @@ export function createDirector(options: DirectorOptions): Director {
         ...(policy ? {} : { unprompted: true }),
         kind: out.kind,
         text: out.text,
+        ...(out.kind === 'action' && out.move && !option ? { what: out.move.what } : {}),
         ...due,
       });
       // An answer is dated to when it reaches the player; a move of the actor's own to the
@@ -2062,14 +2175,15 @@ export function createDirector(options: DirectorOptions): Director {
         causes: [cause],
         numbers: [],
       });
-      if (out.later) {
+      if (later) {
         data.beats.push({
           id: `${eventId}-b`,
-          dueDay: world.day + out.later.inDays,
+          dueDay: world.day + later.inDays,
           policy: cause,
           ...(where ? { place: where } : {}),
-          ifYes: named(out.later.ifYes, actor.name),
-          ifNo: named(out.later.ifNo, actor.name),
+          ifYes: named(later.ifYes, actor.name),
+          ifNo: named(later.ifNo, actor.name),
+          ...(odds === undefined ? {} : { odds }),
         });
       }
     }
