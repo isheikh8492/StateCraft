@@ -22,8 +22,8 @@ export interface WindowFrame {
 
 export type WindowLayout = Record<string, WindowFrame>;
 
-const MIN_W = 300;
-const MIN_H = 200;
+const MIN_W = 240;
+const MIN_H = 140;
 const STORAGE_KEY = 'statecraft.windows.v4';
 
 function loadLayout(defaults: WindowLayout): WindowLayout {
@@ -89,9 +89,26 @@ interface WindowProps {
   children: ReactNode;
 }
 
-type DragMode = 'move' | 'resize';
+/** Which sides a drag moves: the title bar moves the window; an edge or corner resizes it. */
+type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+type DragMode = 'move' | Edge;
 
-/** The one frame every widget sits in: drag by the title bar, resize from the corner. */
+/** Where each grab area sits along the window's border, and the cursor it shows. */
+const EDGES: { edge: Edge; className: string }[] = [
+  { edge: 'n', className: 'top-0 right-3 left-3 h-1.5 cursor-ns-resize' },
+  { edge: 's', className: 'right-3 bottom-0 left-3 h-1.5 cursor-ns-resize' },
+  { edge: 'e', className: 'top-3 right-0 bottom-3 w-1.5 cursor-ew-resize' },
+  { edge: 'w', className: 'top-3 bottom-3 left-0 w-1.5 cursor-ew-resize' },
+  { edge: 'nw', className: 'top-0 left-0 size-3 cursor-nwse-resize' },
+  { edge: 'ne', className: 'top-0 right-0 size-3 cursor-nesw-resize' },
+  { edge: 'sw', className: 'bottom-0 left-0 size-3 cursor-nesw-resize' },
+  { edge: 'se', className: 'right-0 bottom-0 size-4 cursor-nwse-resize' },
+];
+
+const clamp = (value: number, low: number, high: number) =>
+  Math.min(Math.max(value, low), Math.max(low, high));
+
+/** The one frame every widget sits in: drag by the title bar, resize from any edge or corner. */
 export function Window({
   id,
   title,
@@ -119,12 +136,23 @@ export function Window({
           x: Math.min(Math.max(origin.x + dx, 80 - origin.w), bounds.width - 80),
           y: Math.min(Math.max(origin.y + dy, 0), bounds.height - 32),
         });
-      } else {
-        onChange(id, {
-          w: Math.min(Math.max(origin.w + dx, MIN_W), bounds.width - origin.x),
-          h: Math.min(Math.max(origin.h + dy, MIN_H), bounds.height - origin.y),
-        });
+        return;
       }
+      const patch: Partial<WindowFrame> = {};
+      const right = origin.x + origin.w;
+      const bottom = origin.y + origin.h;
+      if (mode.includes('e')) patch.w = clamp(origin.w + dx, MIN_W, bounds.width - origin.x);
+      if (mode.includes('s')) patch.h = clamp(origin.h + dy, MIN_H, bounds.height - origin.y);
+      if (mode.includes('w')) {
+        // A window already pushed partly off the left stays where it is until dragged back.
+        patch.x = clamp(origin.x + dx, Math.min(0, origin.x), right - MIN_W);
+        patch.w = right - patch.x;
+      }
+      if (mode.includes('n')) {
+        patch.y = clamp(origin.y + dy, 0, bottom - MIN_H);
+        patch.h = bottom - patch.y;
+      }
+      onChange(id, patch);
     };
     const stop = () => {
       handle.removeEventListener('pointermove', move);
@@ -186,11 +214,25 @@ export function Window({
       </header>
       <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       {!frame.maximized && (
-        <div
-          aria-hidden="true"
-          onPointerDown={startDrag('resize')}
-          className="absolute right-0 bottom-0 size-4 cursor-nwse-resize touch-none"
-        />
+        <>
+          {/* A faint grip in the corner, so it is plain the window can be resized. */}
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 10 10"
+            className="pointer-events-none absolute right-1 bottom-1 size-2.5 text-fg-subtle"
+          >
+            <path d="M9 3 3 9M9 6 6 9" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          </svg>
+          {EDGES.map(({ edge, className }) => (
+            <div
+              key={edge}
+              aria-hidden="true"
+              data-edge={edge}
+              onPointerDown={startDrag(edge)}
+              className={cn('absolute z-10 touch-none', className)}
+            />
+          ))}
+        </>
       )}
     </section>
   );
