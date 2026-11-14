@@ -89,23 +89,16 @@ test('moving time sends your orders; the world answers, and each order has a pag
   await expect(page.getByText('No policy boxes yet')).toBeVisible();
   await expect(date(page)).toHaveText('1 December 2026');
 
-  // History by turn: your move, in your words, then what the world did.
+  // What happened, one card to an event, opening on the latest page. The first page holds
+  // the orders themselves and the first answers to them.
   const chronicle = win(page, 'Chronicle');
-  await expect(chronicle.getByText('Your move')).toBeVisible();
-  await expect(chronicle.getByText('Sent 2 orders and ran the clock 30 days')).toBeVisible();
-  await expect(chronicle.getByText('Cut the fuel subsidy sharply')).toBeVisible();
-  await expect(chronicle.getByText('World response')).toBeVisible();
-  // Someone answers every order, in their own voice, marked as simulated.
+  await expect(chronicle.getByRole('navigation', { name: 'Chronicle pages' })).toBeVisible();
+  await expect(chronicle.getByText('simulated by the game')).toBeVisible();
+  const earlier = chronicle.getByRole('button', { name: 'Earlier page' });
+  while (await earlier.isEnabled()) await earlier.click();
+  await expect(chronicle.getByText(/ordered: Cut fuel or power subsidies/)).toBeVisible();
+  // Someone answers every order, in their own voice.
   await expect(chronicle.getByTestId('quote').first()).toBeVisible();
-  await expect(chronicle.getByText('Pakistan Tehreek-e-Insaf acted')).toBeVisible();
-  await expect(chronicle.getByText('Simulated').first()).toBeVisible();
-
-  // The same record by story: an order and everything that followed from it.
-  await chronicle.getByRole('tab', { name: 'By story' }).click();
-  await expect(
-    chronicle.getByRole('region', { name: 'Cut fuel or power subsidies' }),
-  ).toBeVisible();
-  await chronicle.getByRole('tab', { name: 'By turn' }).click();
 
   // Looking back shows the world as it was; nothing can be ordered from the past.
   await chronicle.getByRole('button', { name: 'See the world at this point' }).first().click();
@@ -125,7 +118,11 @@ test('moving time sends your orders; the world answers, and each order has a pag
   ).toContainText(/[1-9]/);
 
   // An order's page is built from the record: your words, the cost, and who reacted.
-  await chronicle.getByRole('button', { name: 'Cut fuel or power subsidies' }).first().click();
+  await openWindow(page, 'Policies');
+  await win(page, 'Policies')
+    .getByRole('button', { name: /Cut fuel or power subsidies/ })
+    .first()
+    .click();
   const policy = win(page, 'Policies').getByRole('article');
   await expect(policy.getByText('Cut the fuel subsidy sharply')).toBeVisible();
   await expect(policy.getByText(/Saves .*% of GDP a year/)).toBeVisible();
@@ -182,16 +179,11 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await page.getByRole('button', { name: 'Go to that date' }).click();
   await expect(date(page)).toHaveText('20 March 2027');
 
-  // By time, the chronicle is one stream. Depth is written only when asked for, then kept.
+  // Depth is written only when asked for, then kept.
   const chronicle = win(page, 'Chronicle');
-  await chronicle.getByRole('tab', { name: 'By time' }).click();
-  await expect(chronicle.getByRole('list', { name: 'Chronicle' })).toContainText(
-    'Official figures were published',
-  );
   await chronicle.getByRole('button', { name: 'Read the full account' }).first().click();
   await expect(chronicle.getByTestId('full-account').first()).toBeVisible();
   await page.reload();
-  await win(page, 'Chronicle').getByRole('tab', { name: 'By time' }).click();
   await expect(win(page, 'Chronicle').getByTestId('full-account').first()).toBeVisible();
 
   await win(page, 'Briefing')

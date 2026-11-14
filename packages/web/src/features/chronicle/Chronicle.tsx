@@ -1,162 +1,139 @@
 import type { ChronicleEntry, View } from '@statecraft/protocol';
-import { Download, MapPin, ScrollText } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Clock, Download, History, ScrollText } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { formatDate, useDraft, useGame } from '@/lib/game';
-import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { Prose } from '@/ui/prose';
 import { ArrivingReactions } from './Arriving';
 
+/** How many events fill a page before the next one starts. */
+const PER_PAGE = 10;
+
 /**
- * What happened. By turn, each move of yours is followed by what the world did in return;
- * by time, it is one dated stream. Entries are short; the full account of any of them is
- * written when you ask for it.
+ * What happened, one card to an event, oldest first, in pages. It opens on the latest page
+ * and stays there as things happen; the arrows go back through everything before.
  */
 export function Chronicle() {
   const { view, moment, lookAt } = useGame();
-  const [mode, setMode] = useState<'turn' | 'time' | 'story'>('turn');
-  const entries = view?.chronicle ?? [];
-  const turns = view?.turns ?? [];
+  // The figures published at dawn are left out: the numbers show elsewhere. Notices about
+  // your own orders stay, as short cards.
+  const entries = [...(view?.chronicle ?? [])]
+    .filter((e) => !(e.routine && e.story.id === 'economy'))
+    .sort((a, b) => a.day - b.day || (a.hour ?? 0) - (b.hour ?? 0));
+  const pages = Math.max(1, Math.ceil(entries.length / PER_PAGE));
+  // Null follows the latest page; a number holds a page you went back to.
+  const [chosen, setChosen] = useState<number | null>(null);
+  const page = chosen === null ? pages : Math.min(chosen, pages);
+  const shown = entries.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const latest = page === pages;
+  const scroller = useRef<HTMLDivElement>(null);
 
-  if (turns.length === 0) {
+  // On the latest page, a new event scrolls into view; turning a page starts at its top.
+  const count = entries.length;
+  useEffect(() => {
+    if (latest && count > 0) scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
+  }, [latest, count]);
+  useEffect(() => {
+    if (!latest) scroller.current?.scrollTo({ top: 0 });
+  }, [latest]);
+
+  if ((view?.turns ?? []).length === 0) {
     return (
       <EmptyState icon={ScrollText} title="Nothing has happened yet">
-        Write an order and press play on the policy desk. Each move appears here, followed by what
-        the world did in return.
+        Write an order and press play on the policy desk. What happens appears here, as it happens.
       </EmptyState>
     );
   }
+  const go = (n: number) => setChosen(n >= pages ? null : Math.max(1, n));
+  // The moment to look back at: the turn of the last event on this page.
+  const turn = shown.at(-1)?.turn;
+  const looking = turn !== undefined && moment?.turn === turn;
   return (
     <div className="flex h-full flex-col">
-      <div
-        role="tablist"
-        aria-label="How to read history"
-        className="flex items-center gap-1 border-b border-border px-3 py-1.5"
-      >
-        {(['turn', 'time', 'story'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="tab"
-            aria-selected={mode === m}
-            onClick={() => setMode(m)}
-            className={cn(
-              'rounded-full border px-2.5 py-0.5 text-xs',
-              mode === m ? 'border-accent text-fg' : 'border-border text-fg-muted hover:text-fg',
-            )}
-          >
-            {m === 'turn' ? 'By turn' : m === 'time' ? 'By time' : 'By story'}
-          </button>
-        ))}
-        <div className="flex-1" />
-        {(view?.arriving.later ?? 0) > 0 && !view?.arriving.reactions && (
-          <span role="status" className="text-2xs text-fg-muted">
-            {view?.arriving.later} more{' '}
-            {view?.arriving.later === 1 ? 'response is' : 'responses are'} expected in the coming
-            hours
-          </span>
+      <p className="border-b border-border px-4 py-1.5 text-2xs text-fg-subtle">
+        Everything here is simulated by the game: none of it is a real report or a real statement.
+      </p>
+      <div ref={scroller} className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+        {shown.length === 0 && (
+          <p className="px-1 py-2 text-fg-muted">Nothing of note has happened yet.</p>
         )}
-        <Button size="sm" variant="ghost" onClick={() => exportChronicle(view)}>
-          <Download />
-          Export
-        </Button>
-        {view?.arriving.reactions && (
-          <span role="status" className="text-2xs text-accent">
-            Reactions are coming in…
-          </span>
-        )}
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        {(view?.arriving.writing.length ?? 0) > 0 && (
+        <ol aria-label="Chronicle" className="space-y-3">
+          {shown.map((entry) => (
+            <Entry key={entry.id} entry={entry} />
+          ))}
+        </ol>
+        {latest && (view?.arriving.writing.length ?? 0) > 0 && (
           <section
             aria-label="Reactions coming in"
-            className="border-b-2 border-border bg-surface-2 px-4 py-3"
+            className="rounded-window border border-border bg-surface-2 px-4 py-3"
           >
             <p className="label-caps mb-2 text-accent">Coming in now</p>
             <ArrivingReactions />
           </section>
         )}
-        {mode === 'story' ? (
-          stories(entries).map((story) => (
-            <section key={story.id} aria-label={story.title} className="border-b-2 border-border">
-              <header className="bg-surface-2 px-4 py-2">
-                <p className="label-caps text-accent">Story</p>
-                <h3 className="font-semibold text-fg">{story.title}</h3>
-              </header>
-              <ol aria-label="Chronicle">
-                {story.entries.map((entry) => (
-                  <Entry key={entry.id} entry={entry} />
-                ))}
-              </ol>
-            </section>
-          ))
-        ) : mode === 'time' ? (
-          <ol aria-label="Chronicle">
-            {entries.map((entry) => (
-              <Entry key={entry.id} entry={entry} />
-            ))}
-          </ol>
-        ) : (
-          turns.map((turn) => {
-            const mine = entries
-              .filter((e) => e.turn === turn.id)
-              .sort((a, b) => a.day - b.day || (a.hour ?? 0) - (b.hour ?? 0));
-            // The clock moves by the hour now, and most presses of play only pass time. A
-            // move with no orders and nothing to show for it is not worth a heading.
-            if (turn.orders.length === 0 && mine.length === 0) return null;
-            return (
-              <section
-                key={turn.id}
-                aria-label={`Turn ending ${formatDate(turn.to)}`}
-                className="border-b-2 border-border"
-              >
-                <header className="bg-surface-2 px-4 py-2">
-                  <p className="tabular text-2xs text-fg-subtle">
-                    {formatDate(turn.from)}
-                    {turn.to !== turn.from && ` to ${formatDate(turn.to)}`}
-                  </p>
-                  <p className="label-caps mt-1 text-accent">Your move</p>
-                  <p className="text-fg">{turn.move}</p>
-                  {turn.orders.map((order) => (
-                    <blockquote
-                      key={order}
-                      className="mt-1 border-l-2 border-accent pl-2 text-fg-muted"
-                    >
-                      {order}
-                    </blockquote>
-                  ))}
-                  {turn.stoppedEarly && (
-                    <p className="mt-1 text-xs text-warn">Time stopped: {turn.stoppedEarly}</p>
-                  )}
-                  <Button
-                    size="sm"
-                    variant={moment?.turn === turn.id ? 'primary' : 'ghost'}
-                    className="mt-1"
-                    onClick={() => lookAt(moment?.turn === turn.id ? null : turn.id)}
-                  >
-                    {moment?.turn === turn.id
-                      ? 'Viewing this moment · return to the present'
-                      : 'See the world at this point'}
-                  </Button>
-                </header>
-                <p className="label-caps px-4 pt-2 text-fg-subtle">World response</p>
-                {mine.length === 0 ? (
-                  <p className="px-4 py-2 text-fg-muted">Nothing of note.</p>
-                ) : (
-                  <ol aria-label="Chronicle">
-                    {mine.map((entry) => (
-                      <Entry key={entry.id} entry={entry} />
-                    ))}
-                  </ol>
-                )}
-              </section>
-            );
-          })
+        {latest && (view?.arriving.later ?? 0) > 0 && !view?.arriving.reactions && (
+          <p role="status" className="px-1 text-2xs text-fg-muted">
+            {view?.arriving.later} more{' '}
+            {view?.arriving.later === 1 ? 'response is' : 'responses are'} expected in the coming
+            hours
+          </p>
         )}
       </div>
+      <nav
+        aria-label="Chronicle pages"
+        className="flex items-center gap-1 border-t border-border px-2 py-1"
+      >
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Earlier page"
+          disabled={page <= 1}
+          onClick={() => go(page - 1)}
+        >
+          <ChevronLeft />
+        </Button>
+        <span className="tabular text-xs text-fg-muted" aria-live="polite">
+          {page} / {pages}
+        </span>
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Later page"
+          disabled={latest}
+          onClick={() => go(page + 1)}
+        >
+          <ChevronRight />
+        </Button>
+        {turn !== undefined && (
+          <Button
+            size="icon"
+            variant={looking ? 'primary' : 'ghost'}
+            aria-label={looking ? 'Return to the present' : 'See the world at this point'}
+            title={looking ? 'Return to the present' : 'See the world as it was at this page'}
+            onClick={() => lookAt(looking ? null : turn)}
+          >
+            <History />
+          </Button>
+        )}
+        <div className="flex-1" />
+        {view?.arriving.reactions && (
+          <span role="status" className="text-2xs text-accent">
+            Reactions are coming in…
+          </span>
+        )}
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Export"
+          title="Save the chronicle as a file"
+          onClick={() => exportChronicle(view)}
+        >
+          <Download />
+        </Button>
+      </nav>
     </div>
   );
 }
@@ -166,121 +143,57 @@ const when = (hour: number | undefined) =>
   hour === undefined ? '' : `, ${String(hour).padStart(2, '0')}:00`;
 
 function Entry({ entry }: { entry: ChronicleEntry }) {
-  const { view, act, place, setPlace, openPolicy } = useGame();
-  const event = view?.events.find((e) => e.id === entry.id);
-  const policies = (view?.policies ?? []).filter((p) => event?.causes.includes(p.id));
-  const region = view?.world?.regions.find((r) => r.id === entry.place)?.name;
+  const { view, act, place } = useGame();
   const writing = view?.arriving.entries.includes(entry.id) ?? false;
   const draft = useDraft(entry.id);
+  const body = entry.full ?? draft;
 
-  if (entry.routine) {
-    return (
-      <li className="flex items-baseline gap-2 border-b border-border px-4 py-1.5 text-xs text-fg-muted">
-        <time dateTime={entry.date} className="tabular shrink-0 text-2xs text-fg-subtle">
-          {formatDate(entry.date)}
-          {when(entry.hour)}
-        </time>
-        <span className="min-w-0 flex-1">{entry.headline}</span>
-      </li>
-    );
-  }
   return (
     <li
       className={cn(
-        'border-b border-border px-4 py-3',
-        entry.place && entry.place === place && 'bg-accent-soft',
+        'rounded-window border border-border bg-surface px-4 py-3',
+        entry.place && entry.place === place && 'border-accent',
       )}
     >
-      <div className="flex items-center gap-2">
-        <time dateTime={entry.date} className="tabular text-2xs text-fg-subtle">
-          {formatDate(entry.date)}
-          {when(entry.hour)}
-        </time>
-        {entry.size === 'major' && <Badge tone="bad">Major</Badge>}
-        {entry.place && (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-control text-2xs text-fg-muted hover:text-accent"
-            onClick={() => setPlace(entry.place ?? null)}
-          >
-            <MapPin className="size-3" />
-            {region ?? entry.place}
-          </button>
-        )}
-        <div className="flex-1" />
-        <span
-          className="text-2xs text-fg-subtle"
-          title="Written by the game, not a real news report or a real statement"
+      <time
+        dateTime={entry.date}
+        className="tabular inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-2xs font-medium text-accent"
+      >
+        <Clock className="size-3" />
+        {formatDate(entry.date)}
+        {when(entry.hour)}
+      </time>
+      <h3 className="mt-2 font-semibold text-fg">{entry.headline}</h3>
+      {entry.speaker && (
+        <blockquote data-testid="quote" className="prose-read mt-1 text-accent">
+          {entry.quote}
+        </blockquote>
+      )}
+      {body !== undefined && body !== '' && (
+        <div
+          data-testid={entry.full !== undefined ? 'full-account' : undefined}
+          aria-busy={entry.full === undefined}
+          className="prose-read mt-2 max-w-[100ch] text-fg"
         >
-          Simulated
-        </span>
-      </div>
-      {entry.speaker ? (
-        <>
-          <p className="mt-1 text-xs font-medium text-fg">{entry.headline}</p>
-          <blockquote
-            data-testid="quote"
-            className="prose-read mt-1 border-l-2 border-accent pl-3 font-serif text-fg"
-          >
-            {entry.quote}
-          </blockquote>
-        </>
-      ) : (
-        <h3 className="mt-1 font-serif text-lg text-fg">{entry.headline}</h3>
-      )}
-      {/* The full account, laid out as written: a dateline, paragraphs, a list where one
-          helps. Shown the same way while it is still arriving. */}
-      {entry.full !== undefined && (
-        <div data-testid="full-account" className="prose-read mt-2 max-w-[100ch] text-fg-muted">
-          <Prose text={entry.full} />
+          <Prose text={body} />
+          {entry.full === undefined && (
+            <span aria-hidden="true" className="animate-pulse text-accent">
+              ▍
+            </span>
+          )}
         </div>
       )}
-      {entry.full === undefined && draft && (
-        <div aria-busy="true" className="prose-read mt-2 max-w-[100ch] text-fg-muted">
-          <Prose text={draft} />
-          <span aria-hidden="true" className="animate-pulse text-accent">
-            ▍
-          </span>
-        </div>
+      {entry.full === undefined && !draft && !entry.routine && (
+        <button
+          type="button"
+          disabled={writing}
+          className="mt-1 text-2xs text-fg-subtle hover:text-accent disabled:cursor-default"
+          onClick={() => void act(() => api.expandEntry(entry.id))}
+        >
+          {writing ? 'Writing…' : 'Read the full account'}
+        </button>
       )}
-      <p className="mt-2 flex flex-wrap items-center gap-2 text-2xs text-fg-subtle">
-        {entry.full === undefined && (
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={writing}
-            onClick={() => void act(() => api.expandEntry(entry.id))}
-          >
-            {writing ? 'Writing…' : 'Read the full account'}
-          </Button>
-        )}
-        {policies.length > 0 && 'Follows from'}
-        {policies.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="rounded-full border border-border px-2 py-0.5 text-fg-muted hover:border-accent hover:text-accent"
-            onClick={() => openPolicy(p.id)}
-          >
-            {p.title}
-          </button>
-        ))}
-      </p>
     </li>
-  );
-}
-
-/** Entries grouped into running stories, each in the order it unfolded; routine notices left out. */
-function stories(entries: readonly ChronicleEntry[]) {
-  const groups = new Map<string, { id: string; title: string; entries: ChronicleEntry[] }>();
-  for (const entry of [...entries].reverse()) {
-    if (entry.routine) continue;
-    const group = groups.get(entry.story.id) ?? { ...entry.story, entries: [] };
-    group.entries.push(entry);
-    groups.set(entry.story.id, group);
-  }
-  return [...groups.values()].sort(
-    (a, b) => (b.entries.at(-1)?.day ?? 0) - (a.entries.at(-1)?.day ?? 0),
   );
 }
 

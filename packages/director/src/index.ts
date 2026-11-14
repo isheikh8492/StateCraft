@@ -491,6 +491,19 @@ const ROUTINE_KINDS = new Set([
   'policy.milestone',
   'figures.monthly',
 ]);
+/** What the reader of orders calls one that matches nothing in the catalogue. */
+const NOVEL_LABEL = 'Order outside the catalogue';
+/** An order's own words, cut at a word to fit a title. */
+const ownWords = (words: string, otherwise: string) => {
+  const flat = words
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.;:,]+$/, '');
+  if (flat === '') return otherwise;
+  if (flat.length <= 90) return flat;
+  const cut = flat.slice(0, 90);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 60))}…`;
+};
 /** Notices that need no telling: they are reported in built-in wording, without a model. */
 const isRoutine = (e: WorldEventView) =>
   ROUTINE_KINDS.has(e.kind) || (e.kind === 'legislature.vote' && e.size === 'minor');
@@ -839,7 +852,7 @@ export function createDirector(options: DirectorOptions): Director {
       ? output.conflicts
           .flatMap((c) => c.cards)
           .map((id) => ({
-            title: 'Order outside the catalogue',
+            title: NOVEL_LABEL,
             summary: text.get(id) ?? '',
             instrument: 'novel',
             scale: 'small' as const,
@@ -853,7 +866,12 @@ export function createDirector(options: DirectorOptions): Director {
       const allowed = (scenario.office.powers as string[]).includes(authority);
       policies.push({
         id: `${r.id}-p${i + 1}`,
-        title: compiled.title,
+        // An order the catalogue has no name for is called by the player's own words, not
+        // by a label that says only that it is unnamed.
+        title:
+          compiled.title === NOVEL_LABEL
+            ? ownWords(compiled.fromCards.map((id) => text.get(id) ?? '').join(' '), compiled.title)
+            : compiled.title,
         summary: compiled.summary,
         instrument: compiled.instrument,
         ...(compiled.region ? { region: compiled.region } : {}),
