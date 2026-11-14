@@ -2,7 +2,7 @@ import type { Server } from 'node:http';
 import type { ModelSettings } from '@statecraft/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adapterFor } from './adapters.ts';
-import { createHarness, systemPrompt } from './harness.ts';
+import { Cancelled, createHarness, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
   actorReply,
@@ -748,5 +748,27 @@ describe('an actor that has spoken before', () => {
       'Pakistan Tehreek-e-Insaf slammed the Prime Minister’s order, calling it a sham move.',
     );
     expect(gist(again)).not.toContain('Jamiat');
+  });
+});
+
+describe('a call nobody is waiting for', () => {
+  it('can be called off while it is being written, and leaves nothing behind', async () => {
+    const records: unknown[] = [];
+    const harness = createHarness({
+      settings: () => settings('standin-slow'),
+      onCall: (record) => records.push(record),
+    });
+    const stop = new AbortController();
+    const started = Date.now();
+    const run = harness.run(policyRead, readIn, { ...context, signal: stop.signal });
+    setTimeout(() => stop.abort(), 50);
+    await expect(run).rejects.toBeInstanceOf(Cancelled);
+    // It stopped at once: no second try, no built-in wording in its place, nothing recorded.
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(records).toEqual([]);
+    // Called off before it began, it never starts.
+    await expect(
+      harness.run(policyRead, readIn, { ...context, signal: stop.signal }),
+    ).rejects.toBeInstanceOf(Cancelled);
   });
 });

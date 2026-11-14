@@ -7,6 +7,8 @@ export {
 } from './adapters.ts';
 export { checkModel } from './check.ts';
 export {
+  type CallContext,
+  Cancelled,
   createHarness,
   extractJson,
   type Harness,

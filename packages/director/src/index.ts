@@ -45,6 +45,7 @@ import {
   type Answer,
   actorReply,
   asksForOrders,
+  Cancelled,
   type CompiledPolicy,
   chronicleWrite,
   dropEchoes,
@@ -1740,9 +1741,12 @@ export function createDirector(options: DirectorOptions): Director {
         setArriving(false);
         // The news is worded off to one side. It is only better wording, so it must never
         // hold up the clock: the next move does not wait for it.
-        const wording = wordNews(id)
-          .then(() => writeAccounts(id))
-          .catch((error) => console.error('[director]', error))
+        const signal = aside.signal;
+        const wording = wordNews(id, signal)
+          .then(() => writeAccounts(id, signal))
+          .catch((error) => {
+            if (!(error instanceof Cancelled)) console.error('[director]', error);
+          })
           .finally(() => background.delete(wording));
         background.add(wording);
       }),
@@ -1762,6 +1766,17 @@ export function createDirector(options: DirectorOptions): Director {
   };
   /** Work under way that nothing waits for, kept so that `idle` can tell when it is over. */
   const background = new Set<Promise<void>>();
+  /**
+   * Calls off the writing going on to one side. A model on this machine answers one request
+   * at a time, so a long account being written unasked would hold up the player's next
+   * move for as long as it takes. The player comes first: what was being written is
+   * dropped, and its entry keeps the link to have it written on request.
+   */
+  let aside = new AbortController();
+  const makeWay = () => {
+    aside.abort();
+    aside = new AbortController();
+  };
 
   /**
    * A quiet turn commits at once, with the day's news in the plain lines the engine drew it
@@ -1769,7 +1784,7 @@ export function createDirector(options: DirectorOptions): Director {
    * properly. Most of them are timed for later in the day, so by the time the clock reaches
    * them they read as they should. With no model, the plain lines stand.
    */
-  async function wordNews(id: string): Promise<void> {
+  async function wordNews(id: string, signal?: AbortSignal): Promise<void> {
     const { projection: p, world, scenario } = state();
     const r = p.resolutions.find((x) => x.id === id);
     if (
@@ -1818,7 +1833,7 @@ export function createDirector(options: DirectorOptions): Director {
           .slice(-8)
           .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
       },
-      { resolution: id, brief: scenario.brief },
+      { resolution: id, brief: scenario.brief, ...(signal ? { signal } : {}) },
     );
     // The clock may have moved on while the lines were being written, which is fine. But if
     // the campaign was rewound onto another line, the turn they belong to is gone: drop them.
@@ -2200,6 +2215,7 @@ export function createDirector(options: DirectorOptions): Director {
     requireCampaign();
     requireQuiet();
     if (waiting) throw new DirectorError('busy', 'A move is already waiting to start.');
+    makeWay();
     const start = () => {
       const now = state();
       if (!now.world) return Promise.resolve();
@@ -2568,7 +2584,12 @@ export function createDirector(options: DirectorOptions): Director {
    * an entry, or written unasked for an event that matters (decision record 0015). The
    * account knows only what has happened by now: nothing timed for later is in "related".
    */
-  async function writeAccount(event: WorldEventView, world: World, scenario: Scenario) {
+  async function writeAccount(
+    event: WorldEventView,
+    world: World,
+    scenario: Scenario,
+    signal?: AbortSignal,
+  ) {
     const eventId = event.id;
     writing.add(eventId);
     notify();
@@ -2640,7 +2661,7 @@ export function createDirector(options: DirectorOptions): Director {
             .map((c) => c.name.replace(/^(Your|The)\s+/i, '')),
           canon: p.canon.slice(-60),
         },
-        { resolution: 'entries', brief: scenario.brief },
+        { resolution: 'entries', brief: scenario.brief, ...(signal ? { signal } : {}) },
         { onDraft: (strings) => setDraft(eventId, strings.body ?? '') },
       );
       // The campaign was rewound onto another line while it was being written: drop it.
@@ -2661,7 +2682,7 @@ export function createDirector(options: DirectorOptions): Director {
    * one side after the turn, a couple at most, and only where a model will write them: the
    * built-in wording would add nothing to the headline.
    */
-  async function writeAccounts(id: string): Promise<void> {
+  async function writeAccounts(id: string, signal?: AbortSignal): Promise<void> {
     const { projection: p, world, scenario } = state();
     const r = p.resolutions.find((x) => x.id === id);
     if (r?.status !== 'committed' || !world || !scenario || !harness.ready('narrator')) return;
@@ -2677,7 +2698,7 @@ export function createDirector(options: DirectorOptions): Director {
     for (const event of worth) {
       // Read again with its proper wording, if the news has been worded since.
       const worded = state().projection.worded.get(event.id);
-      await writeAccount(worded ? { ...event, summary: worded } : event, world, scenario);
+      await writeAccount(worded ? { ...event, summary: worded } : event, world, scenario, signal);
     }
   }
 
@@ -2771,6 +2792,8 @@ export function createDirector(options: DirectorOptions): Director {
       if (actor.unreachable) throw new DirectorError('bad_request', actor.unreachable);
       const id = `t${ledger.count() + 1}`;
       ledger.append({ type: 'talk.asked', id, actorId, question, day: world.day });
+      // A question is something the player is waiting on: unasked writing gives way to it.
+      makeWay();
       enqueue(0, async () => {
         const now = state();
         if (!now.world) return;

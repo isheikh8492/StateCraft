@@ -18,13 +18,26 @@ export interface JobResult<O> {
   record: CallView;
 }
 
+/**
+ * Thrown when a call was called off by whoever asked for it. Nothing is recorded and no
+ * built-in wording is put in its place: the work was not wanted any more.
+ */
+export class Cancelled extends Error {
+  constructor() {
+    super('The call was called off.');
+    this.name = 'Cancelled';
+  }
+}
+
+/** What a call is for. `signal` lets whoever asked call it off while it is being written. */
+export interface CallContext {
+  resolution: string;
+  brief: string;
+  signal?: AbortSignal;
+}
+
 export interface Harness {
-  run<I, O>(
-    job: Job<I, O>,
-    input: I,
-    context: { resolution: string; brief: string },
-    watch?: Watch,
-  ): Promise<JobResult<O>>;
+  run<I, O>(job: Job<I, O>, input: I, context: CallContext, watch?: Watch): Promise<JobResult<O>>;
   /**
    * True when the model behind a role is a server on this machine, which answers one
    * request at a time. Work that would run side by side on a hosted provider is better
@@ -192,12 +205,8 @@ export function createHarness(options: HarnessOptions): Harness {
       }
     },
 
-    async run<I, O>(
-      job: Job<I, O>,
-      input: I,
-      context: { resolution: string; brief: string },
-      watch?: Watch,
-    ) {
+    async run<I, O>(job: Job<I, O>, input: I, context: CallContext, watch?: Watch) {
+      if (context.signal?.aborted) throw new Cancelled();
       const settings = options.settings(job.role);
       const adapter = options.adapter ?? adapterFor(settings, env);
       const enforced = adapter?.schemaEnforced?.() ?? false;
@@ -249,7 +258,9 @@ export function createHarness(options: HarnessOptions): Harness {
               schema,
               schemaName: job.name.replace('.', '_'),
               maxTokens: job.maxTokens,
-              signal: AbortSignal.timeout(timeoutMs),
+              signal: context.signal
+                ? AbortSignal.any([AbortSignal.timeout(timeoutMs), context.signal])
+                : AbortSignal.timeout(timeoutMs),
               ...(watch
                 ? {
                     onText: (soFar: string) => {
@@ -279,6 +290,8 @@ export function createHarness(options: HarnessOptions): Harness {
             if (reply.refused || (REFUSAL.test(text) && !text.includes('{')))
               throw new ModelFailure('refusal', 'The model declined.');
           } catch (error) {
+            // Called off by whoever asked: not a failure, and nothing to fall back to.
+            if (context.signal?.aborted) throw new Cancelled();
             const failure =
               error instanceof ModelFailure ? error : new ModelFailure('network', String(error));
             record.errors.push(`${failure.kind}: ${failure.message}`);

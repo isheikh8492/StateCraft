@@ -890,7 +890,7 @@ const REACT_RULES = `You voice one actor in a political simulation answering an 
   - "presses": one to three of the things in "reach" that this move would shift, each with "way": "raise" or "lower". These are what the move puts pressure on. You do not say how hard: the game decides that from the actor's strength, and decides by chance whether the move comes off at all.
   - If "reach" is empty the actor can only speak: use "statement".
 - "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
-- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question", and one sentence for each outcome ("ifYes", "ifNo"). The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...". Each says only what this actor, its followers or the public did. Never write that the government, the cabinet, parliament or the head of government did, decided, conceded or suspended anything: that is the player's to decide.
+- "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question" of a few words, and one short sentence for each outcome ("ifYes", "ifNo"), at most 22 words each. The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...". Each says only what this actor, its followers or the public did. Never write that the government, the cabinet, parliament or the head of government did, decided, conceded or suspended anything: that is the player's to decide.
 - Stay within what this actor could really do. Use no figures that are not in the input.
 - Speak about this order and nothing else. Do not bring up an earlier order, an earlier grievance or an earlier demand unless this order is about the same thing: an answer to a tax rise is about the tax rise.`;
 
@@ -911,9 +911,10 @@ const answerSchema = (reach: readonly Ref[], wordLimit: number): Schema =>
       text: str(roomFor(wordLimit)),
       later: obj({
         inDays: int(1, 90),
-        question: str(160),
-        ifYes: str(300),
-        ifNo: str(300),
+        question: str(80),
+        // One short sentence each: on a local model these cost as long to write as the report.
+        ifYes: str(170),
+        ifNo: str(170),
       }),
     },
     ['move', 'later'],
