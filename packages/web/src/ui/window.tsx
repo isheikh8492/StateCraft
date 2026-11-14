@@ -1,10 +1,14 @@
 import type { LucideIcon } from 'lucide-react';
 import { Maximize2, Minimize2, Minus } from 'lucide-react';
 import {
+  createContext,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useCallback,
+  useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import { cn } from '@/lib/cn';
@@ -76,6 +80,41 @@ export function useWindowLayout(defaults: WindowLayout) {
   }, []);
 
   return { layout, update, focus, open };
+}
+
+/** Key bindings by name, such as "Ctrl+Enter". */
+type Bindings = Record<string, () => void>;
+const KeysContext = createContext<{ current: Bindings } | null>(null);
+
+/** The name of a key press as bindings are written: "Ctrl+Shift+Enter". Cmd counts as Ctrl. */
+const comboOf = (event: ReactKeyboardEvent) =>
+  [
+    event.ctrlKey || event.metaKey ? 'Ctrl' : '',
+    event.altKey ? 'Alt' : '',
+    event.shiftKey ? 'Shift' : '',
+    event.key.length === 1 ? event.key.toUpperCase() : event.key,
+  ]
+    .filter(Boolean)
+    .join('+');
+
+/**
+ * Key bindings that belong to the window this is used in. They work only while that
+ * window is selected or being typed in, so the same keys can mean different things in
+ * different windows.
+ */
+export function useWindowKeys(bindings: Bindings) {
+  const keys = useContext(KeysContext);
+  const latest = useRef(bindings);
+  latest.current = bindings;
+  const names = Object.keys(bindings).join('|');
+  useEffect(() => {
+    if (!keys || names === '') return;
+    const own = names.split('|');
+    for (const name of own) keys.current[name] = () => latest.current[name]?.();
+    return () => {
+      for (const name of own) delete keys.current[name];
+    };
+  }, [keys, names]);
 }
 
 interface WindowProps {
@@ -164,15 +203,26 @@ export function Window({
     handle.addEventListener('pointercancel', stop);
   };
 
+  const keys = useRef<Bindings>({});
   if (frame.minimized) return null;
+  const onKeyDown = (event: ReactKeyboardEvent) => {
+    const run = keys.current[comboOf(event)];
+    if (!run) return;
+    event.preventDefault();
+    event.stopPropagation();
+    run();
+  };
   const toggleMaximize = () => onChange(id, { maximized: !frame.maximized });
 
   return (
+    // Focusable, so that a click anywhere in the window selects it for its key bindings.
     <section
       aria-label={title}
+      tabIndex={-1}
       onPointerDownCapture={() => onFocus(id)}
+      onKeyDown={onKeyDown}
       className={cn(
-        'absolute flex flex-col overflow-hidden rounded-window border bg-surface shadow-window',
+        'absolute flex flex-col overflow-hidden rounded-window border bg-surface shadow-window outline-none',
         focused ? 'border-border-strong' : 'border-border',
         frame.maximized && 'inset-2 rounded-window',
       )}
@@ -212,7 +262,9 @@ export function Window({
           {frame.maximized ? <Minimize2 /> : <Maximize2 />}
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <KeysContext.Provider value={keys}>{children}</KeysContext.Provider>
+      </div>
       {!frame.maximized && (
         <>
           {/* A faint grip in the corner, so it is plain the window can be resized. */}

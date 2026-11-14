@@ -8,6 +8,7 @@ import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { Prose } from '@/ui/prose';
 import { Textarea } from '@/ui/textarea';
+import { useWindowKeys } from '@/ui/window';
 
 const KIND_LABEL: Record<string, string> = {
   advisor: 'Your office',
@@ -107,6 +108,14 @@ export function People() {
   useEffect(() => {
     if (unread > 0 && personId) void api.markRead(personId);
   }, [unread, personId]);
+  const ask = () => {
+    const question = draft.trim();
+    if (!person?.askable || question === '') return;
+    setDraft('');
+    void act(() => api.ask(person.id, question));
+  };
+  // While this window is the one being used, Ctrl+Enter asks.
+  useWindowKeys({ 'Ctrl+Enter': ask });
   if (!person) {
     return (
       <EmptyState icon={Users} title="Nobody here yet">
@@ -119,10 +128,7 @@ export function People() {
   const kinds = [...new Set(cast.map((c) => c.kind))];
   const send = (event: FormEvent) => {
     event.preventDefault();
-    const question = draft.trim();
-    if (question === '') return;
-    setDraft('');
-    void act(() => api.ask(person.id, question));
+    ask();
   };
 
   return (
@@ -217,7 +223,12 @@ export function People() {
                 onChange={(event) => setDraft(event.target.value)}
               />
             </label>
-            <Button type="submit" variant="primary" disabled={draft.trim() === ''}>
+            <Button
+              type="submit"
+              variant="primary"
+              title="Ask (Ctrl+Enter)"
+              disabled={draft.trim() === ''}
+            >
               Ask
             </Button>
           </form>

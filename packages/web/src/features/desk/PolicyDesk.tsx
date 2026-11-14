@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { useGame } from '@/lib/game';
 import { Button } from '@/ui/button';
+import { useWindowKeys } from '@/ui/window';
 
 const MAX_LENGTH = 2000;
 const STEP_LABEL: Record<string, string> = {
@@ -55,8 +56,20 @@ export function PolicyDesk() {
     event.preventDefault();
     void add();
   };
+  const canSend = running === null && !closed;
+  // While this window is the one being used, Ctrl+Enter sends the plan and runs the clock.
+  // Anything still being typed goes into the plan first.
+  useWindowKeys({
+    'Ctrl+Enter': () => {
+      if (!canSend) return;
+      void (async () => {
+        await add();
+        await act(() => api.move({ next: true }));
+      })();
+    },
+  });
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
       event.preventDefault();
       void add();
     }
@@ -206,10 +219,10 @@ export function PolicyDesk() {
           aria-label={send ? `${send} and run to the next thing` : 'Run to the next thing'}
           title={
             send
-              ? `${send}, then run to the next thing that needs you`
-              : 'Run to the next thing that needs you'
+              ? `${send}, then run to the next thing that needs you (Ctrl+Enter)`
+              : 'Run to the next thing that needs you (Ctrl+Enter)'
           }
-          disabled={running !== null || closed}
+          disabled={!canSend}
           onClick={() => void act(() => api.move({ next: true }))}
         >
           {fresh > 0 ? 'Send' : <Play />}
@@ -267,6 +280,8 @@ function Row({ card, number, locked, conflict }: RowProps) {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
+                    // Mid-edit, Ctrl+Enter only saves the edit: it does not send the plan.
+                    event.stopPropagation();
                     void save();
                   }
                   if (event.key === 'Escape') setDraft(null);

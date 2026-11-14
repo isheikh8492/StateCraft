@@ -161,8 +161,9 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   // The play button on the desk sends what is there and runs to the next thing that needs
   // you: here an hour on, when the first answer comes in, without the date changing.
   await expect(page.getByTestId('game-hour')).toHaveText('09:00');
-  await addBox(page, 'Increase development spending on roads.');
-  await page.getByRole('button', { name: 'Send 1 box and run to the next thing' }).click();
+  // Ctrl+Enter in the desk sends the plan, taking what is still being typed with it.
+  await page.getByLabel(composer).fill('Increase development spending on roads.');
+  await page.getByLabel(composer).press('Control+Enter');
   await expect(page.getByTestId('game-hour')).toHaveText('10:00');
   await expect(date(page)).toHaveText('8 December 2026');
   // With the plan sent, the button at the end of the line is play again.
@@ -220,7 +221,8 @@ test('people can be asked, and some cannot be reached', async ({ page }) => {
   await people
     .getByLabel('Your question')
     .fill('In return for your votes I will expand cash transfers in Sindh.');
-  await people.getByRole('button', { name: 'Ask' }).click();
+  // Ctrl+Enter asks, while the People window is the one being typed in.
+  await people.getByLabel('Your question').press('Control+Enter');
   await expect(people.getByRole('list', { name: 'What you have undertaken' })).toContainText(
     'You said:',
   );
