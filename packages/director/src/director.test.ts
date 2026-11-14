@@ -744,3 +744,48 @@ describe('stories in the background', () => {
     expect(byStory.size).toBeLessThanOrEqual(12);
   });
 });
+
+describe('losing office', () => {
+  it('can be lost, with warning, by a government that is unpopular and has made enemies', async () => {
+    const { director, add } = open(null);
+    director.start('pakistan-2026');
+    // Played as badly as possible: squeeze the public every month and threaten the army
+    // and the main partner in the coalition.
+    for (let month = 0; month < 48 && !director.view().campaign?.over; month++) {
+      add('Cut the fuel subsidy sharply.');
+      add('Raise the sales tax sharply.');
+      for (const who of ['ppp', 'army'])
+        director.ask(who, 'Do as I say or else you will regret it.');
+      director.move({ days: 30 }, true);
+      await director.idle();
+    }
+    const view = director.view();
+    expect(view.campaign?.over).toMatch(/is no longer Prime Minister\.$/);
+    const lost = view.events.find((e) => e.kind === 'office.lost');
+    expect(lost).toMatchObject({ size: 'major', summary: view.campaign?.over });
+    // It did not come out of nowhere: a motion was tabled, or the army was seen to stir,
+    // days before, and the player's office said so.
+    const warning = view.events.find(
+      (e) =>
+        (e.kind === 'confidence.tabled' || e.kind === 'coup.rumour') && lost?.causes.includes(e.id),
+    );
+    expect(warning).toBeDefined();
+    expect((lost?.day ?? 0) - (warning?.day ?? 0)).toBeGreaterThanOrEqual(7);
+    // Nobody tries to bring down a government in its first two months.
+    expect(
+      view.events.filter((e) => e.kind === 'confidence.tabled').every((e) => e.day >= 60),
+    ).toBe(true);
+    // Nothing more can be ordered on this line of history.
+    expect(() => director.move({ days: 1 }, false)).toThrow(/no longer in office/);
+  }, 120_000);
+
+  it('is kept by a government that does nothing to lose it', async () => {
+    const { director } = open(null);
+    director.start('pakistan-2026');
+    for (let month = 0; month < 12; month++) {
+      director.advance(30);
+      await director.idle();
+    }
+    expect(director.view().campaign?.over).toBeUndefined();
+  }, 120_000);
+});

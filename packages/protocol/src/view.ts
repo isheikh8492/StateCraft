@@ -197,6 +197,8 @@ export interface View {
     /** Hour of the day, 0 to 23. */
     hour: number;
     branch: number;
+    /** Set once the player has lost office: how it happened. Nothing more can be ordered. */
+    over?: string;
   };
   cards: CardView[];
   /** A resolution in progress. */

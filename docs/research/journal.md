@@ -3,6 +3,71 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-14, pass 8: a cast that thinks for itself, stories, speed, and a way to lose
+
+A day driven by the owner playing and saying what was wrong. Everything below is on master.
+
+**What the owner found, and what was done about it.**
+
+- *One party saying the same thing five turns running.* The owner's own campaign file
+  showed Pakistan Tehreek-e-Insaf using one quotation in five statements about unrelated
+  orders. Cause, read from the recorded call: the model was shown the actor's last statement
+  among recent events and copied it. Reactions are no longer shown what anyone said, and a
+  repeated or near-repeated sentence is taken out (`sessions/2026-11-14-echo.md`).
+- *Strategies hardcoded.* Each kind of actor had a fixed list of moves; an opposition party
+  could only call protests. Decision 0016: the model invents the move and names what it
+  presses on; the engine sizes it and the dice decide whether it comes off
+  (`sessions/2026-11-14-moves.md`).
+- *Nothing cooking in the background.* Decision 0017: moves and large orders open stories
+  the engine carries forward by dice, worded by a model as they develop
+  (`sessions/2026-11-14-stories.md`).
+- *Model calls really slow.* Measured first: about 18 tokens a second, every call right
+  first time, so the time was all writing. Then, in order: the player's move or question
+  calls off unasked accounts; calls to a local server run side by side within its context
+  window; and a turn lands without waiting for a model (decision 0018).
+- *Advisers not always drafting orders.* The game, not the model, now reads whether the
+  question asks for them, and requires at least one when it does
+  (`sessions/2026-11-14-boxes.md`).
+- *No way to lose, and nothing costing votes.* Decision 0019.
+- Interface, each planned with the owner first: a paged chronicle of cards in place of three
+  tabs; a compact desk with a numbered plan; windows that resize from any edge; key
+  bindings that belong to the window in use; no rule-made notes under boxes; the desk no
+  longer reports events.
+
+**Measured on `openai/gpt-oss-20b`, this machine.**
+
+| | Before today | Now |
+| --- | --- | --- |
+| Wait for a turn with catalogue orders to land | 37 to 56 s | 0.1 s |
+| The same, when a model must read an unusual order | 37 to 56 s | 16 s |
+| A turn's three answers | 42 to 63 s, one call | 30 to 37 s, side by side |
+| Everything a turn sets going, written | 80 to 165 s | 66 to 129 s |
+| A question asked while an account is being written | queued behind it | 19 to 21 s |
+
+**Learned.**
+
+- LM Studio writes several replies at once, about 1.6 times faster in total (15.4 against
+  24.8 tokens a second for one and three requests), but the loaded context window is shared:
+  three 4,245-token prompts sent together were all refused with "Context size has been
+  exceeded". The harness now asks the server for its window and budgets calls against it.
+- A local model shown its own earlier words reuses them. Even a one-line gist of what an
+  actor said last kept it on the old subject; only removing it worked.
+- Left to invent, the model varies: a statement, a mass rally, a boycott of parliament, a
+  march, over four orders. It also chooses oddly: an armed group "striking" over a sales
+  tax, a blockade that "raises" its standing with the government. Reach bounds the size of
+  such a mistake, not its sense.
+- A model no longer decides any number in the game.
+
+**Not done, or not checked.**
+
+- The rule that follow-ups may not speak for the player was added after the session that
+  showed the fault and has not been replayed.
+- Story lines sometimes state the date though told not to, and reuse a venue.
+- There is no list of open stories in the app. No elections. Stories move unrest only.
+- The Pakistan dossier of verified office holders was started and stopped at the owner's
+  word. The lookups found changes the scenario does not reflect, among them governor's rule
+  in Khyber Pakhtunkhwa from 11 October 2026.
+
 ## 2026-11-13, pass 7: a chronicle that is rich without being asked
 
 **Built.** Decision record 0015. Full accounts follow the rule on made-up texture, read as

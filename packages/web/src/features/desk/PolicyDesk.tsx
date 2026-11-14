@@ -44,7 +44,8 @@ export function PolicyDesk() {
   const conflictStillOpen = (blocked?.conflicts ?? []).some((c) =>
     c.cards.every((id) => cards.some((card) => card.id === id)),
   );
-  const closed = view?.campaign == null || moment !== null;
+  const over = view?.campaign?.over;
+  const closed = view?.campaign == null || moment !== null || over !== undefined;
 
   const add = async () => {
     const text = draft.trim();
@@ -169,6 +170,15 @@ export function PolicyDesk() {
         </section>
       )}
 
+      {over !== undefined && !moment && (
+        <div role="alert" className="mx-3 mt-2 rounded-control bg-bad-soft px-3 py-2 text-xs">
+          <p className="font-medium text-bad">You have lost office</p>
+          <p className="mt-1 text-fg-muted">{over}</p>
+          <p className="mt-1 text-fg-muted">
+            Go back to an earlier point from the Rewind window, or start a new campaign.
+          </p>
+        </div>
+      )}
       {moment && (
         <div
           role="status"

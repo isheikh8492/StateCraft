@@ -3,18 +3,19 @@
  * not a list of things to do: what the actor does is for a model to invent, and a devised
  * move may press only on these (decision record 0016). "approval.*" is every group of the
  * public, "grievance.*" every region and the country as a whole, "grievance.own" the region
- * in question or the actor's own. Foreign actors reach nothing: until other countries are
+ * in question or the actor's own, and "standing.self" how the actor itself stands with the
+ * government, which for the leader of a bloc is also how that bloc votes. Foreign actors reach nothing: until other countries are
  * modelled they only speak (REQ-ACT-24).
  */
 export const REACH: Readonly<Record<string, readonly string[]>> = {
-  military: ['approval.security', 'grievance.own'],
-  militant: ['grievance.own', 'approval.security', 'approval.periphery'],
-  ally: ['approval.*', 'grievance.all'],
-  opposition: ['approval.*', 'grievance.*'],
-  religious: ['approval.religious', 'approval.rural', 'grievance.*'],
-  business: ['growth', 'inflation', 'approval.business', 'approval.urban_middle'],
-  lender: ['growth', 'approval.business'],
-  province: ['grievance.own', 'approval.*'],
+  military: ['approval.security', 'grievance.own', 'standing.self'],
+  militant: ['grievance.own', 'approval.security', 'approval.periphery', 'standing.self'],
+  ally: ['approval.*', 'grievance.all', 'standing.self'],
+  opposition: ['approval.*', 'grievance.*', 'standing.self'],
+  religious: ['approval.religious', 'approval.rural', 'grievance.*', 'standing.self'],
+  business: ['growth', 'inflation', 'approval.business', 'approval.urban_middle', 'standing.self'],
+  lender: ['growth', 'approval.business', 'standing.self'],
+  province: ['grievance.own', 'approval.*', 'standing.self'],
 };
 
 /**

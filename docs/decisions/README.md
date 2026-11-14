@@ -21,3 +21,5 @@ Short records of significant technical choices: what was decided, why, and what 
 | [0015](0015-accounts-are-written-unasked-and-never-speak-for-the-player.md) | Accounts are written unasked for events that matter, and never speak for the player | 2026-11-13 |
 | [0016](0016-the-cast-devises-its-own-moves-and-the-engine-sizes-them.md) | The cast devises its own moves, and the engine sizes them | 2026-11-14 |
 | [0017](0017-stories-run-in-the-background.md) | Stories run in the background | 2026-11-14 |
+| [0018](0018-a-turn-lands-first-and-is-worded-afterwards.md) | A turn lands first and is worded afterwards | 2026-11-14 |
+| [0019](0019-standing-moves-with-events-and-office-can-be-lost.md) | Standing moves with what the cast does, and office can be lost | 2026-11-14 |

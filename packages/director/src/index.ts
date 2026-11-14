@@ -185,6 +185,8 @@ interface ReactionRecord {
   text: string;
   /** For a move the actor devised: the kind of move, in a few words. */
   what?: string;
+  /** What the move did to how the actor stands with the player, if it came off. */
+  standing?: number;
   /** When word of it reaches the player. After a move of hours, answers come in one by one. */
   dueDay?: number;
   dueHour?: number;
@@ -211,6 +213,7 @@ interface Story {
   title: string;
   /** Who is behind it. Empty for an order of the player's own. */
   actorName: string;
+  actorId?: string;
   /** What it follows from: an order's id, or the actor's own initiative. */
   cause: string;
   place?: string;
@@ -221,6 +224,19 @@ interface Story {
   stage: number;
   lastDay: number;
 }
+/**
+ * What a move of an actor's own does to how it stands with the government when it presses
+ * on that, at full strength; and what a story it is behind does when it ends.
+ */
+const MOVE_STANDING = 12;
+const STORY_STANDING = { 'story.breaking': -8, 'story.fading': 4 } as const;
+/** Days between a motion of no confidence being tabled and the vote on it. */
+const CONFIDENCE_NOTICE_DAYS = 7;
+/** Days after one vote of confidence before another motion can be tabled. */
+const CONFIDENCE_REST_DAYS = 90;
+/** Days between word of the army stirring and its deciding whether to move. */
+const COUP_NOTICE_DAYS = 10;
+
 /** The most stories carried forward at once: more than this and none of them is followed. */
 const STORIES_AT_ONCE = 6;
 /** A story with no development in this many days has gone quiet for good. */
@@ -245,6 +261,7 @@ function storiesOf(resolutions: readonly Resolution[], today: number): Story[] {
         id: x.id,
         title: x.what ?? 'move',
         actorName: x.actorName,
+        actorId: x.actor,
         cause: x.policy || `actor:${x.actor}`,
         ...(event.place ? { place: event.place } : {}),
         openedDay: event.day,
@@ -361,10 +378,19 @@ function reachOf(
       for (const id of own) unrest(id);
     } else if (pattern === 'grievance.all') out.set('grievance.all', 'unrest across the country');
     else if (pattern.startsWith('approval.')) approval(pattern.slice('approval.'.length));
+    else if (pattern === 'standing.self')
+      out.set(
+        'standing.self',
+        actor.bloc
+          ? 'how it stands with the government, and with that how its bloc votes in the assembly'
+          : 'how it stands with the government',
+      );
     else if (pattern === 'growth') out.set('growth', 'economic growth');
     else if (pattern === 'inflation') out.set('inflation', 'prices');
   }
-  return [...out].filter(([id]) => isValidTarget(world, id)).map(([id, label]) => ({ id, label }));
+  return [...out]
+    .filter(([id]) => id === 'standing.self' || isValidTarget(world, id))
+    .map(([id, label]) => ({ id, label }));
 }
 
 interface Beat {
@@ -874,6 +900,12 @@ export function createDirector(options: DirectorOptions): Director {
     p.resolutions
       .filter((r) => r.status === 'committed')
       .flatMap((r) => (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r })));
+  /** How office was lost on this line of history, if it has been. */
+  const lostOffice = (p: Projection) =>
+    p.resolutions
+      .filter((r) => r.status === 'committed')
+      .flatMap((r) => r.apply?.events ?? [])
+      .find((e) => e.kind === 'office.lost')?.summary;
   /** What set a story going, by its id: the move or the order on record. */
   const beganOf = (p: Projection, storyId: string | undefined) => {
     for (const r of p.resolutions) {
@@ -996,6 +1028,20 @@ export function createDirector(options: DirectorOptions): Director {
           if (e.day >= beforeDay || !e.causes.includes(`actor:${actor.id}`)) continue;
           if (e.kind === 'commitment.kept') value += STANDING.kept;
           if (e.kind === 'commitment.broken') value += STANDING.broken;
+          // A matter this actor is behind that came to a head hardens it against the
+          // government; one that faded leaves it readier to deal.
+          if (e.kind === 'story.breaking' || e.kind === 'story.fading')
+            value += STORY_STANDING[e.kind];
+        }
+        // What its own moves did to where it stands: a walkout costs, an offer earns.
+        for (const r of p.resolutions) {
+          if (r.status !== 'committed') continue;
+          const here = new Set(landedReactions(r, p).map((x) => x.id));
+          for (const x of r.reactions?.reactions ?? []) {
+            if (x.actor !== actor.id || !x.standing || !here.has(x.id)) continue;
+            const day = r.reactions?.events.find((e) => e.id === x.id)?.day ?? 0;
+            if (day < beforeDay) value += x.standing;
+          }
         }
         return [actor.id, clampStanding(value)];
       }),
@@ -1576,6 +1622,11 @@ export function createDirector(options: DirectorOptions): Director {
       x.status === 'committed' ? (x.reactions?.beats ?? []) : [],
     );
     const stories = storiesOf(p.resolutions, world.day);
+    // The latest event of a kind, in earlier turns or so far in this one.
+    const earlier = p.resolutions
+      .filter((x) => x.status === 'committed')
+      .flatMap((x) => x.apply?.events ?? []);
+    const lastOf = (kind: string) => [...earlier, ...events].filter((e) => e.kind === kind).at(-1);
     // Whether the player has acted where a story is playing out since it began, counting
     // the orders going out in this very turn.
     const storyTended = (story: Story) =>
@@ -1673,6 +1724,114 @@ export function createDirector(options: DirectorOptions): Director {
         );
         write(u.actor.id, 'You gave your word and did not keep it. Do not expect ours.', world.day);
       }
+      // Office can be lost. Two things can take it: the assembly, by a vote of no
+      // confidence, and the army. Neither comes without warning, and both turn on what the
+      // record shows: how the public and the blocs' leaders stand toward the government.
+      const approval = nationalApproval(world);
+      const holder = `${scenario.headOfGovernment.name} is no longer ${scenario.office.title}.`;
+      const house = scenario.government?.legislature;
+      if (house && !stoppedEarly) {
+        const tabled = lastOf('confidence.tabled');
+        const voted = lastOf('confidence.vote');
+        const open = tabled && (!voted || voted.day < tabled.day);
+        const blocs = Object.fromEntries(
+          scenario.cast
+            .filter((c) => c.bloc)
+            .map((c) => [c.bloc ?? '', standingNow.get(c.id) ?? 0]),
+        );
+        if (open && world.day >= tabled.day + CONFIDENCE_NOTICE_DAYS) {
+          const vote = legislatureVote(world.seed, `confidence:${tabled.day}`, house, {
+            popularity: (approval - 50) / 1.5,
+            nationalApproval: approval,
+            standing: blocs,
+          });
+          if (vote.passed)
+            emit(
+              world.day,
+              'confidence.vote',
+              'major',
+              `The government survived a vote of no confidence in the ${house.name}, ${vote.yes} votes to ${vote.no}.`,
+              [tabled.id],
+            );
+          else {
+            emit(
+              world.day,
+              'office.lost',
+              'major',
+              `The ${house.name} passed a vote of no confidence, ${vote.no} votes to ${vote.yes}. ${holder}`,
+              [tabled.id],
+            );
+            stoppedEarly = 'You have lost office.';
+          }
+        } else if (
+          !open &&
+          // A new government is given two months before anyone tries to bring it down.
+          world.day >= 60 &&
+          world.day - (voted?.day ?? -CONFIDENCE_REST_DAYS) >= CONFIDENCE_REST_DAYS &&
+          (approval < 35 ||
+            scenario.cast.some((c) => c.kind === 'ally' && c.bloc && (blocs[c.bloc] ?? 0) < -8)) &&
+          roll(world.seed, `confidence:${world.day}`) < 0.04
+        ) {
+          const mover = scenario.cast.find((c) => c.kind === 'opposition');
+          emit(
+            world.day,
+            'confidence.tabled',
+            'major',
+            `${mover?.name ?? 'The opposition'} tabled a motion of no confidence in the ${house.name}. The vote is in ${CONFIDENCE_NOTICE_DAYS} days.`,
+            [mover ? `actor:${mover.id}` : 'world'],
+          );
+          write(
+            secretary,
+            `A motion of no confidence has been tabled and will be voted on in ${CONFIDENCE_NOTICE_DAYS} days. It will turn on our partners. If any of them is unhappy with us, now is the time to give them a reason to stay.`,
+            world.day,
+          );
+        }
+      }
+      const army = scenario.cast.find((c) => c.kind === 'military');
+      if (army && !stoppedEarly) {
+        const loyal = standingNow.get(army.id) ?? 0;
+        const rumour = lastOf('coup.rumour');
+        const settled = lastOf('coup.passed');
+        const open = rumour && (!settled || settled.day < rumour.day);
+        if (open && world.day >= rumour.day + COUP_NOTICE_DAYS) {
+          if (loyal < -40 && approval < 35 && roll(world.seed, `coup:${rumour.day}`) < 0.5) {
+            emit(
+              world.day,
+              'office.lost',
+              'major',
+              `${army.name} removed the government and took power. ${holder}`,
+              [`actor:${army.id}`, rumour.id],
+            );
+            stoppedEarly = 'You have lost office.';
+          } else
+            emit(
+              world.day,
+              'coup.passed',
+              'significant',
+              'Talk of the army moving against the government died away.',
+              [`actor:${army.id}`, rumour.id],
+            );
+        } else if (
+          !open &&
+          loyal < -60 &&
+          approval < 30 &&
+          world.day - (settled?.day ?? -120) >= 120 &&
+          roll(world.seed, `coup:${world.day}`) < 0.03
+        ) {
+          emit(
+            world.day,
+            'coup.rumour',
+            'major',
+            "Senior officers were reported to have met without the government's knowledge, and the capital is full of talk that the army's patience has run out.",
+            [`actor:${army.id}`],
+          );
+          write(
+            secretary,
+            'The army is discussing whether to remove us. It will decide within days. It moves when it thinks the country is against us and we are against it: one of those has to change.',
+            world.day,
+          );
+        }
+      }
       // Stories running in the background move on. Each day every open one has a chance
       // to develop, greater where the place is restless and smaller where the player has
       // acted on the matter since. The third development ends it, one way or the other.
@@ -1707,7 +1866,14 @@ export function createDirector(options: DirectorOptions): Director {
                 ? 'major'
                 : 'minor',
           storyLine(story, stage, where),
-          [story.cause, storyCause(story.id)],
+          [
+            story.cause,
+            storyCause(story.id),
+            // Whoever is behind it is a cause too: how it ends changes where they stand.
+            ...(story.actorId && story.cause !== `actor:${story.actorId}`
+              ? [`actor:${story.actorId}`]
+              : []),
+          ],
           story.place ? { place: story.place } : {},
         );
         // What it does to the country is the engine's: unrest where it plays out, within
@@ -2441,6 +2607,7 @@ export function createDirector(options: DirectorOptions): Director {
       // begin on the day the follow-up is reported.
       let later = out.later;
       let odds: number | undefined;
+      let shift = 0;
       if (out.kind === 'action' && out.move && !option) {
         const strength = strengthOf(actor, scenario, world);
         odds = 0.3 + 0.4 * strength;
@@ -2452,12 +2619,18 @@ export function createDirector(options: DirectorOptions): Director {
         };
         if (roll(world.seed, `beat:${eventId}-b`) < odds) {
           const share = strength / Math.sqrt(out.move.presses.length);
+          // How it stands with the government is not a figure of the world's: it is kept
+          // with the move, and counted wherever standing is worked out.
+          const toward = out.move.presses.find((press) => press.on === 'standing.self');
+          if (toward) shift = Math.round(MOVE_STANDING * share) * (toward.way === 'raise' ? 1 : -1);
           const picks = Object.fromEntries(
-            out.move.presses.map((press) => {
-              const limit = NOVEL_LIMITS[press.on.split('.')[0] ?? ''] ?? 0;
-              const amount = Math.round(limit * share * 100) / 100;
-              return [press.on, press.way === 'raise' ? amount : -amount];
-            }),
+            out.move.presses
+              .filter((press) => press !== toward)
+              .map((press) => {
+                const limit = NOVEL_LIMITS[press.on.split('.')[0] ?? ''] ?? 0;
+                const amount = Math.round(limit * share * 100) / 100;
+                return [press.on, press.way === 'raise' ? amount : -amount];
+              }),
           );
           next = addEffects(
             next,
@@ -2490,6 +2663,7 @@ export function createDirector(options: DirectorOptions): Director {
         kind: out.kind,
         text: out.text,
         ...(out.kind === 'action' && out.move && !option ? { what: out.move.what } : {}),
+        ...(shift === 0 ? {} : { standing: shift }),
         ...due,
       });
       // An answer is dated to when it reaches the player; a move of the actor's own to the
@@ -2533,6 +2707,11 @@ export function createDirector(options: DirectorOptions): Director {
     requireCampaign();
     requireQuiet();
     if (waiting) throw new DirectorError('busy', 'A move is already waiting to start.');
+    if (lostOffice(state().projection))
+      throw new DirectorError(
+        'bad_request',
+        'You are no longer in office. Go back to an earlier point from the Rewind window, or start a new campaign.',
+      );
     makeWay();
     const start = () => {
       const now = state();
@@ -2764,6 +2943,7 @@ export function createDirector(options: DirectorOptions): Director {
               day: world.day,
               hour: currentHour(p),
               branch: ledger.currentBranch(),
+              ...(lostOffice(p) ? { over: lostOffice(p) ?? '' } : {}),
             }
           : null,
       cards: [...p.cards.values()],
