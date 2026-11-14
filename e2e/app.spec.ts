@@ -168,9 +168,8 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await page.getByRole('button', { name: 'Send 1 box and run to the next thing' }).click();
   await expect(page.getByTestId('game-hour')).toHaveText('10:00');
   await expect(date(page)).toHaveText('8 December 2026');
-  await expect(page.getByRole('status', { name: 'Why the clock stopped' })).toContainText(
-    /answered\.|An hour on\./,
-  );
+  // The desk says only what is left to send; what happened is in the chronicle.
+  await expect(page.getByRole('status', { name: 'Desk status' })).toHaveText(/^Nothing to send/);
 
   await move(page, /3 months later/);
   await expect(date(page)).toHaveText('9 March 2027');
@@ -280,12 +279,9 @@ test('rewinding goes back to an earlier day on a new line of history', async ({ 
   await page.reload();
   await expect(date(page)).toHaveText('1 November 2026');
 
-  // From a clean start, play runs the clock to whatever happens next and says why it stopped.
-  // It moves by the hour and at most to the next morning, so it is still early November.
+  // From a clean start, play runs the clock to whatever happens next. It moves by the hour
+  // and at most to the next morning, so it is still early November.
   await page.getByRole('button', { name: 'Run to the next thing' }).click();
-  await expect(page.getByRole('status', { name: 'Why the clock stopped' })).not.toContainText(
-    'Nothing to send',
-  );
   await expect(date(page)).toHaveText(/^[12] November 2026$/);
 });
 

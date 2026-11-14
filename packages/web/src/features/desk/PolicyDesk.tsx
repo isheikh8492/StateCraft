@@ -217,23 +217,12 @@ export function PolicyDesk() {
           that needs you. It moves in hours and never past the next morning. To skip further
           ahead on purpose, the date control at the top is the place. */}
       <div className="flex items-center gap-2 border-t border-border bg-surface px-3 py-2">
-        <p
-          role="status"
-          aria-label="Why the clock stopped"
-          className="min-w-0 flex-1 text-xs text-fg-muted"
-        >
-          {view?.stoppedFor ? (
-            <>
-              <span className="label-caps mr-2 text-fg-subtle">
-                {String(view.campaign?.hour ?? 0).padStart(2, '0')}:00
-              </span>
-              <span className="text-fg">{view.stoppedFor}</span>
-            </>
-          ) : fresh > 0 ? (
-            `${fresh} ${fresh === 1 ? 'box' : 'boxes'} to send.`
-          ) : (
-            'Nothing to send. Play runs the clock to the next thing that needs you.'
-          )}
+        <p role="status" aria-label="Desk status" className="min-w-0 flex-1 text-xs text-fg-muted">
+          {/* Only the desk's own state. What happened, including what stopped the clock,
+              is told in the chronicle and nowhere else. */}
+          {fresh > 0
+            ? `${fresh} ${fresh === 1 ? 'box' : 'boxes'} to send.`
+            : 'Nothing to send. Play runs the clock to the next thing that needs you.'}
         </p>
         <Button
           variant="primary"
