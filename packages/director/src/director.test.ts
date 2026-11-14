@@ -682,3 +682,53 @@ describe('the clock by the hour', () => {
     expect(now()).toEqual({ day: 21, hour });
   }, 60_000);
 });
+
+describe('stories in the background', () => {
+  it('opens a story from what the cast does, carries it forward by dice, and ends it', async () => {
+    const { director } = open(null);
+    director.start('pakistan-2026');
+    // Nothing is ordered. The cast moves by itself, and each move is the start of a story.
+    for (let month = 0; month < 6; month++) {
+      director.advance(30);
+      await director.idle();
+    }
+    const view = director.view();
+    const developments = view.events.filter((e) => e.kind.startsWith('story.'));
+    expect(developments.length).toBeGreaterThan(3);
+
+    // Every development names the story it belongs to and what that story follows from.
+    const byStory = new Map<string, typeof developments>();
+    for (const e of developments) {
+      const story = e.causes.find((c) => c.startsWith('story:'));
+      expect(story).toBeDefined();
+      expect(e.causes.some((c) => c.startsWith('actor:'))).toBe(true);
+      byStory.set(story ?? '', [...(byStory.get(story ?? '') ?? []), e]);
+    }
+    // Each story is one of the cast's own moves, which is on record.
+    for (const id of byStory.keys())
+      expect(view.events.some((e) => e.kind === 'move' && `story:${e.id}` === id)).toBe(true);
+
+    // A story stirs, then builds, then ends one way or the other, never faster than every
+    // three days, and has no more than three developments.
+    let ended = 0;
+    for (const steps of byStory.values()) {
+      const inOrder = [...steps].sort((a, b) => a.day - b.day);
+      expect(inOrder.length).toBeLessThanOrEqual(3);
+      expect(inOrder[0]?.kind).toBe('story.stirring');
+      if (inOrder[1]) {
+        expect(inOrder[1].kind).toBe('story.building');
+        expect(inOrder[1].day - (inOrder[0]?.day ?? 0)).toBeGreaterThanOrEqual(3);
+      }
+      if (inOrder[2]) {
+        expect(['story.breaking', 'story.fading']).toContain(inOrder[2].kind);
+        // Coming to a head is major news; the first stirring is read in passing.
+        expect(inOrder[2].size).toBe(inOrder[2].kind === 'story.breaking' ? 'major' : 'minor');
+        ended += 1;
+      }
+      expect(inOrder[0]?.size).toBe('colour');
+    }
+    expect(ended).toBeGreaterThan(0);
+    // No more than six are followed at once.
+    expect(byStory.size).toBeLessThanOrEqual(12);
+  });
+});

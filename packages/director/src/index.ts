@@ -57,6 +57,8 @@ import {
   REACH,
   REACTION_OPTIONS,
   type Size,
+  type StoryStage,
+  storyDevelop,
   turnAdjudicate,
   turnReactions,
 } from '@statecraft/models';
@@ -196,6 +198,110 @@ interface TalkRecord {
   orders?: string[];
 }
 /** A follow-up the dice will decide on its day. */
+/**
+ * A story running in the background: something an order or a move set going, which the
+ * engine carries forward by dice while the player does other things (decision record 0017).
+ * Nothing of it is stored apart from the events themselves: a story is the move or order
+ * that opened it, and every later event that names it as a cause.
+ */
+interface Story {
+  id: string;
+  /** What it is called in its plain lines: the kind of move, or the order's title. */
+  title: string;
+  /** Who is behind it. Empty for an order of the player's own. */
+  actorName: string;
+  /** What it follows from: an order's id, or the actor's own initiative. */
+  cause: string;
+  place?: string;
+  openedDay: number;
+  /** What set it going, in the words on record. */
+  began: string;
+  /** How many developments it has had. Three, and it is over. */
+  stage: number;
+  lastDay: number;
+}
+/** The most stories carried forward at once: more than this and none of them is followed. */
+const STORIES_AT_ONCE = 6;
+/** A story with no development in this many days has gone quiet for good. */
+const STORY_GOES_QUIET_DAYS = 60;
+/** At least this many days between two developments of one story. */
+const STORY_GAP_DAYS = 3;
+const storyCause = (id: string) => `story:${id}`;
+
+/**
+ * The stories still running on a given day, newest first, as the record shows them: every
+ * move an actor devised, and every order that was large or outside the catalogue.
+ */
+function storiesOf(resolutions: readonly Resolution[], today: number): Story[] {
+  const done = resolutions.filter((r) => r.status === 'committed');
+  const stories: Story[] = [];
+  for (const r of done) {
+    for (const x of r.reactions?.reactions ?? []) {
+      if (x.kind !== 'action') continue;
+      const event = r.reactions?.events.find((e) => e.id === x.id);
+      if (!event) continue;
+      stories.push({
+        id: x.id,
+        title: x.what ?? 'move',
+        actorName: x.actorName,
+        cause: x.policy || `actor:${x.actor}`,
+        ...(event.place ? { place: event.place } : {}),
+        openedDay: event.day,
+        began: x.text,
+        stage: 0,
+        lastDay: event.day,
+      });
+    }
+    for (const policy of r.compile?.policies ?? []) {
+      if (policy.blockedReason || policy.vague) continue;
+      if (policy.instrument !== 'novel' && policy.scale !== 'large') continue;
+      stories.push({
+        id: policy.id,
+        title: policy.title,
+        actorName: '',
+        cause: policy.id,
+        ...(policy.region ? { place: policy.region } : {}),
+        openedDay: policy.enactDay,
+        began: policy.orders.join(' ') || policy.summary,
+        stage: 0,
+        lastDay: policy.enactDay,
+      });
+    }
+  }
+  for (const r of done)
+    for (const event of r.apply?.events ?? []) {
+      const story = stories.find((s) => event.causes.includes(storyCause(s.id)));
+      if (!story) continue;
+      story.stage += 1;
+      story.lastDay = Math.max(story.lastDay, event.day);
+    }
+  return stories
+    .filter((s) => s.stage < 3 && today - s.lastDay <= STORY_GOES_QUIET_DAYS)
+    .sort((a, b) => b.openedDay - a.openedDay)
+    .slice(0, STORIES_AT_ONCE);
+}
+
+/** The plain line for a development, used as it stands when no model words it. */
+function storyLine(story: Story, stage: StoryStage, where: string): string {
+  const what = story.actorName
+    ? `${story.actorName}'s ${story.title}`
+    : `The order "${story.title}"`;
+  switch (stage) {
+    case 'stirring':
+      return story.actorName
+        ? `There was more to come${where} after ${what.replace(/^The /, 'the ')}: it kept at it, and others began to take notice.`
+        : `${what} began to be felt${where}, and people started to take sides over it.`;
+    case 'building':
+      return `${what} gathered weight${where}, drawing in more people than at first.`;
+    case 'breaking':
+      return `${what} came to a head${where} and could no longer be ignored.`;
+    default:
+      return story.actorName
+        ? `${what} ran out of force${where} and was little heard of again.`
+        : `The argument over ${what.replace(/^The /, 'the ')} died down${where}.`;
+  }
+}
+
 /** How strongly each kind of actor can move the world when it acts, before seats and mood. */
 const CLOUT: Readonly<Record<string, number>> = {
   military: 0.9,
@@ -557,6 +663,8 @@ const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
 const ACCOUNT_WORDS = { minor: 120, significant: 300, major: 500 } as const;
 /** How many events of one turn get their full account written without being asked for. */
 const ACCOUNTS_PER_TURN = 2;
+/** Words a development in a background story may run to: a line or two of news. */
+const STORY_WORDS = 55;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
 const ROUTINE_KINDS = new Set([
   'policy.announced',
@@ -765,6 +873,22 @@ export function createDirector(options: DirectorOptions): Director {
     p.resolutions
       .filter((r) => r.status === 'committed')
       .flatMap((r) => (r.compile?.policies ?? []).map((policy) => ({ policy, resolution: r })));
+  /** What set a story going, by its id: the move or the order on record. */
+  const beganOf = (p: Projection, storyId: string | undefined) => {
+    for (const r of p.resolutions) {
+      const move = r.reactions?.reactions.find((x) => x.id === storyId);
+      const event = r.reactions?.events.find((e) => e.id === storyId);
+      if (move && event) return { day: event.day, text: move.text, by: move.actorName };
+      const policy = r.compile?.policies.find((x) => x.id === storyId);
+      if (policy)
+        return {
+          day: policy.announcedDay,
+          text: policy.orders.join(' ') || policy.summary,
+          by: '',
+        };
+    }
+    return undefined;
+  };
   const currentHour = (p: Projection) =>
     [...p.resolutions].reverse().find((r) => r.status === 'committed' && r.hour !== undefined)
       ?.hour ?? 9;
@@ -1438,6 +1562,18 @@ export function createDirector(options: DirectorOptions): Director {
     const beats = p.resolutions.flatMap((x) =>
       x.status === 'committed' ? (x.reactions?.beats ?? []) : [],
     );
+    const stories = storiesOf(p.resolutions, world.day);
+    // Whether the player has acted where a story is playing out since it began, counting
+    // the orders going out in this very turn.
+    const storyTended = (story: Story) =>
+      story.place !== undefined &&
+      [...committedPolicies(p).map((x) => x.policy), ...(r.compile?.policies ?? [])].some(
+        (policy) =>
+          policy.id !== story.id &&
+          policy.region === story.place &&
+          !policy.blockedReason &&
+          policy.announcedDay >= story.openedDay,
+      );
     // Policies whose progress is worth a line when they start to bite or have been felt.
     const watched = [
       ...committedPolicies(p)
@@ -1523,6 +1659,58 @@ export function createDirector(options: DirectorOptions): Director {
           [`actor:${u.actor.id}`, u.id],
         );
         write(u.actor.id, 'You gave your word and did not keep it. Do not expect ours.', world.day);
+      }
+      // Stories running in the background move on. Each day every open one has a chance
+      // to develop, greater where the place is restless and smaller where the player has
+      // acted on the matter since. The third development ends it, one way or the other.
+      for (const story of stories) {
+        if (story.stage >= 3) continue;
+        if (world.day < story.openedDay + 2 || world.day - story.lastDay < STORY_GAP_DAYS) continue;
+        const region = world.regions.find((x) => x.id === story.place);
+        const heat = region ? STAGE_ORDER.indexOf(region.stage) / 3 : 0.3;
+        const tended = storyTended(story);
+        const chance = (0.1 + 0.12 * heat) * (tended ? 0.5 : 1);
+        if (roll(world.seed, `story:${story.id}:${world.day}`) >= chance) continue;
+        story.stage += 1;
+        story.lastDay = world.day;
+        const breaks = roll(world.seed, `story:${story.id}:end`) < (tended ? 0.3 : 0.6);
+        const stage: StoryStage =
+          story.stage === 1
+            ? 'stirring'
+            : story.stage === 2
+              ? 'building'
+              : breaks
+                ? 'breaking'
+                : 'fading';
+        const where = region ? ` in ${region.name}` : '';
+        const event = emit(
+          world.day,
+          `story.${stage}`,
+          stage === 'stirring'
+            ? 'colour'
+            : stage === 'building'
+              ? 'significant'
+              : breaks
+                ? 'major'
+                : 'minor',
+          storyLine(story, stage, where),
+          [story.cause, storyCause(story.id)],
+          story.place ? { place: story.place } : {},
+        );
+        // What it does to the country is the engine's: unrest where it plays out, within
+        // the limits for anything outside the catalogue.
+        const push = { stirring: 0, building: 0.3, breaking: 0.6, fading: -0.4 }[stage];
+        if (push !== 0) {
+          const amount = Math.round((NOVEL_LIMITS.grievance ?? 0) * push * 100) / 100;
+          world = addEffects(
+            world,
+            resolveNovel(
+              world,
+              { [`grievance.${region ? region.id : 'all'}`]: amount },
+              { day: world.day, causes: [event.id], idPrefix: event.id },
+            ),
+          );
+        }
       }
       // Follow-ups set up by earlier reactions come due: the dice decide which way each goes.
       for (const beat of beats.filter((b) => b.dueDay === world.day)) {
@@ -1743,6 +1931,12 @@ export function createDirector(options: DirectorOptions): Director {
       // that takes several calls at once writes them alongside the answers, and one that
       // does not takes them afterwards. It is only better wording, so it never holds up the
       // clock: the next move does not wait for it, and calls it off.
+      // What the stories in the background came to is a line or two each, and is not
+      // called off: it is what the player's own actions set going, and it is short.
+      const stories = developStories(id)
+        .catch((error) => console.error('[director]', error))
+        .finally(() => background.delete(stories));
+      background.add(stories);
       const signal = aside.signal;
       const wording = wordNews(id, signal)
         .then(() => writeAccounts(id, signal))
@@ -1781,11 +1975,86 @@ export function createDirector(options: DirectorOptions): Director {
   };
 
   /**
-   * A quiet turn commits at once, with the day's news in the plain lines the engine drew it
-   * in. Afterwards, while the player reads or waits for the hour, a model writes each line
-   * properly. Most of them are timed for later in the day, so by the time the clock reaches
-   * them they read as they should. With no model, the plain lines stand.
+   * Says what each development in a background story looked like. The engine has already
+   * recorded that it happened, in a plain line; here, off to one side and usually before
+   * the clock reaches its hour, a model writes it as news that follows from the story so far.
    */
+  async function developStories(id: string, signal?: AbortSignal): Promise<void> {
+    const { projection: p, world, scenario } = state();
+    const r = p.resolutions.find((x) => x.id === id);
+    if (r?.status !== 'committed' || !world || !scenario || !harness.ready('narrator')) return;
+    const fresh = (r.apply?.events ?? []).filter(
+      (e) => e.kind.startsWith('story.') && !p.worded.has(e.id),
+    );
+    if (fresh.length === 0) return;
+    const branch = ledger.currentBranch();
+    const every = p.resolutions
+      .filter((x) => x.status === 'committed')
+      .flatMap((x) => x.apply?.events ?? []);
+    // Told as written so far: what this pass has worded is read by the development after it.
+    const told = new Map(p.worded);
+    const storyOf = (event: WorldEventView) =>
+      event.causes.find((c) => c.startsWith('story:'))?.slice('story:'.length);
+    // Stories side by side; the developments of one story in order, each reading the last.
+    const byStory = new Map<string, WorldEventView[]>();
+    for (const event of fresh) {
+      const storyId = storyOf(event);
+      if (storyId) byStory.set(storyId, [...(byStory.get(storyId) ?? []), event]);
+    }
+    await Promise.all(
+      [...byStory].map(async ([storyId, events]) => {
+        for (const event of events.sort((a, b) => a.day - b.day)) {
+          const opened = beganOf(p, storyId);
+          if (!opened) return;
+          const soFar = every
+            .filter(
+              (e) =>
+                e.id !== event.id && e.day <= event.day && e.causes.includes(storyCause(storyId)),
+            )
+            .map((e) => ({ when: e.date, what: told.get(e.id) ?? e.summary }));
+          const place = world.regions.find((x) => x.id === event.place)?.name;
+          const tended = committedPolicies(p).some(
+            ({ policy }) =>
+              policy.id !== storyId &&
+              policy.region !== undefined &&
+              policy.region === event.place &&
+              policy.announcedDay >= opened.day,
+          );
+          const { output, via } = await harness.run(
+            storyDevelop,
+            {
+              began: {
+                when: dateOf(world.startDate, opened.day),
+                what: gist(opened.text, 300),
+                by: opened.by || scenario.office.title,
+              },
+              ...(place ? { place } : {}),
+              soFar,
+              now: {
+                when: event.date,
+                stage: event.kind.slice('story.'.length) as StoryStage,
+                gist: event.summary,
+              },
+              tended,
+              words: STORY_WORDS,
+              people: scenario.cast
+                .filter((c) => c.kind !== 'advisor')
+                .map((c) => `${c.name} (${c.kind})`),
+              canon: p.canon.slice(-40),
+              reader: `${scenario.headOfGovernment.name}, ${scenario.office.title}`,
+            },
+            { resolution: id, brief: scenario.brief, ...(signal ? { signal } : {}) },
+          );
+          if (via === 'fallback' || ledger.currentBranch() !== branch) return;
+          const text = output.text.slice(0, 400);
+          told.set(event.id, text);
+          // Saved as each is written, so that one that fails takes nothing else with it.
+          ledger.append({ type: 'news.worded', id, lines: { [event.id]: text } });
+        }
+      }),
+    );
+  }
+
   async function wordNews(id: string, signal?: AbortSignal): Promise<void> {
     const { projection: p, world, scenario } = state();
     const r = p.resolutions.find((x) => x.id === id);

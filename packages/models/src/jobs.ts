@@ -1782,6 +1782,94 @@ export const actorReply: Job<ReplyIn, ReplyOut> = {
   },
 };
 
+// --------------------------------------------------------------------------------- story.develop
+
+/** The stages a running story passes through. The engine moves it; a model says what that looked like. */
+export const STORY_STAGES = ['stirring', 'building', 'breaking', 'fading'] as const;
+export type StoryStage = (typeof STORY_STAGES)[number];
+
+export interface StoryIn {
+  /** What set the story going: an order, or something somebody did. */
+  began: { when: string; what: string; by: string };
+  /** Where it is playing out, if it has a place. */
+  place?: string;
+  /** What has happened in it so far, oldest first. */
+  soFar: { when: string; what: string }[];
+  /** What the engine has decided happens now, and its plain line for it. */
+  now: { when: string; stage: StoryStage; gist: string };
+  /** Whether the head of government has acted on the matter since it began. */
+  tended: boolean;
+  words: number;
+  people?: string[];
+  canon?: Detail[];
+  /** The head of government and their office, who are not to be written for. */
+  reader?: string;
+}
+const StoryOut = z.object({ why: z.string().default(''), text: z.string().min(1) });
+export type StoryOut = z.infer<typeof StoryOut>;
+
+/**
+ * One development in a story that is running in the background of the game: something an
+ * order or a move set going, which the engine carries forward by dice while the player does
+ * other things. The engine has already decided that it moves and which way; this job says
+ * what that looked like on the day.
+ */
+export const storyDevelop: Job<StoryIn, StoryOut> = {
+  name: 'story.develop',
+  shape: '{"why":string,"text":string}',
+  usesBrief: true,
+  repairs: 1,
+  version: 1,
+  role: 'narrator',
+  maxTokens: 900,
+  rules: `You write one development in a story that has been running in the background of a political simulation. "began" is what set it going. "soFar" is what has happened in it since. "now" is what the game has decided happens next: "stage" says which way it has moved, and "gist" is the plain line for it.
+- "stirring": the first sign that the matter is not over. Something small and concrete that people in the know would notice.
+- "building": it is gathering weight. More people, more money, more places, a harder line.
+- "breaking": it has come to a head and can no longer be ignored.
+- "fading": it has lost its force.
+Write what that looked like on the day, in up to "words" words, as a line or two of news in the past tense. Invent the concrete thing: a meeting in a named place, a rumour and who is spreading it, a defection, a document being passed round, a deal being drafted, a date being set, money changing hands, a crowd of a stated size. Name people by office and name, using "people", the world brief and "canon"; make up a plausible name where one is missing.
+- It must follow from "began" and "soFar": the same people, the same place, the next step. Do not repeat what "soFar" already says.
+- Keep to the direction in "now.stage". Do not resolve the story unless the stage is "breaking" or "fading".
+- If "tended" is true the government has acted on this since it began, and the development may show that.
+- Never write that the head of government ("reader"), the cabinet or the government said, did, decided or conceded anything.
+- Do not state the date, and do not give figures for the economy, public opinion or unrest.`,
+  output: StoryOut,
+  schema: (input) => obj({ why: WHY, text: str(roomFor(input.words)) }),
+  mend(input, out) {
+    const fixes: string[] = [];
+    if (words(out.text) > Math.round(input.words * 1.25)) {
+      const before = words(out.text);
+      out.text = clipWords(out.text, input.words);
+      fixes.push(`text: trimmed from ${before} to ${words(out.text)} words`);
+    }
+    // A development that speaks for the player loses the sentences that do.
+    const names = (input.reader ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name.length > 3);
+    if (names.length > 0) {
+      const all = sentencesOf(out.text);
+      const kept = all.filter(
+        (part) => !names.some((n) => part.sentence.toLowerCase().includes(n)),
+      );
+      if (kept.length > 0 && kept.length < all.length) {
+        out.text = rejoin(kept);
+        fixes.push(
+          `text: took out ${all.length - kept.length} sentence(s) that spoke for the player`,
+        );
+      }
+    }
+    return fixes;
+  },
+  check(input, out) {
+    const earlier = input.soFar.map((s) => s.what);
+    return earlier.length > 0 && dropEchoes(out.text, earlier) === undefined
+      ? ['That repeats what has already happened in this story. Write the next step.']
+      : [];
+  },
+  fallback: (input) => ({ why: 'No model: the plain line.', text: input.now.gist }),
+};
+
 // biome-ignore lint/suspicious/noExplicitAny: the registry holds jobs of every input and output type.
 export const JOBS: Readonly<Record<string, Job<any, any>>> = Object.fromEntries(
   [
@@ -1793,6 +1881,7 @@ export const JOBS: Readonly<Record<string, Job<any, any>>> = Object.fromEntries(
     policyReact,
     turnReactions,
     actorReply,
+    storyDevelop,
   ].map((j) => [j.name, j]),
 );
 
