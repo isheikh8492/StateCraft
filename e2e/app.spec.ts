@@ -97,6 +97,14 @@ test('moving time sends your orders; the world answers, and each order has a pag
   // Someone answers every order, in their own voice.
   await expect(chronicle.getByTestId('quote').first()).toBeVisible();
 
+  // What is still running in the background is listed above the cards, closed to one line.
+  // Opening it and choosing a story brings that story's latest card into view, marked.
+  const stories = chronicle.getByRole('region', { name: 'Stories' });
+  await expect(stories.getByRole('button', { name: /stor(y|ies) running/ })).toBeVisible();
+  await stories.getByRole('button', { name: /stor(y|ies) running/ }).click();
+  await stories.getByRole('listitem').first().getByRole('button').click();
+  await expect(chronicle.locator('li[data-entry].ring-1')).toBeVisible();
+
   // Looking back shows the world as it was; nothing can be ordered from the past.
   await chronicle.getByRole('button', { name: 'See the world at this point' }).first().click();
   await expect(win(page, 'Policy desk').getByText('You are looking at the past')).toBeVisible();
