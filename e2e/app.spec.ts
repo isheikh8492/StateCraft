@@ -191,15 +191,17 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await openWindow(page, 'Inspector');
   const inspector = win(page, 'Inspector');
   await expect(inspector.getByText('Model calls')).toBeVisible();
-  const judging = inspector
+  // A turn's calls are made after it has landed, so they turn up a little later.
+  const call = inspector
     .getByRole('list', { name: 'Model calls' })
     .getByRole('listitem')
-    .filter({ hasText: 'turn.adjudicate v' });
-  await expect(judging).toBeVisible();
+    .filter({ hasText: 'turn.reactions v' })
+    .first();
+  await expect(call).toBeVisible({ timeout: 20_000 });
   // Every call carries its own measurements and says how the shape was asked for.
-  await expect(judging).toContainText('to first token');
-  await expect(judging).toContainText('tok/s');
-  await expect(judging).toContainText('schema');
+  await expect(call).toContainText('to first token');
+  await expect(call).toContainText('tok/s');
+  await expect(call).toContainText('schema');
   await expect(inspector.getByText('Held to the schema')).toBeVisible();
   await page.getByRole('button', { name: 'Minimise Inspector' }).click();
 });

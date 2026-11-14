@@ -112,7 +112,7 @@ describe('director', () => {
     expect(view.chronicle.every((e) => e.cites.every((id) => ids.has(id)))).toBe(true);
   }, 30_000);
 
-  it('waits only for reading and judging; reactions follow, and short moves call no model', async () => {
+  it('waits for no model before a turn lands; answers and wording follow, and short moves call none', async () => {
     const { director, add, calls } = open('standin-slow');
     director.start('pakistan-2026');
     const jobs = () => calls.map((c) => c.job.split(' ')[0]);
@@ -123,17 +123,20 @@ describe('director', () => {
     await director.idle();
     expect(jobs()).toEqual([]);
 
-    // The turn commits after two calls. The cast's answers are still being written.
+    // The turn lands without waiting for a model at all: the game's own reader places the
+    // order, the dice say how it went and how far, and the news stands in plain lines.
     director.move({ days: 3 }, false);
     await expect.poll(() => director.view().campaign?.day, { timeout: 10_000 }).toBe(3);
-    expect(jobs()).toEqual(['policy.compile', 'turn.adjudicate']);
+    expect(jobs()).toEqual([]);
     expect(director.view().arriving.reactions).toBe(true);
     expect(director.view().chronicle.length).toBeGreaterThan(0);
+    const plainNote = director.view().policies[0]?.note;
+    expect(plainNote).toBeTruthy();
     await director.idle();
-    // The stand-in is a server on this machine, so the whole turn's answers are asked for in
-    // one call instead of three that would only queue behind each other.
-    expect(jobs().slice(2)).toEqual(['turn.reactions']);
-    const batch = JSON.parse(calls[2]?.input ?? '{}') as {
+    // The stand-in is a server on this machine that does not say what it holds, so the whole
+    // turn's answers are asked for in one call instead of three that would only queue.
+    expect(jobs()[0]).toBe('turn.reactions');
+    const batch = JSON.parse(calls[0]?.input ?? '{}') as {
       words: number;
       items: { key: string }[];
     };
@@ -141,6 +144,13 @@ describe('director', () => {
     expect(batch.words).toBe(150);
     expect(batch.items.map((i) => i.key)).toEqual(['a1', 'a2', 'a3']);
     expect(director.view().arriving.reactions).toBe(false);
+    // Then the turn is worded: the judge is told how the order landed and what it moved,
+    // with nothing left to choose, and writes why.
+    const wording = calls.find((c) => c.job.startsWith('turn.adjudicate'));
+    const judged = (JSON.parse(wording?.input ?? '{}') as { actions: unknown[] }).actions;
+    expect(judged).toHaveLength(1);
+    expect(judged[0]).toMatchObject({ allowed: [], landed: expect.any(String) });
+    expect(judged[0]).toHaveProperty('moved');
 
     // Running the clock an hour with nothing ordered: no calls at all.
     calls.length = 0;
@@ -156,23 +166,24 @@ describe('director', () => {
     await director.idle();
     director.move({ days: 3 }, false);
     await director.idle();
-    const after = ['turn.reactions', 'turn.adjudicate', 'chronicle.write'];
+    const after = ['turn.reactions', 'turn.adjudicate', 'story.develop', 'chronicle.write'];
     expect(jobs().every((job) => after.includes(job ?? ''))).toBe(true);
     for (const call of calls.filter((c) => c.job.startsWith('turn.adjudicate')))
       expect((JSON.parse(call.input) as { actions: unknown[] }).actions).toEqual([]);
 
-    // A longer run is judged once. With two months gone, some of the cast have moved first,
+    // A longer run is worded once. With two months gone, some of the cast have moved first,
     // and the events that mattered get their full accounts without being asked for: two at
-    // most, written after everything else.
+    // most.
     calls.length = 0;
     director.move({ days: 60 }, false);
     await director.idle();
-    expect(jobs().slice(0, 2)).toEqual(['turn.adjudicate', 'turn.reactions']);
-    const accounts = jobs().slice(2);
+    expect(jobs()[0]).toBe('turn.reactions');
+    expect(jobs().every((job) => after.includes(job ?? ''))).toBe(true);
+    expect(jobs().filter((job) => job === 'turn.adjudicate')).toHaveLength(1);
+    const accounts = jobs().filter((job) => job === 'chronicle.write');
     expect(accounts.length).toBeGreaterThan(0);
     expect(accounts.length).toBeLessThanOrEqual(2);
-    expect(accounts.every((job) => job === 'chronicle.write')).toBe(true);
-    const moves = JSON.parse(calls[1]?.input ?? '{}') as {
+    const moves = JSON.parse(calls[0]?.input ?? '{}') as {
       items: { order?: unknown; motive?: { reason: string } }[];
     };
     expect(moves.items).toHaveLength(2);
@@ -264,7 +275,8 @@ describe('director', () => {
     n++;
     const flaky = open('standin-flaky');
     flaky.director.start('pakistan-2026');
-    flaky.add('Expand cash transfers to poor households.');
+    // An order the game's own reader cannot place is the one a model is asked to read.
+    flaky.add('Appoint a commission of retired judges to study water rights.');
     flaky.director.execute(false);
     await flaky.director.idle();
     expect(flaky.calls.filter((c) => c.job.startsWith('policy.compile')).map((c) => c.via)).toEqual(

@@ -52,6 +52,7 @@ import {
   gist,
   type Harness,
   INSTRUMENT_REFS,
+  matchInstrument,
   policyCompile,
   policyReact,
   REACH,
@@ -1030,17 +1031,23 @@ export function createDirector(options: DirectorOptions): Director {
         ({ policy, resolution }) => !refusalOf(policy, resolution) && !p.repealed.has(policy.id),
       )
       .map(({ policy }) => ({ id: policy.id, title: policy.title, instrument: policy.instrument }));
-    const { output } = await harness.run(
-      policyCompile,
-      {
-        cards: cards.map((c) => ({ id: c.id, text: c.text })),
-        standing,
-        office: scenario.office,
-        instruments: INSTRUMENT_REFS,
-        regions: regionRefs(world),
-      },
-      { resolution: r.id, brief: scenario.brief },
-    );
+    const reading = {
+      cards: cards.map((c) => ({ id: c.id, text: c.text })),
+      standing,
+      office: scenario.office,
+      instruments: INSTRUMENT_REFS,
+      regions: regionRefs(world),
+    };
+    // A box the game's own reader places in the catalogue needs no model to read it, and
+    // the turn does not wait for one. Anything it cannot place is read by a model.
+    const plainEnough = cards.every((c) => {
+      const match = matchInstrument(c.text, reading.regions);
+      return match !== undefined && match !== 'novel';
+    });
+    const output = plainEnough
+      ? policyCompile.fallback(reading)
+      : (await harness.run(policyCompile, reading, { resolution: r.id, brief: scenario.brief }))
+          .output;
     const text = new Map(cards.map((c) => [c.id, c.text]));
     const conflicts = r.mixedSignals ? [] : output.conflicts;
     const policies: PolicyRecord[] = [];
@@ -1283,26 +1290,32 @@ export function createDirector(options: DirectorOptions): Director {
         .slice(-8)
         .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
     };
-    const context = { resolution: r.id, brief: scenario.brief };
-    const { output, via } = await harness.run(turnAdjudicate, input, context);
-
-    // Effects come back in the short form `{"inflation": 1.2}`; a zero is no movement.
-    const moved = (effects: Record<string, number>) =>
-      Object.fromEntries(Object.entries(effects).filter(([, value]) => value !== 0));
+    // The turn is not held up for a model (decision record 0018). How each order landed
+    // is already settled; how far it moved each thing is settled here, by keyed dice inside
+    // the part of the range that landing allows; and the news stands in its plain lines.
+    // Once the turn has committed a model writes the lines and the notes properly, off to
+    // one side, and they replace the plain ones as they arrive.
+    const plain = turnAdjudicate.fallback(input);
     const data: AdjudicateData = {
-      ...(via === 'fallback' ? { quiet: true } : {}),
+      quiet: true,
       drawn: true,
-      outcomes: Object.entries(output.outcomes).map(([policy, o]) => {
-        // The dice's word is final, whatever came back.
-        const result = actions.find((a) => a.id === policy)?.landed ?? o.result;
-        return {
-          policy,
-          result,
-          note: o.note,
-          picks: result === 'stalled' ? {} : moved(o.effects),
-        };
-      }),
-      events: asEvents(output.events),
+      outcomes: actions.map((action) => ({
+        policy: action.id,
+        result: action.landed,
+        note: plain.outcomes[action.id]?.note ?? '',
+        picks:
+          action.landed === 'stalled'
+            ? {}
+            : Object.fromEntries(
+                action.allowed.flatMap((rule) => {
+                  const [low, high] = rule.range;
+                  const at = roll(world.seed, `pick:${action.id}:${rule.on}`);
+                  const value = round2(low + (high - low) * at);
+                  return value === 0 ? [] : [[rule.on, value]];
+                }),
+              ),
+      })),
+      events: asEvents({}),
     };
 
     // No second opinion is asked for before the turn commits (decision record 0010): the
@@ -1938,7 +1951,7 @@ export function createDirector(options: DirectorOptions): Director {
         .finally(() => background.delete(stories));
       background.add(stories);
       const signal = aside.signal;
-      const wording = wordNews(id, signal)
+      const wording = wordNews(id)
         .then(() => writeAccounts(id, signal))
         .catch((error) => {
           if (!(error instanceof Cancelled)) console.error('[director]', error);
@@ -2071,7 +2084,12 @@ export function createDirector(options: DirectorOptions): Director {
     const plain = (r.apply?.events ?? [])
       .filter((e) => drawn.has(e.summary) && !p.worded.has(e.id))
       .slice(0, MAX_WORDED);
-    if (plain.length === 0) return;
+    // The orders judged in this turn, whose notes are still the engine's plain ones.
+    const judged = r.adjudicate.outcomes.flatMap((outcome) => {
+      const policy = r.compile?.policies.find((x) => x.id === outcome.policy);
+      return policy && !p.worded.has(`note:${policy.id}`) ? [{ policy, outcome }] : [];
+    });
+    if (plain.length === 0 && judged.length === 0) return;
     const branch = ledger.currentBranch();
     const { output, via } = await harness.run(
       turnAdjudicate,
@@ -2086,7 +2104,17 @@ export function createDirector(options: DirectorOptions): Director {
           ...Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage])),
         },
         regions: world.regions.map((x) => ({ id: x.id, label: x.name })),
-        actions: [],
+        // Nothing is left for the model to decide about an order: it is told how it landed
+        // and what it moved, and writes why.
+        actions: judged.map(({ policy, outcome }) => ({
+          id: policy.id,
+          by: actorId(world),
+          summary: `${policy.title}. ${policy.summary}`.slice(0, 400),
+          stage: 'announced',
+          landed: outcome.result as Landing,
+          allowed: [],
+          moved: outcome.picks,
+        })),
         happenings: plain.map((e, i) => {
           const where = world.regions.find((x) => x.id === e.place)?.name;
           const who = scenario.cast.find((c) => e.causes.includes(`actor:${c.id}`))?.name;
@@ -2111,12 +2139,29 @@ export function createDirector(options: DirectorOptions): Director {
     const still = state().projection.resolutions.find((x) => x.id === id);
     if (via === 'fallback' || ledger.currentBranch() !== branch || still?.status !== 'committed')
       return;
-    const lines = Object.fromEntries(
+    const lines: Record<string, string> = Object.fromEntries(
       plain.flatMap((e, i) => {
         const line = output.events[`h${i + 1}`];
         return line && line !== e.summary ? [[e.id, line]] : [];
       }),
     );
+    for (const { policy, outcome } of judged) {
+      const note = output.outcomes[policy.id]?.note?.trim();
+      if (!note || note === outcome.note) continue;
+      lines[`note:${policy.id}`] = note.slice(0, 400);
+      // The news of an order stalling or backfiring carried the plain note: it gets this one.
+      const news = (r.apply?.events ?? []).find(
+        (e) =>
+          (e.kind === 'policy.stalled' || e.kind === 'policy.backfired') &&
+          e.causes.includes(policy.id),
+      );
+      if (news && outcome.note && news.summary.endsWith(outcome.note))
+        lines[news.id] =
+          `${news.summary.slice(0, news.summary.length - outcome.note.length)}${note}`.slice(
+            0,
+            400,
+          );
+    }
     if (Object.keys(lines).length > 0) ledger.append({ type: 'news.worded', id, lines });
   }
 
@@ -2621,7 +2666,12 @@ export function createDirector(options: DirectorOptions): Director {
             announcedDate: dateOf(world.startDate, policy.announcedDay),
             enactDate: dateOf(world.startDate, policy.enactDay),
             orders: policy.orders,
-            ...(outcome ? { result: outcome.result.replace('_', ' '), note: outcome.note } : {}),
+            ...(outcome
+              ? {
+                  result: outcome.result.replace('_', ' '),
+                  note: p.worded.get(`note:${policy.id}`) ?? outcome.note,
+                }
+              : {}),
             costPerYear: cost,
             funding:
               cost > 0

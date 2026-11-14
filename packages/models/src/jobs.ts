@@ -456,6 +456,11 @@ export interface AdjudicateIn {
      */
     landed: Landing;
     allowed: Allowed[];
+    /**
+     * What the action moved, and by how much, when the engine has already settled that as
+     * well. Then nothing is left to choose: the judge only says why it went as it did.
+     */
+    moved?: Record<string, number>;
   }[];
   /**
    * What else happens in the period, already decided by the engine: what kind of thing,
@@ -503,12 +508,13 @@ export const turnAdjudicate: Job<AdjudicateIn, AdjudicateOut> = {
     '{"why":string,"outcomes":{"<action id>":{"result":"as_intended"|"partial"|"stalled"|"backfired","effects":{"<variable>":number},"note":string}},"events":{"<happening id>":string}}',
   usesBrief: true,
   repairs: 2,
-  version: 5,
+  version: 6,
   role: 'adjudicator',
   maxTokens: 4000,
   rules: `You judge one stretch of time in a political simulation. You do not know which actor, if any, is a human; treat every action the same way.
 - "outcomes" has one entry per action, keyed by the action's id. How each action went has already been decided and is given as its "landed": as_intended, partial, stalled (announced, and nothing moved) or backfired (carried out, and it turned against whoever ordered it). Copy it into "result". You do not choose it.
 - "effects" is an object of named numbers. Give a value for each variable the action is allowed to touch, inside its range; the ranges already reflect how it landed. A stalled action has none.
+- If an action carries "moved", what it moved is settled as well: leave its "effects" empty, and let the note fit what moved and which way.
 - "note": one sentence for the record that says why it went the way "landed" says: who dragged their feet, what gave way, what the order ran into. Plain and factual, with no figures.
 - "events" has one entry per item in "happenings", keyed by its id. Each happening is settled: that kind of thing took place, on that day ("when"), in that place ("where"), involving that actor ("who"), and it matters as much as its "size" says. You decide none of that and may change none of it.
 - For each, write one sentence of news, at most 200 characters, that makes its "gist" specific to this country as the world brief describes it: name the city, the institution, the union, the road, the crossing. Do not copy the gist's wording. Do not state the date: it is shown beside the line. Keep to the season. Use no figures that are not in the input. Make each different from the others and from "recent".

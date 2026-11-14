@@ -29,9 +29,11 @@ export function Inspector() {
   const [calls, setCalls] = useState<CallView[]>([]);
   const [numbers, setNumbers] = useState<string | null>(null);
   const id = last?.id;
+  // Most of a turn's calls are made after it has landed, so the list is read again whenever
+  // the game reports a change, not only when the turn changes.
   useEffect(() => {
     if (id) api.calls(id).then(setCalls, () => setCalls([]));
-  }, [id]);
+  }, [id, view]);
 
   if (!last) {
     return (
