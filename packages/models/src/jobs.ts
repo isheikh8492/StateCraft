@@ -708,59 +708,108 @@ export interface ChronicleIn {
   /** The most the account may run to, in words. Set by the player's detail setting. */
   words: number;
   level: 'restrained' | 'standard' | 'mature';
+  /** Who is who: the people and bodies of the country, so that the account can name them. */
+  people?: string[];
+  /** The player, by name and office: the one person an account may put no words or acts to. */
+  reader?: string;
+  /** The player's own advisers, by office, who do nothing on the player's behalf either. */
+  office?: string[];
+  /** Details already established in this campaign, to be used as they stand. */
+  canon?: Detail[];
 }
 const ChronicleOut = z.object({
   why: z.string().default(''),
+  /** Names and other details this account introduced, to be kept the same from now on. */
+  details: z
+    .array(z.object({ label: z.string().min(1).max(80), value: z.string().min(1).max(160) }))
+    .default([]),
   body: z.string().min(1),
-  /** Every figure in the body that is not in the input, declared so it can be kept consistent. */
-  details: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
 });
 export type ChronicleOut = z.infer<typeof ChronicleOut>;
 
+/**
+ * The names an account may not put words or acts to: the player and their own office,
+ * in lower case. One that the record itself mentions about this event is left out, since
+ * then the account is only reporting what is already known.
+ */
+function guardedNames(input: ChronicleIn): string[] {
+  const recorded =
+    `${input.event.summary} ${input.related.map((r) => r.summary).join(' ')}`.toLowerCase();
+  return [...(input.reader ?? '').split(','), ...(input.office ?? [])]
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name.length > 3 && !recorded.includes(name));
+}
+
 export const chronicleWrite: Job<ChronicleIn, ChronicleOut> = {
   name: 'chronicle.write',
-  shape: '{"why":string,"body":string,"details":[{"label":string,"value":string}]}',
+  shape: '{"why":string,"details":[{"label":string,"value":string}],"body":string}',
   usesBrief: true,
   repairs: 1,
-  version: 3,
+  version: 4,
   role: 'narrator',
-  maxTokens: 2500,
-  rules: `You write the full account of one event in a political simulation for adult readers, as a newspaper of record would. This is fiction about politics; some events are violent.
-- Build the account from "event" and "related". Do not add new events, decisions or outcomes: describe this one more fully, with setting, sequence and consequence.
-- Write up to "words" words, and use the room: do not stop short. For "weight" significant and major, open with a dateline: place, date and hour.
-- If "event.speaker" is given, the event is something that speaker said or did: build the account around it, with the setting, what was said, and what it signals.
-- You may quote what people said only from "related" entries that have a "speaker", attributing each quote to that speaker.
-- You may add descriptive figures for texture (a crowd size, a share price, a vote in a committee). Declare every such figure in "details". Never restate or change a figure given in the input.
+  maxTokens: 3500,
+  rules: `You write the full account of one event in a political simulation for adult readers, as the day's lead dispatch in a newspaper of record. This is fiction about politics; some events are violent.
+- The event itself is settled: what happened, where, when, to whom, and every figure in "event.numbers". Build the account from "event" and "related". Do not change the outcome, add a second event, or say what it led to afterwards.
+- Make it a scene a reader can see. Open with a dateline in bold: the place, the date and the hour ("**Quetta, 4 November 2026, 14:00**"). Then the sequence: who arrived, what was said and by whom, what the room, the street or the market did. Close on where things stood when it ended.
+- Be specific. Name the hall, the road, the ministry, the union, the officials present by office and by name. Use the names in "people", the world brief and "canon". Where a name or a detail of texture is missing (a spokesman, a venue, a crowd size, a share index, a count of shops shut), make up a plausible one for this country.
+- "details" comes first, before you write. Settle there every name you are going to use that nobody has given you, as { "label": the office or thing, "value": the name }. A detail in "canon" is already settled: use it exactly, never rename or contradict it, and do not list it again.
+- You may write what a named official or spokesman said, in direct speech, where it fits what "related" and "event" show that actor did or wanted. Attribute every quote. If "event.speaker" is given, the event is something that speaker said or did: build the account around it.
+- What you may not make up: the figures in "event.numbers" (never restate them differently), the state of the economy or the public mood, who controls territory, how a vote went, and whether something else happened.
+- The reader is the head of government, named in "reader". Never write that the reader said, did, ordered, convened, visited or decided anything, and never quote them, unless "related" or "event" records it. Their own cabinet and office do nothing on their behalf either. The account is what the rest of the country did; what the reader does next is theirs to decide.
+- Write up to "words" words and use the room: do not stop short.
 - State what happened. No lessons, warnings, disclaimers or judging adjectives. Report violence plainly: what, where, who, with no technique or instructions.
-- Plain paragraphs separated by blank lines. A short list is allowed where figures read best as a list.`,
+- Layout: plain paragraphs separated by blank lines. "**" around the dateline and around a short label that opens a paragraph. A list of "- " items where figures read best as a list. Nothing else.`,
   output: ChronicleOut,
   schema: (input) =>
     obj({
       why: WHY,
+      // Names are settled before the writing starts, so that what is written uses them.
+      details: list(obj({ label: str(80), value: str(160) }), 10),
       body: str(roomFor(input.words)),
-      details: list(obj({ label: str(60), value: str(60) }), 8),
     }),
   mend(input, out) {
     const fixes: string[] = [];
-    const sound = dropInvented(out.body, [input, out.details]);
-    if (sound && sound.dropped > 0) {
-      out.body = sound.text;
-      fixes.push(`body: took out ${sound.dropped} sentence(s) stating figures it did not declare`);
+    // A detail already settled keeps the name it has.
+    const settled = new Set((input.canon ?? []).map((d) => d.label.trim().toLowerCase()));
+    const fresh = out.details.filter((d) => !settled.has(d.label.trim().toLowerCase()));
+    if (fresh.length !== out.details.length) {
+      fixes.push(`details: dropped ${out.details.length - fresh.length} already on record`);
+      out.details = fresh;
+    }
+    // What the player and their own office did is the player's to decide, and is never
+    // written for them. A sentence that has them say or do something the record does not
+    // show is taken out, whatever the writer was told.
+    const guarded = guardedNames(input);
+    if (guarded.length > 0) {
+      const all = sentencesOf(out.body);
+      const kept = all.filter(
+        (part) => !guarded.some((name) => part.sentence.toLowerCase().includes(name)),
+      );
+      if (kept.length > 0 && kept.length < all.length) {
+        out.body = rejoin(kept);
+        fixes.push(
+          `body: took out ${all.length - kept.length} sentence(s) that put words or acts to the player or their office`,
+        );
+      }
     }
     // A piece that overran is trimmed here. Asking for it again costs a whole second call.
-    if (words(out.body) > Math.round(input.words * 1.2)) {
+    if (words(out.body) > Math.round(input.words * 1.25)) {
       const before = words(out.body);
       out.body = clipWords(out.body, input.words);
       fixes.push(`body: trimmed from ${before} to ${words(out.body)} words`);
     }
     return fixes;
   },
+  // Texture is no longer policed for figures (decision record 0014): an account that may not
+  // name a crowd or a hall is a restatement of its own headline.
   check(input, out) {
     const problems: string[] = [];
-    const invented = inventedNumbers(out.body, [input, out.details]);
-    if (invented.length > 0)
-      problems.push(`Declare these figures in "details", or remove them: ${invented.join(', ')}.`);
     if (COMMENTARY.test(out.body)) problems.push('Remove commentary; state only what happened.');
+    const body = out.body.toLowerCase();
+    if (guardedNames(input).some((name) => body.includes(name)))
+      problems.push(
+        'Do not write what the head of government or their own office said or did. Write only what the rest of the country did.',
+      );
     return problems;
   },
   fallback(input) {

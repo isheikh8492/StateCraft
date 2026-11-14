@@ -6,6 +6,7 @@ import { createHarness, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
   actorReply,
+  chronicleWrite,
   dropInvented,
   dropRepeated,
   INSTRUMENT_REFS,
@@ -551,5 +552,53 @@ describe('details of texture', () => {
     ]);
     expect(fixes).toEqual(['details: dropped 1 already on record']);
     expect(actorReply.check(input, out)).toEqual([]);
+  });
+});
+
+describe('full accounts', () => {
+  // Seen on a real model: an account had the Prime Minister convene a cabinet meeting, and
+  // another had his Principal Secretary promise the crowd a review of the tax.
+  it('never puts words or acts to the player or their own office', () => {
+    const input = {
+      event: {
+        id: 'e1',
+        when: '2026-11-13 09:00',
+        kind: 'strike',
+        size: 'significant' as const,
+        summary: 'Traders in Punjab shut their shops for a day over taxes and power bills.',
+        numbers: [],
+      },
+      related: [],
+      weight: 'significant' as const,
+      words: 300,
+      level: 'standard' as const,
+      reader: 'Shehbaz Sharif, Prime Minister',
+      office: ['Principal Secretary', 'Finance Minister'],
+    };
+    const out = {
+      why: '',
+      details: [{ label: 'Head of the Lahore traders', value: 'Naeem Mir' }],
+      body: '**Lahore, 13 November 2026, 09:00**\n\nShutters stayed down along the Old Bazaar. "We cannot pay twice," said Naeem Mir. The Principal Secretary arrived and promised a review of the tax. Prime Minister Shehbaz Sharif convened his cabinet that night. By dusk the lanes were empty.',
+    };
+    const fixes = chronicleWrite.mend?.(input, out) ?? [];
+    expect(fixes).toEqual([
+      'body: took out 2 sentence(s) that put words or acts to the player or their office',
+    ]);
+    expect(out.body).toContain('Naeem Mir');
+    expect(out.body).toContain('**Lahore, 13 November 2026, 09:00**');
+    expect(out.body).not.toMatch(/Principal Secretary|Prime Minister|Sharif/);
+    expect(chronicleWrite.check(input, out)).toEqual([]);
+    // What the record itself says the player did may be reported.
+    const recorded = {
+      ...input,
+      related: [{ when: '2026-11-12', summary: 'The Prime Minister ordered a rise in the tax.' }],
+    };
+    const report = {
+      why: '',
+      details: [],
+      body: 'The Prime Minister ordered the rise on Thursday.',
+    };
+    expect(chronicleWrite.mend?.(recorded, report)).toEqual([]);
+    expect(chronicleWrite.check(recorded, report)).toEqual([]);
   });
 });

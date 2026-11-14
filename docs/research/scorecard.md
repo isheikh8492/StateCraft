@@ -1,6 +1,6 @@
 # Scorecard: StateCraft against Modern Day 2026
 
-Last scored: 2026-11-12 (pass 6). Rules for this file are in `docs/GOAL.md`.
+Last scored: 2026-11-13 (pass 7). Rules for this file are in `docs/GOAL.md`.
 
 **Sources for the other game.** `[MD]` is its own page, <https://worldos.cc/worlds/modern-day-2026>,
 read on 2026-11-12 (the page was cut short by the reader, so absence of a feature there is
@@ -30,7 +30,7 @@ well enough to say. "Ahead" needs evidence on our side and a source on theirs.
 | World-level conditions | Energy and technology listed as domains `[MD]`; mechanics not stated | None | **behind** |
 | Consistency over a long game | Not stated. The wrench tool suggests the GM drifts `[MD]`; forgotten treaties `[claim]` | Eighteen months played with no failed step and the world rebuilt from the ledger throughout (session `year-1`). But the judge sees only the last eight events and its own events repeated from month to month | **unknown** |
 | Speed of a turn | Not stated | On `gpt-oss-20b` locally at about 20 tokens a second: 17 s on average and 44 s at worst for a turn with orders; instant with none (session `month-2`). Hosted: never measured | **unknown** |
-| Quality and amount of writing | From the owner's screenshots: an adviser's answer of about 900 words in headed sections with named people, dates and amounts; chronicle entries with datelines, figures and quotes by default; names made up freely `[owner's screenshots]` | Advisers now brief in headed sections with names, dates and amounts, up to 434 words on the local model, with made-up names recorded and reused (decision 0014; session `briefings`). The chronicle is still one line an event unless a full account is asked for | **behind**: on the chronicle, and on length with a local model |
+| Quality and amount of writing | From the owner's screenshots: an adviser's answer of about 900 words in headed sections with named people, dates and amounts; chronicle entries with datelines, figures and quotes by default; names made up freely `[owner's screenshots]` | Advisers brief in headed sections with names, dates and amounts (decision 0014; session `briefings`). Events that matter get a full account unasked, as a scene with a dateline, named people and quotes, 464 words in the one measured (decision 0015; session `accounts`). Lesser news is still one line | **behind**: on how much of the chronicle is rich, and on length and speed with a local model |
 | Saves, rewind, branches | Runs keep their own history `[MD]`; rewind not stated | Snapshot every turn, rewind to any turn or date onto a new branch, old line kept (tests; session `month-1` step 15) | **ahead** on what is stated |
 | Offline, no key, local model | Browser only; runs on a metered allowance of "Zaps", with subscriptions `[MD]` | Runs locally, with no model at all, or on a local model: 21 of 21 calls answered by the local model, none fell back (session `month-1`) | **ahead** |
 | Scenarios and start dates | Kept current to the month (v8 opens after the November 2026 US midterms); the same author runs WW1, WW2 and 350 BC worlds; one-click remix `[MD]` | One scenario, sourced, starting November 2026. Packs are data files but there is no second pack and no guide | **behind** |

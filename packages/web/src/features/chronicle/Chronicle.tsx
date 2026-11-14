@@ -7,7 +7,7 @@ import { formatDate, useDraft, useGame } from '@/lib/game';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
-import { Writing } from '@/ui/writing';
+import { Prose } from '@/ui/prose';
 import { ArrivingReactions } from './Arriving';
 
 /**
@@ -228,17 +228,19 @@ function Entry({ entry }: { entry: ChronicleEntry }) {
       ) : (
         <h3 className="mt-1 font-serif text-lg text-fg">{entry.headline}</h3>
       )}
+      {/* The full account, laid out as written: a dateline, paragraphs, a list where one
+          helps. Shown the same way while it is still arriving. */}
       {entry.full !== undefined && (
-        <div
-          data-testid="full-account"
-          className="prose-read mt-2 whitespace-pre-wrap text-fg-muted"
-        >
-          {entry.full}
+        <div data-testid="full-account" className="prose-read mt-2 max-w-[100ch] text-fg-muted">
+          <Prose text={entry.full} />
         </div>
       )}
       {entry.full === undefined && draft && (
-        <div className="prose-read mt-2 text-fg-muted">
-          <Writing text={draft} />
+        <div aria-busy="true" className="prose-read mt-2 max-w-[100ch] text-fg-muted">
+          <Prose text={draft} />
+          <span aria-hidden="true" className="animate-pulse text-accent">
+            ▍
+          </span>
         </div>
       )}
       <p className="mt-2 flex flex-wrap items-center gap-2 text-2xs text-fg-subtle">

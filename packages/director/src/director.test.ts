@@ -156,20 +156,31 @@ describe('director', () => {
     await director.idle();
     director.move({ days: 3 }, false);
     await director.idle();
-    expect(jobs().every((job) => job === 'turn.reactions' || job === 'turn.adjudicate')).toBe(true);
+    const after = ['turn.reactions', 'turn.adjudicate', 'chronicle.write'];
+    expect(jobs().every((job) => after.includes(job ?? ''))).toBe(true);
     for (const call of calls.filter((c) => c.job.startsWith('turn.adjudicate')))
       expect((JSON.parse(call.input) as { actions: unknown[] }).actions).toEqual([]);
 
-    // A longer run is judged once. With two months gone, some of the cast have moved first.
+    // A longer run is judged once. With two months gone, some of the cast have moved first,
+    // and the events that mattered get their full accounts without being asked for: two at
+    // most, written after everything else.
     calls.length = 0;
     director.move({ days: 60 }, false);
     await director.idle();
-    expect(jobs()).toEqual(['turn.adjudicate', 'turn.reactions']);
+    expect(jobs().slice(0, 2)).toEqual(['turn.adjudicate', 'turn.reactions']);
+    const accounts = jobs().slice(2);
+    expect(accounts.length).toBeGreaterThan(0);
+    expect(accounts.length).toBeLessThanOrEqual(2);
+    expect(accounts.every((job) => job === 'chronicle.write')).toBe(true);
     const moves = JSON.parse(calls[1]?.input ?? '{}') as {
       items: { order?: unknown; motive?: { reason: string } }[];
     };
     expect(moves.items).toHaveLength(2);
     expect(moves.items.every((i) => i.order === undefined && i.motive?.reason)).toBe(true);
+    // Those accounts are on the entries already, for events that mattered and no others.
+    const written = director.view().chronicle.filter((e) => e.full !== undefined);
+    expect(written).toHaveLength(accounts.length);
+    expect(written.every((e) => e.size === 'significant' || e.size === 'major')).toBe(true);
   }, 60_000);
 
   it('answers every order: the cast reacts, a later beat is decided by dice, and people can be asked', async () => {

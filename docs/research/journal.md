@@ -3,6 +3,38 @@
 Newest first. What was played, what was measured, what was learned, sources, what was
 decided. Rules for this file are in `docs/GOAL.md`.
 
+## 2026-11-13, pass 7: a chronicle that is rich without being asked
+
+**Built.** Decision record 0015. Full accounts follow the rule on made-up texture, read as
+a scene with a dateline, and are written unasked for the events of a turn that matter (two
+at most), off to one side. The chronicle lays them out with headings, bold and lists.
+
+**Played.** Three days by the hour and a week's skip on `openai/gpt-oss-20b` at Rich, from
+`plans/by-the-hour.json`. Transcript: `sessions/2026-11-13-accounts.md`.
+
+**Measured.** One event of the session was sized significant by the engine and got an
+account unasked: 464 words, 67 s in the background, first try.
+
+**Learned.**
+
+1. *It reads like a dispatch.* "Quetta, 4 November 2026, 20:00": the assault, the damage,
+   the response, a named spokesman's statement an hour and a half later.
+2. *It spoke for the player.* The same account had the Prime Minister convene an emergency
+   cabinet meeting. Told not to, the next one had his Principal Secretary walk up to a crowd
+   of traders and promise a review of the tax. Now enforced in code: the player's office is
+   not in the list of people given to the writer, and a sentence that names the player or
+   their office is taken out unless the record shows it.
+3. *It is slow on a local model.* A minute for one account, behind everything else the model
+   is writing. It never holds up the clock, but the player can reach the event first.
+4. *Few events qualify.* The deck sizes most of what it draws as minor, so in three days by
+   the hour only one event got an account unasked. Whether minor news should get a short
+   one is a question of how much the local model can keep up with.
+5. *Place names drift:* a "Kashmir Valley Outpost" in Balochistan. The dossier is the fix.
+
+**Decided.** Next: the dossier in the scenario pack (real office holders, cities, laws,
+programmes), since both the advisers and the accounts now reach for names and get some
+wrong; then ways to lose office.
+
 ## 2026-11-12, pass 6: briefings, and invented detail on record
 
 **From the owner,** with screenshots side by side: talking to advisers has no richness and

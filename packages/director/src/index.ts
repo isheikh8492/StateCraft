@@ -481,7 +481,9 @@ const REACTION_WORDS = { brief: 60, standard: 150, rich: 250 } as const;
 /** Words an answer in conversation may run to. An adviser asked for a plan needs the room. */
 const REPLY_WORDS = { brief: 250, standard: 500, rich: 900 } as const;
 const ACCOUNT_SCALE = { brief: 0.6, standard: 1, rich: 1.6 } as const;
-const ACCOUNT_WORDS = { minor: 50, significant: 150, major: 400 } as const;
+const ACCOUNT_WORDS = { minor: 120, significant: 300, major: 500 } as const;
+/** How many events of one turn get their full account written without being asked for. */
+const ACCOUNTS_PER_TURN = 2;
 const STAGE_ORDER = ['calm', 'protest', 'riot', 'insurgency'];
 const ROUTINE_KINDS = new Set([
   'policy.announced',
@@ -1649,6 +1651,7 @@ export function createDirector(options: DirectorOptions): Director {
         // The news is worded off to one side. It is only better wording, so it must never
         // hold up the clock: the next move does not wait for it.
         const wording = wordNews(id)
+          .then(() => writeAccounts(id))
           .catch((error) => console.error('[director]', error))
           .finally(() => background.delete(wording));
         background.add(wording);
@@ -2459,6 +2462,124 @@ export function createDirector(options: DirectorOptions): Director {
       : `${ran[0]?.toUpperCase()}${ran.slice(1)}`;
   };
 
+  /**
+   * Writes the full account of one event and saves it, once. Asked for by the player from
+   * an entry, or written unasked for an event that matters (decision record 0015). The
+   * account knows only what has happened by now: nothing timed for later is in "related".
+   */
+  async function writeAccount(event: WorldEventView, world: World, scenario: Scenario) {
+    const eventId = event.id;
+    writing.add(eventId);
+    notify();
+    try {
+      const p = state().projection;
+      if (p.expanded.has(eventId)) return;
+      const all = allEvents(p);
+      const speakers = new Map(
+        p.resolutions.flatMap((r) =>
+          (r.reactions?.reactions ?? []).map((x) => [x.id, x.actorName] as const),
+        ),
+      );
+      // What else is on record about the same matter: shared causes, either way round.
+      const related = all
+        .filter(
+          (e) =>
+            e.id !== eventId &&
+            (e.causes.some((c) => event.causes.includes(c) && c !== 'trend' && c !== 'world') ||
+              e.causes.includes(eventId) ||
+              event.causes.includes(e.id)),
+        )
+        .slice(-8)
+        .map((e) => ({
+          when: e.date,
+          summary: e.summary.slice(0, 400),
+          ...(speakers.has(e.id) ? { speaker: speakers.get(e.id) ?? '' } : {}),
+        }));
+      const place = world.regions.find((x) => x.id === event.place);
+      // What somebody said or did is never a footnote: it gets a full paragraph at least.
+      const weight =
+        event.size === 'major'
+          ? 'major'
+          : event.size === 'significant' || speakers.has(event.id)
+            ? 'significant'
+            : 'minor';
+      const branch = ledger.currentBranch();
+      const { output, via } = await harness.run(
+        chronicleWrite,
+        {
+          event: {
+            id: event.id,
+            when:
+              event.hour === undefined
+                ? event.date
+                : `${event.date} ${String(event.hour).padStart(2, '0')}:00`,
+            kind: event.kind,
+            size: event.size,
+            summary: event.summary,
+            ...(place ? { place: { id: place.id, label: place.name } } : {}),
+            ...(speakers.has(event.id) ? { speaker: speakers.get(event.id) ?? '' } : {}),
+            numbers: event.numbers
+              .filter(
+                (x): x is Figure & { before: number; now: number } =>
+                  typeof x.before === 'number' && typeof x.now === 'number',
+              )
+              .map((x) => ({ label: x.label, before: x.before, after: x.now, unit: x.unit })),
+          },
+          related,
+          weight,
+          words: Math.round(ACCOUNT_WORDS[weight] * ACCOUNT_SCALE[detail()]),
+          level: 'standard',
+          // The player's own office is left out of who is who: it is not theirs to write for.
+          people: scenario.cast
+            .filter((c) => c.kind !== 'advisor')
+            .map((c) => `${c.name} (${c.kind})`),
+          reader: `${scenario.headOfGovernment.name}, ${scenario.headOfGovernment.office}`,
+          office: scenario.cast
+            .filter((c) => c.kind === 'advisor')
+            .map((c) => c.name.replace(/^(Your|The)\s+/i, '')),
+          canon: p.canon.slice(-60),
+        },
+        { resolution: 'entries', brief: scenario.brief },
+        { onDraft: (strings) => setDraft(eventId, strings.body ?? '') },
+      );
+      // The campaign was rewound onto another line while it was being written: drop it.
+      if (ledger.currentBranch() !== branch) return;
+      // Saved once: opening the entry again shows the same text (REQ-READ-18).
+      ledger.append({ type: 'entry.expanded', eventId, body: output.body, via });
+      if (via !== 'fallback') record(output.details);
+    } finally {
+      writing.delete(eventId);
+      setDraft(eventId, null);
+      notify();
+    }
+  }
+
+  /**
+   * An event that matters gets its full account without being asked for: the player should
+   * not have to click to find out what a strike or an attack looked like. Written off to
+   * one side after the turn, a couple at most, and only where a model will write them: the
+   * built-in wording would add nothing to the headline.
+   */
+  async function writeAccounts(id: string): Promise<void> {
+    const { projection: p, world, scenario } = state();
+    const r = p.resolutions.find((x) => x.id === id);
+    if (r?.status !== 'committed' || !world || !scenario || !harness.ready('narrator')) return;
+    const worth = (r.apply?.events ?? [])
+      .filter(
+        (e) =>
+          !isRoutine(e) &&
+          (e.size === 'significant' || e.size === 'major') &&
+          !p.expanded.has(e.id) &&
+          !writing.has(e.id),
+      )
+      .slice(0, ACCOUNTS_PER_TURN);
+    for (const event of worth) {
+      // Read again with its proper wording, if the news has been worded since.
+      const worded = state().projection.worded.get(event.id);
+      await writeAccount(worded ? { ...event, summary: worded } : event, world, scenario);
+    }
+  }
+
   let viewCache: { key: string; view: View } | undefined;
 
   return {
@@ -2537,73 +2658,10 @@ export function createDirector(options: DirectorOptions): Director {
       const event = allEvents(projection).find((e) => e.id === eventId);
       if (!event) throw new DirectorError('not_found', 'No such entry.');
       if (projection.expanded.has(eventId) || writing.has(eventId)) return;
+      // Marked at once, so that the page shows it as being written before the model is free.
       writing.add(eventId);
       notify();
-      enqueue(0, async () => {
-        try {
-          const all = allEvents(state().projection);
-          const speakers = new Map(
-            state().projection.resolutions.flatMap((r) =>
-              (r.reactions?.reactions ?? []).map((x) => [x.id, x.actorName] as const),
-            ),
-          );
-          // What else is on record about the same matter: shared causes, either way round.
-          const related = all
-            .filter(
-              (e) =>
-                e.id !== eventId &&
-                (e.causes.some((c) => event.causes.includes(c) && c !== 'trend') ||
-                  e.causes.includes(eventId) ||
-                  event.causes.includes(e.id)),
-            )
-            .slice(-8)
-            .map((e) => ({
-              when: e.date,
-              summary: e.summary,
-              ...(speakers.has(e.id) ? { speaker: speakers.get(e.id) ?? '' } : {}),
-            }));
-          const place = world.regions.find((x) => x.id === event.place);
-          // What somebody said or did is never a footnote: it gets a full paragraph at least.
-          const weight =
-            event.size === 'major'
-              ? 'major'
-              : event.size === 'significant' || speakers.has(event.id)
-                ? 'significant'
-                : 'minor';
-          const { output, via } = await harness.run(
-            chronicleWrite,
-            {
-              event: {
-                id: event.id,
-                when: event.date,
-                kind: event.kind,
-                size: event.size,
-                summary: event.summary,
-                ...(place ? { place: { id: place.id, label: place.name } } : {}),
-                ...(speakers.has(event.id) ? { speaker: speakers.get(event.id) ?? '' } : {}),
-                numbers: event.numbers
-                  .filter(
-                    (x): x is Figure & { before: number; now: number } =>
-                      typeof x.before === 'number' && typeof x.now === 'number',
-                  )
-                  .map((x) => ({ label: x.label, before: x.before, after: x.now, unit: x.unit })),
-              },
-              related,
-              weight,
-              words: Math.round(ACCOUNT_WORDS[weight] * ACCOUNT_SCALE[detail()]),
-              level: 'standard',
-            },
-            { resolution: 'entries', brief: scenario.brief },
-            { onDraft: (strings) => setDraft(eventId, strings.body ?? '') },
-          );
-          // Saved once: opening the entry again shows the same text (REQ-READ-18).
-          ledger.append({ type: 'entry.expanded', eventId, body: output.body, via });
-        } finally {
-          writing.delete(eventId);
-          setDraft(eventId, null);
-          notify();
-        }
-      });
+      enqueue(0, () => writeAccount(event, world, scenario));
     },
     ask(actorId, question) {
       const { scenario, world } = requireCampaign();

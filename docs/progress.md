@@ -93,7 +93,7 @@ The speed slice and the first part of M1, built together.
 | Speed | A turn commits after two model calls at most (reading the boxes, judging the period). Nothing is written before the commit. A move of under a week with nothing ordered calls no model. Prompts carry a compact output shape, and the world brief only where needed. |
 | The time control | A date pill with the hour. Right arrow: skip ahead 1 day, 1 week, 1 month, 3 months, 6 months, 1 year, or to a specific date; any of them sends the desk first. Ordinary play is the play button on the desk (see "The clock by the hour"). Left arrow opens history. |
 | History | By turn (your move, then the world's response) and by time. |
-| Depth on demand | Entries are short. "Read the full account" on any entry, including a reaction, writes the long piece once and saves it. A Detail setting (Brief, Standard, Rich) sets how long reactions and accounts run. |
+| Depth on demand | Entries are short. "Read the full account" on any entry, including a reaction, writes the long piece once and saves it. A Detail setting (Brief, Standard, Rich) sets how long reactions and accounts run. Events that matter now get theirs unasked (see "A chronicle that is rich without being asked"). |
 | The cast | Sixteen Pakistani stakeholders with interests, stance and voice (authored; see the scenario's SOURCES.md). |
 | Reactions | Every order that takes effect is answered: the engine picks who is touched, up to three answer in full after the turn commits, and the rest are named. An answer can be an action with bounded effects. |
 | Later beats | A reaction can set up a follow-up that the dice decide on its day (a lull holds or breaks), recorded as its own event citing the order. |
@@ -123,6 +123,16 @@ The speed slice and the first part of M1, built together.
 | A more eventful judge | Told to write what the world does on its own account: about one event a week, at least one that matters in any period of a week or more. One significant event a fortnight (was one in 45 days), one major event in any period of two weeks or more (was 30 days). A significant event no longer has to cite an earlier one. |
 | Not built | Moves that reach your inbox as a demand to answer; "to next major event" stopping on a move; actors with private motives and plots. The chances and weights are placeholders, like every other number. |
 | Not verified | No real model has written a move or judged a period under the new instructions. With no model and with the stand-in, moves come from templates. |
+
+## A chronicle that is rich without being asked (decision record 0015)
+
+| Area | State |
+| --- | --- |
+| Full accounts | Written as a scene: a dateline with place, date and hour, the sequence, people by office and name, quotes that fit what the record shows. Up to 120, 300 or 500 words by how much the event matters, scaled by the Detail setting. Made-up names are declared, stored and reused (decision record 0014). |
+| Written unasked | After a turn, up to two of its events sized significant or major get their accounts in the background. Lesser entries keep "Read the full account". With no model, nothing is written unasked. |
+| Never for the player | An account may not have the player or their own office say or do anything the record does not show. Enforced in code. |
+| Verified | Tests, and one account written unasked on the local model: `docs/research/sessions/2026-11-13-accounts.md`. Not looked at in a browser this pass; the layout is the one checked for advisers' answers. |
+| Known limits | About a minute an account on the local model. Few events are sized to qualify. Place names can be wrong until the scenario has a dossier. |
 
 ## The clock by the hour (decision record 0013)
 
