@@ -2,7 +2,7 @@ import type { Server } from 'node:http';
 import type { ModelSettings } from '@statecraft/protocol';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adapterFor } from './adapters.ts';
-import { Cancelled, createHarness, systemPrompt } from './harness.ts';
+import { Cancelled, createHarness, Gate, systemPrompt } from './harness.ts';
 import {
   type AdjudicateIn,
   actorReply,
@@ -770,5 +770,50 @@ describe('a call nobody is waiting for', () => {
     await expect(
       harness.run(policyRead, readIn, { ...context, signal: stop.signal }),
     ).rejects.toBeInstanceOf(Cancelled);
+  });
+});
+
+describe('calls to a server on this machine', () => {
+  it('run together while they fit in its window, and in turn when they do not', async () => {
+    const gate = new Gate(7000, 4);
+    const order: string[] = [];
+    const enter = async (name: string, cost: number) => {
+      const leave = await gate.enter(cost);
+      order.push(`+${name}`);
+      return () => {
+        order.push(`-${name}`);
+        leave();
+      };
+    };
+    // Three reactions fit together; a long briefing behind them waits for room, and a small
+    // call behind that does not jump the queue.
+    const [a, b, c] = await Promise.all([enter('a', 1600), enter('b', 1600), enter('c', 1600)]);
+    const briefing = enter('briefing', 4200);
+    const small = enter('small', 500);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual(['+a', '+b', '+c']);
+    a?.();
+    b?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual(['+a', '+b', '+c', '-a', '-b', '+briefing', '+small']);
+    (await briefing)();
+    (await small)();
+    c?.();
+
+    // A call bigger than the whole window still runs, alone.
+    const huge = await gate.enter(50_000);
+    const behind = enter('behind', 100);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order.at(-1)).not.toBe('+behind');
+    huge();
+    (await behind)();
+
+    // Called off while waiting, a call leaves the queue.
+    const hold = await gate.enter(7000);
+    const stop = new AbortController();
+    const waiting = gate.enter(100, stop.signal);
+    stop.abort();
+    await expect(waiting).rejects.toBeInstanceOf(Cancelled);
+    hold();
   });
 });

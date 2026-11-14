@@ -1736,21 +1736,23 @@ export function createDirector(options: DirectorOptions): Director {
       });
     }
     setArriving(true);
-    enqueue(0, () =>
-      aftermath(id).finally(() => {
-        setArriving(false);
-        // The news is worded off to one side. It is only better wording, so it must never
-        // hold up the clock: the next move does not wait for it.
-        const signal = aside.signal;
-        const wording = wordNews(id, signal)
-          .then(() => writeAccounts(id, signal))
-          .catch((error) => {
-            if (!(error instanceof Cancelled)) console.error('[director]', error);
-          })
-          .finally(() => background.delete(wording));
-        background.add(wording);
-      }),
-    );
+    enqueue(0, () => {
+      // The cast's answers are asked for first, so they are first in line for the model.
+      const answers = aftermath(id).finally(() => setArriving(false));
+      // The news is worded off to one side, and accounts written, at the same time: a model
+      // that takes several calls at once writes them alongside the answers, and one that
+      // does not takes them afterwards. It is only better wording, so it never holds up the
+      // clock: the next move does not wait for it, and calls it off.
+      const signal = aside.signal;
+      const wording = wordNews(id, signal)
+        .then(() => writeAccounts(id, signal))
+        .catch((error) => {
+          if (!(error instanceof Cancelled)) console.error('[director]', error);
+        })
+        .finally(() => background.delete(wording));
+      background.add(wording);
+      return answers;
+    });
   }
   /**
    * Puts on record the details a piece of writing introduced, so that whoever writes next
@@ -2073,8 +2075,10 @@ export function createDirector(options: DirectorOptions): Director {
       else
         written = (
           await Promise.all([
+            // Each actor in a call of its own, side by side: a server that writes several
+            // replies at once does so faster in total, and each is seen as it is written.
             ...replies.map((n) => alone(n).then((one) => [one])),
-            ...(movers.length > 0 ? [together(movers)] : []),
+            ...movers.map((n) => together([n])),
           ])
         ).flat();
       answers = items.map((_, n) => written.find(([at]) => at === n)?.[1]);
@@ -2695,11 +2699,19 @@ export function createDirector(options: DirectorOptions): Director {
           !writing.has(e.id),
       )
       .slice(0, ACCOUNTS_PER_TURN);
-    for (const event of worth) {
-      // Read again with its proper wording, if the news has been worded since.
-      const worded = state().projection.worded.get(event.id);
-      await writeAccount(worded ? { ...event, summary: worded } : event, world, scenario, signal);
-    }
+    // Side by side where the model can take it; one that cannot simply takes them in turn.
+    await Promise.all(
+      worth.map((event) => {
+        // Read again with its proper wording, if the news has been worded since.
+        const worded = state().projection.worded.get(event.id);
+        return writeAccount(
+          worded ? { ...event, summary: worded } : event,
+          world,
+          scenario,
+          signal,
+        );
+      }),
+    );
   }
 
   let viewCache: { key: string; view: View } | undefined;
