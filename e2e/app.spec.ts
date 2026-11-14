@@ -50,10 +50,8 @@ test('a policy box keeps your words, survives a reload, and can be edited and re
   await addBox(page, 'Cut the fuel subsidy sharply');
   await expect(boxes(page)).toHaveCount(1);
   await expect(page.getByLabel(composer)).toHaveValue('');
-  // Your own office has a word before you send it. No model is asked for this.
-  await expect(boxes(page).first().getByTestId('advice').first()).toContainText(
-    'This will need a vote in the National Assembly.',
-  );
+  // A box is only your words: nobody comments on it before it is sent.
+  await expect(boxes(page).first().getByTestId('advice')).toHaveCount(0);
 
   // Enter adds a box; Shift+Enter makes a new line inside one.
   await page.getByLabel(composer).fill('Open talks with the port union');

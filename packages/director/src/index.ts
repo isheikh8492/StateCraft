@@ -47,7 +47,6 @@ import {
   chronicleWrite,
   type Harness,
   INSTRUMENT_REFS,
-  matchInstrument,
   policyCompile,
   policyReact,
   REACTION_OPTIONS,
@@ -2136,54 +2135,6 @@ export function createDirector(options: DirectorOptions): Director {
     flags: world.flags,
   });
 
-  /**
-   * A word from the player's own office before an order goes out. Rules only: what the
-   * office cannot order, what must pass a vote, and who is known to dislike this kind of
-   * measure. No model is asked.
-   */
-  function adviceOn(
-    text: string,
-    world: World,
-    scenario: Scenario,
-  ): { from: string; text: string }[] {
-    const match = matchInstrument(text, regionRefs(world));
-    if (match === undefined || match === 'novel') return [];
-    const instrument = CATALOGUE.find((c) => c.id === match.instrument);
-    if (!instrument) return [];
-    const advice: { from: string; text: string }[] = [];
-    const general = adviserFor(scenario)?.name ?? 'Your office';
-    if (!(scenario.office.powers as string[]).includes(instrument.authority)) {
-      return [
-        {
-          from: general,
-          text: scenario.office.limits[instrument.authority] ?? 'This is not within your powers.',
-        },
-      ];
-    }
-    if (instrument.authority === 'budget' && scenario.government)
-      advice.push({
-        from: general,
-        text: `This will need a vote in the ${scenario.government.legislature.name}.`,
-      });
-    const against = scenario.cast
-      .filter(
-        (c) =>
-          c.kind !== 'advisor' &&
-          c.dislikes.includes(match.instrument) &&
-          (c.cares.regions.length === 0 ||
-            match.region === undefined ||
-            c.cares.regions.includes(match.region)),
-      )
-      .slice(0, 3)
-      .map((c) => c.name);
-    if (against.length > 0)
-      advice.push({
-        from: adviserFor(scenario, match.instrument)?.name ?? general,
-        text: `Expect objections from ${against.join(', ').replace(/, ([^,]*)$/, ' and $1')}.`,
-      });
-    return advice;
-  }
-
   function buildView(): View {
     const { projection: p, world, scenario } = state();
     const active = running();
@@ -2341,10 +2292,7 @@ export function createDirector(options: DirectorOptions): Director {
               branch: ledger.currentBranch(),
             }
           : null,
-      cards: [...p.cards.values()].map((card) => {
-        const advice = world && scenario && !card.sent ? adviceOn(card.text, world, scenario) : [];
-        return advice.length > 0 ? { ...card, advice } : card;
-      }),
+      cards: [...p.cards.values()],
       running: active
         ? {
             id: active.id,

@@ -9,8 +9,6 @@ export interface CardView {
   pinned?: boolean;
   /** Already executed in its current wording; it will not be sent again until edited. */
   sent?: boolean;
-  /** A word from your own staff before you send it. Built by rules; no model is asked. */
-  advice?: { from: string; text: string }[];
 }
 
 /** A figure before and since. Moods and unrest are given in words, never as numbers. */

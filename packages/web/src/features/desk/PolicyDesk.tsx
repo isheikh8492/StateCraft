@@ -315,20 +315,10 @@ function Row({ card, number, locked, conflict }: RowProps) {
           <X />
         </Button>
       </div>
-      {(card.pinned || (card.advice?.length ?? 0) > 0) && (
-        <div className="ml-7 mr-16 mt-0.5 space-y-0.5">
-          {card.pinned && (
-            <p className="label-caps text-accent">
-              {card.sent ? 'Standing · in force' : 'Standing'}
-            </p>
-          )}
-          {card.advice?.map((a) => (
-            <p key={a.text} data-testid="advice" className="text-xs text-fg-muted">
-              <span className="label-caps mr-1.5 text-fg-subtle">{a.from}</span>
-              {a.text}
-            </p>
-          ))}
-        </div>
+      {card.pinned && (
+        <p className="label-caps ml-7 mt-0.5 text-accent">
+          {card.sent ? 'Standing · in force' : 'Standing'}
+        </p>
       )}
     </li>
   );

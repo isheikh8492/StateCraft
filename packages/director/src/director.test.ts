@@ -343,14 +343,6 @@ describe('people', () => {
     director.start('pakistan-2026');
     const cast = (id: string) => director.view().cast.find((c) => c.id === id);
 
-    // Your own office warns you before an order goes out, without a model.
-    add('Raise the sales tax.');
-    expect(director.view().cards[0]?.advice?.map((a) => a.text)).toEqual([
-      'This will need a vote in the National Assembly.',
-      'Expect objections from The Pakistan Peoples Party, Pakistan Tehreek-e-Insaf and The Federation of Pakistan Chambers of Commerce and Industry.',
-    ]);
-    director.deleteCard(director.view().cards[0]?.id ?? '');
-
     // Words of friendship move nobody. Something put on the table does.
     director.ask('ppp', 'We have always valued your party.');
     await director.idle();
