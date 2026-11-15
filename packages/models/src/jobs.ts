@@ -847,6 +847,8 @@ export interface ReactIn {
   reach: Ref[];
   /** The kinds of move this actor has made lately, so that it does not make them again. */
   madeBefore?: string[];
+  /** What is on record that concerns this actor and this matter: names and facts to keep to. */
+  known?: string[];
   /** The most the response may run to, in words. Set by the player's detail setting. */
   words: number;
   state: Record<string, number | string>;
@@ -898,6 +900,7 @@ const REACT_RULES = `You voice one actor in a political simulation answering an 
 - "text": up to "words" words, third person, like a wire report of the response: what the actor said or did, what it wants, and what it signals it will do next. Quote the actor directly in its own voice, more than once where there is room. For silence, one sentence saying it has not responded.
 - "later": optional. A follow-up that could go either way within 90 days, such as a truce holding or a strike being called. Give a yes/no "question" of a few words, and one short sentence for each outcome ("ifYes", "ifNo"), at most 22 words each. The game decides which happens, and prints that sentence weeks later as a news line on its own: so each must be a complete sentence in the past tense that names who did what and where, never "It will..." or "They may...". Each says only what this actor, its followers or the public did. Never write that the government, the cabinet, parliament or the head of government did, decided, conceded or suspended anything: that is the player's to decide.
 - Stay within what this actor could really do. Use no figures that are not in the input.
+- "known", where given, is what is already on record about this actor and this matter: names of people and places, and things that have happened. Use those names as they stand and do not contradict them.
 - Speak about this order and nothing else. Do not bring up an earlier order, an earlier grievance or an earlier demand unless this order is about the same thing: an answer to a tax rise is about the tax rise.`;
 
 const answerSchema = (reach: readonly Ref[], wordLimit: number): Schema =>
@@ -1102,6 +1105,7 @@ export interface ReactBatchIn {
     actor: ReactIn['actor'];
     reach: Ref[];
     madeBefore?: string[];
+    known?: string[];
   }[];
   /** The most each response may run to, in words. */
   words: number;
@@ -1811,7 +1815,12 @@ export interface StoryIn {
   /** The head of government and their office, who are not to be written for. */
   reader?: string;
 }
-const StoryOut = z.object({ why: z.string().default(''), text: z.string().min(1) });
+const StoryOut = z.object({
+  why: z.string().default(''),
+  text: z.string().min(1),
+  /** Where the whole story stands after this, in a sentence: what the record keeps of it. */
+  summary: z.string().default(''),
+});
 export type StoryOut = z.infer<typeof StoryOut>;
 
 /**
@@ -1822,10 +1831,10 @@ export type StoryOut = z.infer<typeof StoryOut>;
  */
 export const storyDevelop: Job<StoryIn, StoryOut> = {
   name: 'story.develop',
-  shape: '{"why":string,"text":string}',
+  shape: '{"why":string,"text":string,"summary":string}',
   usesBrief: true,
   repairs: 1,
-  version: 1,
+  version: 2,
   role: 'narrator',
   maxTokens: 900,
   rules: `You write one development in a story that has been running in the background of a political simulation. "began" is what set it going. "soFar" is what has happened in it since. "now" is what the game has decided happens next: "stage" says which way it has moved, and "gist" is the plain line for it.
@@ -1838,9 +1847,10 @@ Write what that looked like on the day, in up to "words" words, as a line or two
 - Keep to the direction in "now.stage". Do not resolve the story unless the stage is "breaking" or "fading".
 - If "tended" is true the government has acted on this since it began, and the development may show that.
 - Never write that the head of government ("reader"), the cabinet or the government said, did, decided or conceded anything.
-- Do not state the date, and do not give figures for the economy, public opinion or unrest.`,
+- Do not state the date, and do not give figures for the economy, public opinion or unrest.
+- "summary": where the whole story stands now, this development included, in one sentence of at most 30 words that names who and where. It is what will be remembered of the story.`,
   output: StoryOut,
-  schema: (input) => obj({ why: WHY, text: str(roomFor(input.words)) }),
+  schema: (input) => obj({ why: WHY, text: str(roomFor(input.words)), summary: str(220) }),
   mend(input, out) {
     const fixes: string[] = [];
     if (words(out.text) > Math.round(input.words * 1.25)) {
@@ -1873,7 +1883,11 @@ Write what that looked like on the day, in up to "words" words, as a line or two
       ? ['That repeats what has already happened in this story. Write the next step.']
       : [];
   },
-  fallback: (input) => ({ why: 'No model: the plain line.', text: input.now.gist }),
+  fallback: (input) => ({
+    why: 'No model: the plain line.',
+    text: input.now.gist,
+    summary: input.now.gist,
+  }),
 };
 
 // biome-ignore lint/suspicious/noExplicitAny: the registry holds jobs of every input and output type.

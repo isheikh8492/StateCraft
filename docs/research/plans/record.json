@@ -1,0 +1,9 @@
+[
+  { "order": "Appoint Jamiat Ulema-e-Islam as mediator with the armed groups in Balochistan." },
+  { "move": { "days": 7 } },
+  { "ask": ["interior_minister", "How do we calm Balochistan? Give me a plan."] },
+  { "order": "Cut the fuel subsidy sharply." },
+  { "move": { "days": 14 } },
+  { "ask": ["finance_minister", "What should I do about the reaction to the subsidy cut?"] },
+  { "ask": ["interior_minister", "Who is leading the talks in Quetta now?"] }
+]

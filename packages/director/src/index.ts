@@ -91,6 +91,7 @@ import {
 } from '@statecraft/scenarios';
 import { ambientEvent } from './ambient.ts';
 import { aftershock, forecast, type Happening } from './happenings.ts';
+import { asDetails, asLines, type Entry, kindOf, type Reader, recordFor } from './record.ts';
 import {
   dateOf,
   dayOf,
@@ -448,8 +449,11 @@ interface Projection {
   seen: Map<string, number>;
   /** News first recorded in its plain line and worded properly afterwards, by event id. */
   worded: Map<string, string>;
-  /** Details of texture established so far, oldest first: once named, a thing keeps its name. */
-  canon: { label: string; value: string }[];
+  /**
+   * The story record: everything established about the world, by entry id. Once named, a
+   * thing keeps its name: the first entry under a label is the one that stands.
+   */
+  record: Map<string, Entry>;
 }
 
 function project(events: readonly StoredEvent[]): Projection {
@@ -462,8 +466,10 @@ function project(events: readonly StoredEvent[]): Projection {
     talks: new Map(),
     seen: new Map(),
     worded: new Map(),
-    canon: [],
+    record: new Map(),
   };
+  const named = () =>
+    new Set([...p.record.values()].flatMap((e) => (e.label ? [e.label.toLowerCase()] : [])));
   const byId = new Map<string, Resolution>();
   for (const { seq, event } of events) {
     switch (event.type) {
@@ -583,12 +589,57 @@ function project(events: readonly StoredEvent[]): Projection {
       case 'news.worded':
         for (const [eventId, line] of Object.entries(event.lines)) p.worded.set(eventId, line);
         break;
-      case 'canon.added':
-        // The first name a thing is given is the one it keeps.
-        for (const item of event.items)
-          if (!p.canon.some((d) => d.label.toLowerCase() === item.label.toLowerCase()))
-            p.canon.push(item);
+      case 'canon.added': {
+        // Names recorded before the story record existed: public entries about nothing in
+        // particular. The first name a thing is given is the one it keeps.
+        const taken = named();
+        for (const [i, item] of event.items.entries()) {
+          if (taken.has(item.label.toLowerCase())) continue;
+          taken.add(item.label.toLowerCase());
+          p.record.set(`n${seq}-${i}`, {
+            id: `n${seq}-${i}`,
+            kind: kindOf(item.label),
+            label: item.label,
+            text: item.value,
+            about: [],
+            since: 0,
+            knownTo: 'all',
+          });
+        }
         break;
+      }
+      case 'record.added': {
+        const taken = named();
+        for (const entry of event.entries) {
+          if (entry.label && taken.has(entry.label.toLowerCase())) continue;
+          if (entry.label) taken.add(entry.label.toLowerCase());
+          p.record.set(entry.id, {
+            id: entry.id,
+            kind: entry.kind,
+            ...(entry.label ? { label: entry.label } : {}),
+            text: entry.text,
+            about: entry.about,
+            since: entry.since,
+            ...(entry.until === undefined ? {} : { until: entry.until }),
+            knownTo: entry.knownTo,
+            ...(entry.from ? { from: entry.from } : {}),
+          });
+        }
+        break;
+      }
+      case 'record.revised': {
+        const entry = p.record.get(event.id);
+        if (!entry) break;
+        if (event.text !== undefined) entry.text = event.text;
+        if (event.until !== undefined) entry.until = event.until;
+        break;
+      }
+      case 'record.learned': {
+        const entry = p.record.get(event.id);
+        if (!entry || entry.knownTo === 'all') break;
+        entry.knownTo = [...new Set([...entry.knownTo, ...event.readers])];
+        break;
+      }
       case 'talk.asked': {
         const thread = p.talks.get(event.actorId) ?? [];
         thread.push({ id: event.id, day: event.day, question: event.question });
@@ -2131,14 +2182,41 @@ export function createDirector(options: DirectorOptions): Director {
    * Puts on record the details a piece of writing introduced, so that whoever writes next
    * uses the same names. What is already on record under that label is left as it is.
    */
-  const record = (details: readonly { label: string; value: string }[]) => {
-    const known = new Set(state().projection.canon.map((d) => d.label.toLowerCase()));
-    const items = details
+  const record = (
+    details: readonly { label: string; value: string }[],
+    about: readonly string[] = [],
+    from?: string,
+  ) => {
+    const p = state().projection;
+    const known = new Set(
+      [...p.record.values()].flatMap((e) => (e.label ? [e.label.toLowerCase()] : [])),
+    );
+    const at = ledger.count() + 1;
+    const entries = details
       .map((d) => ({ label: d.label.trim().slice(0, 80), value: d.value.trim().slice(0, 160) }))
       .filter((d) => d.label !== '' && d.value !== '' && !known.has(d.label.toLowerCase()))
-      .slice(0, 12);
-    if (items.length > 0) ledger.append({ type: 'canon.added', items });
+      .slice(0, 12)
+      .map((d, i) => ({
+        id: `e${at}-${i}`,
+        kind: kindOf(d.label),
+        label: d.label,
+        text: d.value,
+        // What the writing was about is what the name is filed under.
+        about: [...about].slice(0, 12),
+        since: currentDay(p),
+        knownTo: 'all' as const,
+        ...(from ? { from } : {}),
+      }));
+    if (entries.length > 0) ledger.append({ type: 'record.added', entries });
   };
+  /** What an event concerns, as the record files things: who, where, and which story. */
+  const aboutEvent = (event: WorldEventView) => [
+    ...event.causes.filter((c) => c.startsWith('actor:') || c.startsWith('story:')),
+    ...(event.place ? [`region:${event.place}`] : []),
+  ];
+  /** The entries a call is given: what its reader knows of what it is about. */
+  const known = (p: Projection, reader: Reader, about: readonly string[], room: number) =>
+    recordFor(p.record.values(), reader, about, room, currentDay(p));
   /** Work under way that nothing waits for, kept so that `idle` can tell when it is over. */
   const background = new Set<Promise<void>>();
   /**
@@ -2219,7 +2297,9 @@ export function createDirector(options: DirectorOptions): Director {
               people: scenario.cast
                 .filter((c) => c.kind !== 'advisor')
                 .map((c) => `${c.name} (${c.kind})`),
-              canon: p.canon.slice(-40),
+              canon: asDetails(
+                known(state().projection, 'all', [storyCause(storyId), ...aboutEvent(event)], 350),
+              ),
               reader: `${scenario.headOfGovernment.name}, ${scenario.office.title}`,
             },
             { resolution: id, brief: scenario.brief, ...(signal ? { signal } : {}) },
@@ -2229,6 +2309,34 @@ export function createDirector(options: DirectorOptions): Director {
           told.set(event.id, text);
           // Saved as each is written, so that one that fails takes nothing else with it.
           ledger.append({ type: 'news.worded', id, lines: { [event.id]: text } });
+          // The record keeps one entry for the story: where it stands, rewritten each time.
+          const summary = output.summary.trim().slice(0, 400);
+          if (summary !== '') {
+            const entryId = `story-${storyId}`;
+            const ended = event.kind === 'story.breaking' || event.kind === 'story.fading';
+            if (state().projection.record.has(entryId))
+              ledger.append({
+                type: 'record.revised',
+                id: entryId,
+                text: summary,
+                ...(ended ? { until: event.day + STORY_GOES_QUIET_DAYS } : {}),
+              });
+            else
+              ledger.append({
+                type: 'record.added',
+                entries: [
+                  {
+                    id: entryId,
+                    kind: 'story',
+                    text: summary,
+                    about: [...new Set([storyCause(storyId), ...aboutEvent(event)])].slice(0, 12),
+                    since: opened.day,
+                    knownTo: 'all',
+                    from: event.id,
+                  },
+                ],
+              });
+          }
         }
       }),
     );
@@ -2382,6 +2490,22 @@ export function createDirector(options: DirectorOptions): Director {
     for (const past of p.resolutions.values())
       for (const x of past.reactions?.reactions ?? [])
         saidBy.set(x.actor, [...(saidBy.get(x.actor) ?? []), x.text]);
+    // What is on record about an actor and the matter in hand, as that actor knows it.
+    const onRecord = (actorId: string, regionId: string | undefined, policyId?: string) => {
+      const lines = asLines(
+        known(
+          p,
+          `actor:${actorId}`,
+          [
+            `actor:${actorId}`,
+            ...(regionId ? [`region:${regionId}`] : []),
+            ...(policyId ? [policyId] : []),
+          ],
+          160,
+        ),
+      );
+      return lines.length > 0 ? { known: lines } : {};
+    };
     // The kinds of move each has made, so that the next one is something else.
     const madeBy = new Map<string, string[]>();
     for (const past of p.resolutions.values())
@@ -2481,6 +2605,7 @@ export function createDirector(options: DirectorOptions): Director {
         // What it can move, not what it can do: the move itself is the model's to invent.
         reach: reachOf(actor, world, policy?.region ?? motive?.region),
         ...(madeBy.has(actor.id) ? { madeBefore: (madeBy.get(actor.id) ?? []).slice(-3) } : {}),
+        ...onRecord(actor.id, policy?.region ?? motive?.region, policy?.id),
       };
     });
     const before = ledger.latestSnapshot()?.seq;
@@ -2536,6 +2661,7 @@ export function createDirector(options: DirectorOptions): Director {
             actor: item.actor,
             reach: item.reach,
             ...(item.madeBefore ? { madeBefore: item.madeBefore } : {}),
+            ...(item.known ? { known: item.known } : {}),
             words: wordLimit,
             state: stateNow,
             recent,
@@ -2695,6 +2821,28 @@ export function createDirector(options: DirectorOptions): Director {
       }
     }
     ledger.appendWithSnapshot({ type: 'reactions.written', id, data }, next.day, next);
+    // What each actor did goes on record as a fact about it, so that whoever writes of
+    // that actor or that place next knows it happened.
+    const facts = data.reactions.flatMap((x) => {
+      if (x.kind !== 'action') return [];
+      const event = data.events.find((e) => e.id === x.id);
+      const text = gist(x.text, 220);
+      if (!event || text === '') return [];
+      return [
+        {
+          id: `f-${x.id}`,
+          kind: 'fact' as const,
+          text,
+          about: [`actor:${x.actor}`, ...aboutEvent(event), ...(x.policy ? [x.policy] : [])]
+            .filter((value, i, all) => all.indexOf(value) === i)
+            .slice(0, 12),
+          since: event.day,
+          knownTo: 'all' as const,
+          from: x.id,
+        },
+      ];
+    });
+    if (facts.length > 0) ledger.append({ type: 'record.added', entries: facts });
   }
 
   const begin = (
@@ -3162,7 +3310,7 @@ export function createDirector(options: DirectorOptions): Director {
           office: scenario.cast
             .filter((c) => c.kind === 'advisor')
             .map((c) => c.name.replace(/^(Your|The)\s+/i, '')),
-          canon: p.canon.slice(-60),
+          canon: asDetails(known(p, 'all', aboutEvent(event), 450)),
         },
         { resolution: 'entries', brief: scenario.brief, ...(signal ? { signal } : {}) },
         { onDraft: (strings) => setDraft(eventId, strings.body ?? '') },
@@ -3171,7 +3319,7 @@ export function createDirector(options: DirectorOptions): Director {
       if (ledger.currentBranch() !== branch) return;
       // Saved once: opening the entry again shows the same text (REQ-READ-18).
       ledger.append({ type: 'entry.expanded', eventId, body: output.body, via });
-      if (via !== 'fallback') record(output.details);
+      if (via !== 'fallback') record(output.details, aboutEvent(event), event.id);
     } finally {
       writing.delete(eventId);
       setDraft(eventId, null);
@@ -3331,7 +3479,18 @@ export function createDirector(options: DirectorOptions): Director {
               (e.place !== undefined && actor.cares.regions.includes(e.place)),
           )
           .slice(-12)
-          .map((e) => ({ when: e.date, summary: e.summary }));
+          // In gist: what happened, without a paragraph of quotation for each.
+          .map((e) => ({ when: e.date, summary: gist(e.summary, 240) }));
+        // What this conversation is about, as the record files things: the actor, the
+        // places it cares about, and any place the question names.
+        const asked = question.toLowerCase();
+        const concerns = [
+          `actor:${actor.id}`,
+          ...actor.cares.regions.map((x) => `region:${x}`),
+          ...now.world.regions
+            .filter((x) => asked.includes(x.name.toLowerCase()))
+            .map((x) => `region:${x.id}`),
+        ];
         const insider = actor.kind === 'advisor';
         const { output, via } = await harness.run(
           actorReply,
@@ -3375,7 +3534,14 @@ export function createDirector(options: DirectorOptions): Director {
               `${scenario.headOfGovernment.name}, ${scenario.headOfGovernment.office} (the asker)`,
               ...scenario.cast.map((c) => `${c.name} (${c.kind})`),
             ],
-            canon: now.projection.canon.slice(-60),
+            canon: asDetails(
+              known(
+                now.projection,
+                actor.kind === 'advisor' ? 'office' : `actor:${actor.id}`,
+                concerns,
+                450,
+              ),
+            ),
             ...(insider
               ? {
                   canOrder: {
@@ -3398,7 +3564,7 @@ export function createDirector(options: DirectorOptions): Director {
           ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
           ...(output.orders.length > 0 ? { orders: output.orders.slice(0, 5) } : {}),
         });
-        record(output.details);
+        record(output.details, concerns);
         setDraft(id, null);
       });
     },

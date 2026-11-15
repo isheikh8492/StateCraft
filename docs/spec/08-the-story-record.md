@@ -1,6 +1,7 @@
 # The story record (proposed)
 
-Status: **a design for the owner to approve, written 2026-11-14. Nothing here is built.**
+Status: **approved by the owner as written on 2026-11-14.** Step 1 of the order of building
+is built; see "What has been built" at the end.
 
 ## What it is for
 
@@ -229,3 +230,22 @@ Each step is played on a real model and committed apart. Each leaves the game wo
 4. **Should anything show that you are missing something?** As written, no.
 5. **Build order.** As written, cheaper calls first, then secrets, then spreading. Secrets
    could come first if they matter more to you than cost.
+
+## What has been built
+
+**Step 1, the record with everything public (2026-11-14).** Entries, the three ledger
+events, `recordFor`, and every writing job reading through it. Names a writer makes up are
+filed under what the writing was about. What an actor does goes on record as a fact about
+it. Each running story has one entry, rewritten as it develops by the call that writes the
+development. A saved game from before opens with its names as public entries.
+
+Measured on `openai/gpt-oss-20b` (`docs/research/sessions/2026-11-14-record.md`): an
+adviser's answer was sent 2,630 to 2,980 tokens, against 3,350 to 3,550 before. That is
+less than the 1,800 estimated above: the adviser's own instructions, which this does not
+touch, are the larger part of what it is sent. Reactions, story developments and the
+wording of a turn were about as before in a game three weeks old; their saving comes as a
+game grows, since what they are sent no longer grows with it. A story development used a
+name another piece of writing had put on record.
+
+Not yet built: who knows what (step 2) and knowledge spreading (step 3). Until then every
+entry is public.

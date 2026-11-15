@@ -123,6 +123,41 @@ export const LedgerEvent = z.discriminatedUnion('type', [
    * Details of texture a model introduced and the game now holds it to: the name given to an
    * office holder, a venue, a programme. Never a figure of the world's own state.
    */
+  /**
+   * The story record (spec: 08-the-story-record). Everything established about the world is
+   * an entry; every entry says what it concerns and who knows it.
+   */
+  z.object({
+    type: z.literal('record.added'),
+    entries: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          kind: z.enum(['person', 'place', 'body', 'fact', 'story']),
+          label: z.string().max(80).optional(),
+          text: z.string().min(1).max(400),
+          about: z.array(z.string()).max(12),
+          since: z.number().int(),
+          until: z.number().int().optional(),
+          knownTo: z.union([z.literal('all'), z.array(z.string())]),
+          from: z.string().optional(),
+        }),
+      )
+      .max(40),
+  }),
+  /** An entry's text changed, or it stopped being true. */
+  z.object({
+    type: z.literal('record.revised'),
+    id: z.string().min(1),
+    text: z.string().min(1).max(400).optional(),
+    until: z.number().int().optional(),
+  }),
+  /** Somebody came to know an entry. */
+  z.object({
+    type: z.literal('record.learned'),
+    id: z.string().min(1),
+    readers: z.array(z.string()).min(1),
+  }),
   z.object({
     type: z.literal('canon.added'),
     items: z
