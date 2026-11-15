@@ -890,3 +890,52 @@ describe('who knows what', () => {
     expect(await sent('pti')).toContain('Nightjar');
   }, 60_000);
 });
+
+describe('secrets getting out', () => {
+  it('reaches the government as intelligence, sometimes wrongly, or everyone as a leak', async () => {
+    const { director } = open(null);
+    director.start('pakistan-2026');
+    for (let month = 0; month < 14; month++) {
+      director.advance(30);
+      await director.idle();
+    }
+    const view = director.view();
+    const truth = director.debugRecord().events;
+    const secrets = truth.filter((e) => e.knownTo && e.kind.startsWith('story.'));
+    const reports = truth.filter((e) => e.kind === 'intelligence');
+    const leaks = truth.filter((e) => e.kind === 'leak');
+    expect(secrets.length).toBeGreaterThan(5);
+    expect(reports.length).toBeGreaterThan(0);
+    expect(leaks.length).toBeGreaterThan(0);
+
+    // Each is about one particular secret, and comes at least two days after it.
+    for (const e of [...reports, ...leaks]) {
+      const about = e.causes.find((c) => c.startsWith('about:'))?.slice('about:'.length);
+      const secret = secrets.find((s) => s.id === about);
+      expect(secret).toBeDefined();
+      expect(e.day - (secret?.day ?? 0)).toBeGreaterThanOrEqual(2);
+      // The secret itself stays out of the player's sight; what they see is the report.
+      expect(view.events.some((seen) => seen.id === about)).toBe(false);
+      expect(view.events.some((seen) => seen.id === e.id)).toBe(true);
+    }
+    // An intelligence report is for the government alone and says so; a leak is public.
+    for (const e of reports) {
+      expect(e.knownTo).toEqual(['office']);
+      expect(e.summary).toMatch(/^Intelligence reported that /);
+    }
+    for (const e of leaks) {
+      expect(e.knownTo).toBeUndefined();
+      expect(e.summary).toMatch(/^It emerged that /);
+    }
+    // No secret is reported twice, and nothing more is heard of one that has leaked.
+    const reported = reports.map((e) => e.causes.find((c) => c.startsWith('about:')));
+    expect(new Set(reported).size).toBe(reported.length);
+    for (const leak of leaks) {
+      const about = leak.causes.find((c) => c.startsWith('about:'));
+      const after = [...reports, ...leaks].filter(
+        (e) => e.id !== leak.id && e.causes.includes(about ?? '') && e.day > leak.day,
+      );
+      expect(after).toEqual([]);
+    }
+  }, 120_000);
+});

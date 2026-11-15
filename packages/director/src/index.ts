@@ -173,6 +173,12 @@ interface ApplyData {
   effects: Record<string, Effect[]>;
   baseline: Record<string, Record<string, number | string>>;
   stoppedEarly?: string;
+  /**
+   * Secrets that reached more readers during these days: the entry in the record, who now
+   * knows it, and whether what they were told was wrong. A wrong report teaches nobody the
+   * truth, so its entry stays as it was.
+   */
+  learned?: { entry: string; readers: string[]; wrong?: boolean }[];
 }
 interface ReactionRecord {
   id: string;
@@ -237,6 +243,27 @@ const CONFIDENCE_NOTICE_DAYS = 7;
 const CONFIDENCE_REST_DAYS = 90;
 /** Days between word of the army stirring and its deciding whether to move. */
 const COUP_NOTICE_DAYS = 10;
+
+/**
+ * How a secret gets out. Each day, while it is between two days and six weeks old, the
+ * player's own government has a chance of hearing of it, and there is a smaller chance of
+ * it becoming public. What the government hears is sometimes wrong.
+ */
+const SECRETS = {
+  minAgeDays: 2,
+  maxAgeDays: 45,
+  intelligenceADay: 0.04,
+  leakADay: 0.02,
+  wrongShare: 0.25,
+} as const;
+const aboutSecret = (id: string) => `about:${id}`;
+/** A sentence made to follow "that": its first letter lowered, unless it begins with a name. */
+const afterThat = (text: string) => {
+  const flat = text.replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+  return /^(The|A|An|There|It|In|On|At|Word|Opinion)\b/.test(flat)
+    ? `${flat[0]?.toLowerCase()}${flat.slice(1)}`
+    : flat;
+};
 
 /** The most stories carried forward at once: more than this and none of them is followed. */
 const STORIES_AT_ONCE = 6;
@@ -692,6 +719,18 @@ function project(events: readonly StoredEvent[]): Projection {
       case 'digest.written':
         p.digests.push({ month: event.month, text: event.text });
         break;
+    }
+  }
+  // What got out during a turn is counted once the turn has committed. A wrong report
+  // taught nobody the truth.
+  for (const r of p.resolutions) {
+    if (r.status !== 'committed') continue;
+    for (const item of r.apply?.learned ?? []) {
+      const entry = p.record.get(item.entry);
+      if (!entry || item.wrong || entry.knownTo === 'all') continue;
+      entry.knownTo = item.readers.includes('all')
+        ? 'all'
+        : [...new Set([...entry.knownTo, ...item.readers])];
     }
   }
   return p;
@@ -1702,6 +1741,7 @@ export function createDirector(options: DirectorOptions): Director {
       .filter((x) => x.status === 'committed')
       .flatMap((x) => x.apply?.events ?? []);
     const lastOf = (kind: string) => [...earlier, ...events].filter((e) => e.kind === kind).at(-1);
+    const learned: NonNullable<ApplyData['learned']> = [];
     // Whether the player has acted where a story is playing out since it began, counting
     // the orders going out in this very turn.
     const storyTended = (story: Story) =>
@@ -1907,6 +1947,65 @@ export function createDirector(options: DirectorOptions): Director {
           );
         }
       }
+      // Secrets get out. Anything that happened out of sight may reach the player's own
+      // government as an intelligence report, which is sometimes wrong, or become public.
+      for (const secret of earlier) {
+        // A report of a secret is not itself a secret to be reported.
+        if (!secret.knownTo || secret.kind === 'intelligence') continue;
+        const age = world.day - secret.day;
+        if (age < SECRETS.minAgeDays || age > SECRETS.maxAgeDays) continue;
+        const told = [...earlier, ...events].filter((e) =>
+          e.causes.includes(aboutSecret(secret.id)),
+        );
+        if (told.some((e) => e.kind === 'leak')) continue;
+        const text = (p.worded.get(secret.id) ?? secret.summary).slice(0, 280);
+        const who = secret.causes.filter((c) => c.startsWith('actor:') || c.startsWith('story:'));
+        const entry = `story-${secret.causes.find((c) => c.startsWith('story:'))?.slice(6) ?? ''}`;
+        const where = secret.place ? { place: secret.place } : {};
+        if (roll(world.seed, `leak:${secret.id}:${world.day}`) < SECRETS.leakADay) {
+          emit(
+            world.day,
+            'leak',
+            'significant',
+            `It emerged that ${afterThat(text)}.`,
+            [...who, aboutSecret(secret.id)],
+            where,
+          );
+          learned.push({ entry, readers: ['all'] });
+          continue;
+        }
+        if (
+          !told.some((e) => e.kind === 'intelligence') &&
+          roll(world.seed, `intel:${secret.id}:${world.day}`) < SECRETS.intelligenceADay
+        ) {
+          // A wrong report puts it in the wrong place. Where there is no place to get
+          // wrong, the report is right.
+          const elsewhere = world.regions.filter((x) => x.id !== secret.place);
+          const right = world.regions.find((x) => x.id === secret.place);
+          const other =
+            elsewhere[Math.floor(roll(world.seed, `intel:${secret.id}:where`) * elsewhere.length)];
+          const wrong =
+            right !== undefined &&
+            other !== undefined &&
+            text.includes(right.name) &&
+            roll(world.seed, `intel:${secret.id}:wrong`) < SECRETS.wrongShare;
+          emit(
+            world.day,
+            'intelligence',
+            'minor',
+            `Intelligence reported that ${afterThat(
+              wrong && right && other ? text.split(right.name).join(other.name) : text,
+            )}.`,
+            [...who, aboutSecret(secret.id)],
+            {
+              ...(wrong && other ? { place: other.id } : where),
+              // An intelligence report is for the government alone.
+              knownTo: ['office'],
+            },
+          );
+          learned.push({ entry, readers: ['office'], ...(wrong ? { wrong: true } : {}) });
+        }
+      }
       // Stories running in the background move on. Each day every open one has a chance
       // to develop, greater where the place is restless and smaller where the player has
       // acted on the matter since. The third development ends it, one way or the other.
@@ -2103,6 +2202,7 @@ export function createDirector(options: DirectorOptions): Director {
       effects,
       baseline,
       ...(stoppedEarly ? { stoppedEarly } : {}),
+      ...(learned.length > 0 ? { learned } : {}),
     };
   }
 
@@ -2352,6 +2452,24 @@ export function createDirector(options: DirectorOptions): Director {
           told.set(event.id, text);
           // Saved as each is written, so that one that fails takes nothing else with it.
           ledger.append({ type: 'news.worded', id, lines: { [event.id]: text } });
+          // A report or a leak of this development that was made before it was written up
+          // quoted the plain line. It is given the written one, in the wrong place still
+          // if the report had it wrong.
+          const after = state().projection.resolutions.filter((x) => x.status === 'committed');
+          for (const turn of after) {
+            const lines: Record<string, string> = {};
+            for (const report of turn.apply?.events ?? []) {
+              if (!report.causes.includes(aboutSecret(event.id))) continue;
+              const right = world.regions.find((x) => x.id === event.place)?.name;
+              const told2 = world.regions.find((x) => x.id === report.place)?.name;
+              const said = right && told2 && right !== told2 ? text.split(right).join(told2) : text;
+              lines[report.id] = `${
+                report.kind === 'leak' ? 'It emerged that' : 'Intelligence reported that'
+              } ${afterThat(said.slice(0, 280))}.`.slice(0, 400);
+            }
+            if (Object.keys(lines).length > 0)
+              ledger.append({ type: 'news.worded', id: turn.id, lines });
+          }
           // The record keeps one entry for the story: where it stands, rewritten each time.
           const summary = output.summary.trim().slice(0, 400);
           if (summary !== '') {

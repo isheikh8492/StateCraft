@@ -262,4 +262,27 @@ army's own calls, never to an adviser's or a rival's, nor to any call in a month
 learned by `office`, it is sent to the adviser and still not to a rival; made public, to
 everyone. Not played on a real model: nothing in it depends on one.
 
-Not yet built: knowledge spreading (step 3). Until then a secret stays where it started.
+**Step 3, knowledge spreading (2026-11-14).** Each day, while a secret is between two days
+and six weeks old, there is a 4% chance the player's government hears of it and a 2%
+chance it becomes public. What the government hears arrives as a card, "Intelligence
+reported that ...", known to `office` alone; a quarter of such reports put the matter in
+the wrong region, and nothing marks which. A leak arrives as a public card, "It emerged
+that ...", and nothing more is heard of that secret. The secret event itself is never
+shown. The story's entry in the record is learned by whoever the report reached, unless
+the report was wrong. A report made before its subject was written up is given the written
+text once it exists.
+
+Played on `openai/gpt-oss-20b` (`docs/research/sessions/2026-11-14-secrets.md`): over nine
+weeks, four first stirrings and an armed group's second step were kept from the player;
+one intelligence report reached the government eighteen days after its subject.
+
+Built differently from the design above, or not built:
+
+- **Telling.** What an actor says to the player is known to the player's government, as
+  designed. The other half, an actor learning what the player tells it, is not built: it
+  needs the game to understand what was said.
+- **Leaks to one more reader.** A leak goes public or not at all. It does not reach one
+  further actor first.
+- **Wrong intelligence** is a wrong card, not a second entry in the record. Advisers are
+  given the card, so they repeat the mistake; the record itself is never made wrong.
+- All the odds are placeholders until calibration.
