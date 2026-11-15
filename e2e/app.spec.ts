@@ -195,6 +195,12 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   await page.getByLabel('Jump to a specific date').fill('2027-03-20');
   await page.getByRole('button', { name: 'Go to that date' }).click();
   await expect(date(page)).toHaveText('20 March 2027');
+  // The panel also moves a single hour, or runs to the next major event.
+  const hour = (await page.getByTestId('game-hour').textContent()) ?? '';
+  await move(page, /1 hour later/);
+  await expect(page.getByTestId('game-hour')).not.toHaveText(hour);
+  await move(page, /To next major event/);
+  await expect(date(page)).not.toHaveText('20 March 2027');
 
   // Depth is written only when asked for, then kept.
   const chronicle = win(page, 'Chronicle');
