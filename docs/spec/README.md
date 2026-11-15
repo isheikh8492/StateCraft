@@ -11,6 +11,7 @@ Snapshot of the product specification as of 2026-11-11 (spec v0.2).
 | [04-world-systems.md](04-world-systems.md) | Events of every size, intelligence, elections, media, trade and sanctions, international bodies |
 | [05-model-tests.md](05-model-tests.md) | Model test suite, neutrality tests, scorecards, the in-app model check, self-improvement loops |
 | [06-architecture-review.md](06-architecture-review.md) | Review of 2026-11-11: 21 findings, what is sound, what to postpone, fix lists |
+| [07-shelved-rich-events-and-agendas.md](07-shelved-rich-events-and-agendas.md) | Agreed with the owner on 2026-11-14 and not built: a full account for every event, no order reports or summary cards, and agendas that actors hold and that change during play |
 | [../requirements.md](../requirements.md) | Numbered requirements extracted from these files, each with its milestone, source and verification method |
 
 ## Notes
