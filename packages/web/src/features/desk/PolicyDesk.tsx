@@ -57,16 +57,15 @@ export function PolicyDesk() {
     event.preventDefault();
     void add();
   };
-  const canSend = running === null && !closed;
+  // Only what has been drafted into the plan is ever sent. While something is typed and not
+  // yet drafted, nothing can be sent at all: the words go into the plan with + first, where
+  // they can be read back, and only then out. Typing and sending in one step is not offered.
+  const undrafted = draft.trim() !== '';
+  const canSend = running === null && !closed && !undrafted;
   // While this window is the one being used, Ctrl+Enter sends the plan and runs the clock.
-  // Anything still being typed goes into the plan first.
   useWindowKeys({
     'Ctrl+Enter': () => {
-      if (!canSend) return;
-      void (async () => {
-        await add();
-        await act(() => api.move({ next: true }));
-      })();
+      if (canSend) void act(() => api.move({ next: true }));
     },
   });
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -193,6 +192,11 @@ export function PolicyDesk() {
         </div>
       )}
 
+      {undrafted && !closed && running === null && (
+        <p role="status" className="px-4 pt-2 text-2xs text-fg-subtle">
+          Press + to add this to the plan. Only what is in the plan is sent.
+        </p>
+      )}
       <form onSubmit={onSubmit} className="flex items-end gap-2 p-3">
         <label htmlFor="policy-composer" className="sr-only">
           New policy box
@@ -228,9 +232,11 @@ export function PolicyDesk() {
           className={cn('h-10 shrink-0 rounded-full', fresh > 0 ? 'px-4' : 'w-10 px-0')}
           aria-label={send ? `${send} and run to the next thing` : 'Run to the next thing'}
           title={
-            send
-              ? `${send}, then run to the next thing that needs you (Ctrl+Enter)`
-              : 'Run to the next thing that needs you (Ctrl+Enter)'
+            undrafted
+              ? 'Press + to add what you have typed to the plan first'
+              : send
+                ? `${send}, then run to the next thing that needs you (Ctrl+Enter)`
+                : 'Run to the next thing that needs you (Ctrl+Enter)'
           }
           disabled={!canSend}
           onClick={() => void act(() => api.move({ next: true }))}

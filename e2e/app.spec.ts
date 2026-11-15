@@ -161,8 +161,17 @@ test('the clock moves by an hour, by months or to a date, and an entry can be re
   // The play button on the desk sends what is there and runs to the next thing that needs
   // you: here an hour on, when the first answer comes in, without the date changing.
   await expect(page.getByTestId('game-hour')).toHaveText('09:00');
-  // Ctrl+Enter in the desk sends the plan, taking what is still being typed with it.
+  // What is typed cannot be sent until it has been drafted into the plan with +: the send
+  // button is off, and Ctrl+Enter does nothing.
   await page.getByLabel(composer).fill('Increase development spending on roads.');
+  await expect(page.getByRole('button', { name: 'Run to the next thing' })).toBeDisabled();
+  await expect(page.getByText('Only what is in the plan is sent.')).toBeVisible();
+  await page.getByLabel(composer).press('Control+Enter');
+  await expect(page.getByTestId('game-hour')).toHaveText('09:00');
+  await expect(page.getByLabel(composer)).toHaveValue('Increase development spending on roads.');
+  // Drafted, it is in the plan, and Ctrl+Enter in the desk sends the plan.
+  await page.getByRole('button', { name: 'Add policy box' }).click();
+  await expect(page.getByText("This turn's plan · 1")).toBeVisible();
   await page.getByLabel(composer).press('Control+Enter');
   await expect(page.getByTestId('game-hour')).toHaveText('10:00');
   await expect(date(page)).toHaveText('8 December 2026');
