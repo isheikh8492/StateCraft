@@ -12,6 +12,7 @@ Snapshot of the product specification as of 2026-11-11 (spec v0.2).
 | [05-model-tests.md](05-model-tests.md) | Model test suite, neutrality tests, scorecards, the in-app model check, self-improvement loops |
 | [06-architecture-review.md](06-architecture-review.md) | Review of 2026-11-11: 21 findings, what is sound, what to postpone, fix lists |
 | [07-shelved-rich-events-and-agendas.md](07-shelved-rich-events-and-agendas.md) | Agreed with the owner on 2026-11-14 and not built: a full account for every event, no order reports or summary cards, and agendas that actors hold and that change during play |
+| [08-the-story-record.md](08-the-story-record.md) | Proposed on 2026-11-14 and awaiting approval: one record of the whole story, read by every model call for only what concerns it, in which every entry says who knows it |
 | [../requirements.md](../requirements.md) | Numbered requirements extracted from these files, each with its milestone, source and verification method |
 
 ## Notes
