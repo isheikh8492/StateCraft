@@ -69,6 +69,17 @@ test('a policy box keeps your words, survives a reload, and can be edited and re
   await page.getByRole('textbox', { name: 'Edit policy box' }).press('Enter');
   await expect(boxes(page).nth(1)).toContainText('Raise the sales tax slightly');
 
+  // Undrafting takes a box out of the plan and puts its words back to be reworked. It is
+  // not offered while something else is typed there.
+  await boxes(page).nth(1).getByRole('button', { name: 'Undraft policy box' }).click();
+  await expect(boxes(page)).toHaveCount(1);
+  await expect(page.getByLabel(composer)).toHaveValue('Raise the sales tax slightly');
+  await expect(
+    boxes(page).first().getByRole('button', { name: 'Undraft policy box' }),
+  ).toBeDisabled();
+  await page.getByRole('button', { name: 'Add policy box' }).click();
+  await expect(boxes(page)).toHaveCount(2);
+
   await boxes(page).nth(1).getByRole('button', { name: 'Delete policy box' }).click();
   await expect(boxes(page)).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Add policy box' })).toBeDisabled();

@@ -1,5 +1,5 @@
 import { type CardView, RESOLUTION_STEPS } from '@statecraft/protocol';
-import { Check, LoaderCircle, Pin, Play, Plus, X } from 'lucide-react';
+import { Check, LoaderCircle, Pin, Play, Plus, Undo2, X } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -61,6 +61,15 @@ export function PolicyDesk() {
   // yet drafted, nothing can be sent at all: the words go into the plan with + first, where
   // they can be read back, and only then out. Typing and sending in one step is not offered.
   const undrafted = draft.trim() !== '';
+  // Undrafting is the way back: the action leaves the plan and its words return to the box
+  // to be reworked. Offered only while the box is empty, so nothing typed is written over.
+  const undraft = async (card: CardView) => {
+    if (undrafted) return;
+    if (await act(() => api.deleteCard(card.id))) {
+      setDraft(card.text);
+      grow.current?.focus();
+    }
+  };
   const canSend = running === null && !closed && !undrafted;
   // While this window is the one being used, Ctrl+Enter sends the plan and runs the clock.
   useWindowKeys({
@@ -90,6 +99,8 @@ export function PolicyDesk() {
                 number={index + 1}
                 locked={running !== null}
                 conflict={inConflict.has(card.id) && conflictStillOpen}
+                boxInUse={undrafted}
+                onUndraft={undraft}
               />
             ))}
           </ol>
@@ -253,10 +264,16 @@ interface RowProps {
   number: number;
   locked: boolean;
   conflict: boolean;
+  /** Something is typed in the box and not yet drafted, so nothing can be put back there. */
+  boxInUse: boolean;
+  onUndraft: (card: CardView) => void;
 }
 
-/** One action in the plan: its number, its words (click to edit), and a cross to remove it. */
-function Row({ card, number, locked, conflict }: RowProps) {
+/**
+ * One action in the plan: its number, its words (click to edit), a way to take it back to
+ * the box, and a cross to remove it.
+ */
+function Row({ card, number, locked, conflict, boxInUse, onUndraft }: RowProps) {
   const { act } = useGame();
   const [draft, setDraft] = useState<string | null>(null);
   const grow = useGrow(draft ?? '');
@@ -334,6 +351,21 @@ function Row({ card, number, locked, conflict }: RowProps) {
           onClick={() => void act(() => api.patchCard(card.id, { pinned: !card.pinned }))}
         >
           <Pin />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Undraft policy box"
+          title={
+            boxInUse
+              ? 'Add or clear what is in the box first'
+              : 'Undraft: take this out of the plan and put its words back in the box'
+          }
+          className="mt-0.5"
+          disabled={locked || boxInUse}
+          onClick={() => onUndraft(card)}
+        >
+          <Undo2 />
         </Button>
         <Button
           variant="ghost"
