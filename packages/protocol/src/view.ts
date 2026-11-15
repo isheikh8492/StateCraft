@@ -184,21 +184,6 @@ export interface CallView {
   output: string;
 }
 
-/** A story still running in the background, as the chronicle's strip shows it. */
-export interface StoryView {
-  id: string;
-  /** What it is called: the kind of move, or the order's title. */
-  title: string;
-  /** Who is behind it. Empty for an order of the player's own. */
-  by: string;
-  /** The name of the place it is playing out in, if it has one. */
-  place?: string;
-  /** How far it has got: 0 just begun, 1 stirring, 2 building. The next step ends it. */
-  stage: number;
-  /** The chronicle entry to show for it: its latest development, or what began it. */
-  card: string;
-}
-
 export interface View {
   campaign: null | {
     scenarioId: string;
@@ -226,8 +211,6 @@ export interface View {
   world: WorldView | null;
   policies: PolicyView[];
   chronicle: ChronicleEntry[];
-  /** The stories still running in the background, newest first. */
-  stories: StoryView[];
   events: WorldEventView[];
   /** Points the campaign can be rewound to, oldest first. */
   timeline: { seq: number; day: number; date: string; label: string }[];

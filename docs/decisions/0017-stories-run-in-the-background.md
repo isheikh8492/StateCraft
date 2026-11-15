@@ -45,7 +45,9 @@ that develop over days and weeks while play goes on.
 - The model stated the date in some lines although told not to, and reused a venue
   ("Frontier Corps Outpost 12") across a story where a new one would read better.
 - A story's effects are on unrest only. It cannot yet move votes, standing or money.
-- The player is not shown a list of open stories, only their developments in the chronicle.
+- The player is not told which stories are running, on purpose: a list was built and taken
+  out the same day at the owner's word. What is brewing has to be read from the news. The
+  list of open stories is not sent to the app at all.
 - Follow-ups from decision 0016 still run beside stories: a move can have both a follow-up
   line and a story.
 - The odds are placeholders until calibration.

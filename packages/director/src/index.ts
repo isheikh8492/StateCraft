@@ -78,7 +78,6 @@ import {
   type ResolutionStep,
   type ScenarioInfo,
   type StoredEvent,
-  type StoryView,
   type View,
   type WorldEventView,
   type WorldView,
@@ -2963,28 +2962,6 @@ export function createDirector(options: DirectorOptions): Director {
       world: world ? worldView(world) : null,
       policies: policies.reverse(),
       chronicle,
-      // Only what the player has been told of: a story is listed once its beginning has
-      // reached them, at the stage of its latest development to do so.
-      stories: world
-        ? storiesOf(p.resolutions, world.day).flatMap((story): StoryView[] => {
-            const told = events.filter((e) => e.causes.includes(storyCause(story.id)));
-            const began =
-              events.find((e) => e.id === story.id) ??
-              events.find((e) => e.kind === 'policy.announced' && e.causes.includes(story.id));
-            if (!began || told.length >= 3) return [];
-            const place = world.regions.find((x) => x.id === story.place)?.name;
-            return [
-              {
-                id: story.id,
-                title: story.title,
-                by: story.actorName,
-                ...(place ? { place } : {}),
-                stage: told.length,
-                card: (told.at(-1) ?? began).id,
-              },
-            ];
-          })
-        : [],
       events,
       timeline: world
         ? [
