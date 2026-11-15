@@ -247,5 +247,19 @@ wording of a turn were about as before in a game three weeks old; their saving c
 game grows, since what they are sent no longer grows with it. A story development used a
 name another piece of writing had put on record.
 
-Not yet built: who knows what (step 2) and knowledge spreading (step 3). Until then every
-entry is public.
+**Step 2, who knows what (2026-11-14).** An event can say who knows it happened, and the
+one rule is enforced wherever events and entries are read: the player's view and chronicle
+are given what `office` knows, news writers what everyone knows, an adviser what `office`
+knows, any other actor what is public and what it is itself party to. An actor's story
+begins out of sight: its first stirring is known only to whoever is behind it, an armed
+group's second step too; how a story ends is public. A story's entry in the record is known
+to whoever knows its latest development, and becomes public when the story comes into the
+open. Names made up in a conversation are known to those who were in it. A secret event
+does not stop the clock and gets no unasked account.
+
+Tested without a real model (test "who knows what"): a secret about the army is sent to the
+army's own calls, never to an adviser's or a rival's, nor to any call in a month of play;
+learned by `office`, it is sent to the adviser and still not to a rival; made public, to
+everyone. Not played on a real model: nothing in it depends on one.
+
+Not yet built: knowledge spreading (step 3). Until then a secret stays where it started.

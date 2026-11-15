@@ -454,6 +454,8 @@ interface Projection {
    * thing keeps its name: the first entry under a label is the one that stands.
    */
   record: Map<string, Entry>;
+  /** Events that were secret and have since reached more readers, by event id. */
+  revealed: Map<string, string[]>;
 }
 
 function project(events: readonly StoredEvent[]): Projection {
@@ -467,6 +469,7 @@ function project(events: readonly StoredEvent[]): Projection {
     seen: new Map(),
     worded: new Map(),
     record: new Map(),
+    revealed: new Map(),
   };
   const named = () =>
     new Set([...p.record.values()].flatMap((e) => (e.label ? [e.label.toLowerCase()] : [])));
@@ -635,9 +638,18 @@ function project(events: readonly StoredEvent[]): Projection {
         break;
       }
       case 'record.learned': {
+        // An event coming to be known is recorded the same way, under `event:<its id>`.
+        if (event.id.startsWith('event:')) {
+          const id = event.id.slice('event:'.length);
+          p.revealed.set(id, [...new Set([...(p.revealed.get(id) ?? []), ...event.readers])]);
+          break;
+        }
         const entry = p.record.get(event.id);
         if (!entry || entry.knownTo === 'all') break;
-        entry.knownTo = [...new Set([...entry.knownTo, ...event.readers])];
+        // Once everyone knows, there is nobody left to list.
+        entry.knownTo = event.readers.includes('all')
+          ? 'all'
+          : [...new Set([...entry.knownTo, ...event.readers])];
         break;
       }
       case 'talk.asked': {
@@ -770,7 +782,7 @@ const isRoutine = (e: WorldEventView) =>
  * Whether an event is worth stopping the clock for: anything that is news. Routine notices
  * and colour (the weather, a cricket match) are read in passing when their hour comes.
  */
-const needsYou = (e: WorldEventView) => !isRoutine(e) && e.size !== 'colour';
+const needsYou = (e: WorldEventView) => !isRoutine(e) && e.size !== 'colour' && !e.knownTo;
 
 export interface DirectorOptions {
   ledger: Ledger;
@@ -820,6 +832,8 @@ export interface Director {
   mapData(): { regions: unknown; world: unknown } | null;
   /** The true numbers, for the developer inspector only. */
   debugWorld(): World | null;
+  /** Everything that has happened and everything on record, whoever knows it. For tests. */
+  debugRecord(): { events: WorldEventView[]; entries: Entry[] };
   /** Resolves when no background work is left. */
   idle(): Promise<void>;
   /**
@@ -1013,14 +1027,24 @@ export function createDirector(options: DirectorOptions): Director {
     ].sort((a, b) => a - b);
   };
 
-  const allEvents = (p: Projection): WorldEventView[] =>
+  /**
+   * Whether a reader knows an event happened. Most events are public. One that is not is
+   * known to those it lists, and to whoever has learned of it since. The engine itself,
+   * working out standing or who is behind what, knows everything.
+   */
+  const knowsOf = (e: WorldEventView, reader: Reader | 'engine', p: Projection) => {
+    if (!e.knownTo || reader === 'engine') return true;
+    const now = [...e.knownTo, ...(p.revealed.get(e.id) ?? [])];
+    return now.includes('all') || (reader !== 'all' && now.includes(reader));
+  };
+  const allEvents = (p: Projection, reader: Reader | 'engine' = 'engine'): WorldEventView[] =>
     p.resolutions
       .filter((r) => r.status === 'committed')
       .flatMap((r) => {
         const here = new Set(landedReactions(r, p).map((x) => x.id));
         return [
           ...(r.apply?.events ?? [])
-            .filter((e) => reached(e.day, e.hour, p))
+            .filter((e) => reached(e.day, e.hour, p) && knowsOf(e, reader, p))
             .map((e) => {
               const worded = p.worded.get(e.id);
               return worded ? { ...e, summary: worded } : e;
@@ -1383,7 +1407,7 @@ export function createDirector(options: DirectorOptions): Director {
           gist: h.gist,
         };
       }),
-      recent: allEvents(p)
+      recent: allEvents(p, 'all')
         .slice(-8)
         .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
     };
@@ -1906,6 +1930,13 @@ export function createDirector(options: DirectorOptions): Director {
                 ? 'breaking'
                 : 'fading';
         const where = region ? ` in ${region.name}` : '';
+        // An actor's story begins out of sight: its first stirring is known only to whoever
+        // is behind it. It comes into the open as it builds, unless an armed group is
+        // behind it, which keeps its second step hidden too. How it ends, everyone sees.
+        const behind = scenario.cast.find((c) => c.id === story.actorId);
+        const hidden =
+          behind !== undefined &&
+          (stage === 'stirring' || (stage === 'building' && behind.kind === 'militant'));
         const event = emit(
           world.day,
           `story.${stage}`,
@@ -1925,7 +1956,10 @@ export function createDirector(options: DirectorOptions): Director {
               ? [`actor:${story.actorId}`]
               : []),
           ],
-          story.place ? { place: story.place } : {},
+          {
+            ...(story.place ? { place: story.place } : {}),
+            ...(hidden && behind ? { knownTo: [`actor:${behind.id}`] } : {}),
+          },
         );
         // What it does to the country is the engine's: unrest where it plays out, within
         // the limits for anything outside the catalogue.
@@ -2052,7 +2086,9 @@ export function createDirector(options: DirectorOptions): Director {
       if (r.untilMajor && !stoppedEarly) {
         const notable = events
           .slice(dayStart)
-          .find((e) => !isRoutine(e) && (e.size === 'significant' || e.size === 'major'));
+          .find(
+            (e) => !isRoutine(e) && !e.knownTo && (e.size === 'significant' || e.size === 'major'),
+          );
         if (notable) stoppedEarly = notable.summary;
         else if (messages.some((m) => m.day === world.day))
           stoppedEarly = 'Someone has written to you.';
@@ -2186,6 +2222,7 @@ export function createDirector(options: DirectorOptions): Director {
     details: readonly { label: string; value: string }[],
     about: readonly string[] = [],
     from?: string,
+    knownTo: 'all' | string[] = 'all',
   ) => {
     const p = state().projection;
     const known = new Set(
@@ -2204,7 +2241,7 @@ export function createDirector(options: DirectorOptions): Director {
         // What the writing was about is what the name is filed under.
         about: [...about].slice(0, 12),
         since: currentDay(p),
-        knownTo: 'all' as const,
+        knownTo,
         ...(from ? { from } : {}),
       }));
     if (entries.length > 0) ledger.append({ type: 'record.added', entries });
@@ -2298,7 +2335,13 @@ export function createDirector(options: DirectorOptions): Director {
                 .filter((c) => c.kind !== 'advisor')
                 .map((c) => `${c.name} (${c.kind})`),
               canon: asDetails(
-                known(state().projection, 'all', [storyCause(storyId), ...aboutEvent(event)], 350),
+                known(
+                  state().projection,
+                  // Written as whoever is behind it when it is still theirs alone.
+                  (event.knownTo?.[0] as Reader | undefined) ?? 'all',
+                  [storyCause(storyId), ...aboutEvent(event)],
+                  350,
+                ),
               ),
               reader: `${scenario.headOfGovernment.name}, ${scenario.office.title}`,
             },
@@ -2314,14 +2357,17 @@ export function createDirector(options: DirectorOptions): Director {
           if (summary !== '') {
             const entryId = `story-${storyId}`;
             const ended = event.kind === 'story.breaking' || event.kind === 'story.fading';
-            if (state().projection.record.has(entryId))
+            if (state().projection.record.has(entryId)) {
               ledger.append({
                 type: 'record.revised',
                 id: entryId,
                 text: summary,
                 ...(ended ? { until: event.day + STORY_GOES_QUIET_DAYS } : {}),
               });
-            else
+              // A story that has come into the open is on record for everyone from then on.
+              if (!event.knownTo)
+                ledger.append({ type: 'record.learned', id: entryId, readers: ['all'] });
+            } else
               ledger.append({
                 type: 'record.added',
                 entries: [
@@ -2331,7 +2377,7 @@ export function createDirector(options: DirectorOptions): Director {
                     text: summary,
                     about: [...new Set([storyCause(storyId), ...aboutEvent(event)])].slice(0, 12),
                     since: opened.day,
-                    knownTo: 'all',
+                    knownTo: event.knownTo ?? 'all',
                     from: event.id,
                   },
                 ],
@@ -2402,7 +2448,7 @@ export function createDirector(options: DirectorOptions): Director {
             gist: e.summary,
           };
         }),
-        recent: allEvents(p)
+        recent: allEvents(p, 'all')
           .slice(-8)
           .map((e) => ({ id: e.id, when: e.date, summary: e.summary })),
       },
@@ -2481,7 +2527,7 @@ export function createDirector(options: DirectorOptions): Director {
     const stateNow = Object.fromEntries(world.regions.map((x) => [`unrest.${x.id}`, x.stage]));
     // Background only: what has happened, not what anyone said about it. A model shown an
     // actor's last statement gives it again, about whatever the new order is.
-    const recent = allEvents(p)
+    const recent = allEvents(p, 'all')
       .filter((e) => e.kind !== 'reaction' && e.kind !== 'move')
       .slice(-6)
       .map((e) => ({ when: e.date, summary: gist(e.summary, 200) }));
@@ -2936,7 +2982,8 @@ export function createDirector(options: DirectorOptions): Director {
     const active = running();
     const lastExecute = [...p.resolutions].reverse().find((r) => r.kind === 'execute');
     const committed = p.resolutions.filter((r) => r.status === 'committed');
-    const events = allEvents(p);
+    // The player is shown only what their own government knows of.
+    const events = allEvents(p, 'office');
     const lastCommitted = committed.at(-1);
     const lastCalls = lastCommitted ? (ledger.calls(lastCommitted.id) as CallView[]) : [];
     const reactions = new Map(
@@ -3247,7 +3294,7 @@ export function createDirector(options: DirectorOptions): Director {
     try {
       const p = state().projection;
       if (p.expanded.has(eventId)) return;
-      const all = allEvents(p);
+      const all = allEvents(p, 'all');
       const speakers = new Map(
         p.resolutions.flatMap((r) =>
           (r.reactions?.reactions ?? []).map((x) => [x.id, x.actorName] as const),
@@ -3341,6 +3388,7 @@ export function createDirector(options: DirectorOptions): Director {
       .filter(
         (e) =>
           !isRoutine(e) &&
+          !e.knownTo &&
           (e.size === 'significant' || e.size === 'major') &&
           !p.expanded.has(e.id) &&
           !writing.has(e.id),
@@ -3436,7 +3484,7 @@ export function createDirector(options: DirectorOptions): Director {
     },
     expandEntry(eventId) {
       const { projection, world, scenario } = requireCampaign();
-      const event = allEvents(projection).find((e) => e.id === eventId);
+      const event = allEvents(projection, 'office').find((e) => e.id === eventId);
       if (!event) throw new DirectorError('not_found', 'No such entry.');
       if (projection.expanded.has(eventId) || writing.has(eventId)) return;
       // Marked at once, so that the page shows it as being written before the model is free.
@@ -3457,7 +3505,12 @@ export function createDirector(options: DirectorOptions): Director {
         const now = state();
         if (!now.world) return;
         const thread = now.projection.talks.get(actorId) ?? [];
-        const events = allEvents(now.projection);
+        // What this one could have heard of: an adviser what the government knows, anyone
+        // else what is public and what it is itself party to.
+        const events = allEvents(
+          now.projection,
+          actor.kind === 'advisor' ? 'office' : `actor:${actor.id}`,
+        );
         const mine = new Set(
           committedPolicies(now.projection)
             .filter(
@@ -3564,7 +3617,14 @@ export function createDirector(options: DirectorOptions): Director {
           ...(output.lever.kind !== 'none' ? { lever: output.lever } : {}),
           ...(output.orders.length > 0 ? { orders: output.orders.slice(0, 5) } : {}),
         });
-        record(output.details, concerns);
+        // What was said in a conversation is known to those who were in it: the player's
+        // government, and whoever it was speaking to.
+        record(
+          output.details,
+          concerns,
+          undefined,
+          actor.kind === 'advisor' ? ['office'] : ['office', `actor:${actor.id}`],
+        );
         setDraft(id, null);
       });
     },
@@ -3672,6 +3732,10 @@ export function createDirector(options: DirectorOptions): Director {
       return id ? { regions: loadOutlines(id as ScenarioId), world: loadWorldOutlines() } : null;
     },
     debugWorld: () => state().world,
+    debugRecord: () => {
+      const p = state().projection;
+      return { events: allEvents(p, 'engine'), entries: [...p.record.values()] };
+    },
     async idle() {
       while (working || queue.length > 0 || background.size > 0)
         await (working ?? Promise.all(background));

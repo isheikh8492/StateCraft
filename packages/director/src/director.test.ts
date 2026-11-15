@@ -705,8 +705,25 @@ describe('stories in the background', () => {
       await director.idle();
     }
     const view = director.view();
-    const developments = view.events.filter((e) => e.kind.startsWith('story.'));
+    // Everything that happened, whoever knows of it: the engine's own record.
+    const everything = director.debugRecord().events;
+    const developments = everything.filter((e) => e.kind.startsWith('story.'));
     expect(developments.length).toBeGreaterThan(3);
+    // A story begins out of sight: its first stirring is known only to whoever is behind
+    // it, an armed group's second step too, and the player is shown neither.
+    const secret = developments.filter((e) => e.knownTo !== undefined);
+    expect(secret.length).toBeGreaterThan(0);
+    for (const e of secret) {
+      expect(['story.stirring', 'story.building']).toContain(e.kind);
+      expect(e.knownTo).toEqual([e.causes.find((c) => c.startsWith('actor:'))]);
+      expect(view.events.some((seen) => seen.id === e.id)).toBe(false);
+      expect(view.chronicle.some((seen) => seen.id === e.id)).toBe(false);
+    }
+    // How a story ends is for everyone to see.
+    for (const e of developments.filter((x) => /breaking|fading/.test(x.kind))) {
+      expect(e.knownTo).toBeUndefined();
+      expect(view.events.some((seen) => seen.id === e.id)).toBe(true);
+    }
 
     // Every development names the story it belongs to and what that story follows from.
     const byStory = new Map<string, typeof developments>();
@@ -718,7 +735,7 @@ describe('stories in the background', () => {
     }
     // Each story is one of the cast's own moves, which is on record.
     for (const id of byStory.keys())
-      expect(view.events.some((e) => e.kind === 'move' && `story:${e.id}` === id)).toBe(true);
+      expect(everything.some((e) => e.kind === 'move' && `story:${e.id}` === id)).toBe(true);
 
     // A story stirs, then builds, then ends one way or the other, never faster than every
     // three days, and has no more than three developments.
@@ -788,4 +805,88 @@ describe('losing office', () => {
     }
     expect(director.view().campaign?.over).toBeUndefined();
   }, 120_000);
+});
+
+describe('who knows what', () => {
+  it('never sends a call something its reader does not know', async () => {
+    const { director, ledger, calls } = open('standin');
+    director.start('pakistan-2026');
+    // Three things on record about the army: a plan it keeps to itself, something that has
+    // reached the player's government, and something everyone knows.
+    ledger.append({
+      type: 'record.added',
+      entries: [
+        {
+          id: 'secret',
+          kind: 'fact',
+          text: 'The army has drawn up Operation Nightjar in secret.',
+          about: ['actor:army'],
+          since: 0,
+          knownTo: ['actor:army'],
+        },
+        {
+          id: 'leaked',
+          kind: 'fact',
+          text: 'The corps commanders met at Mangla without telling the cabinet.',
+          about: ['actor:army'],
+          since: 0,
+          knownTo: ['actor:army', 'office'],
+        },
+        {
+          id: 'public',
+          kind: 'fact',
+          text: 'The army held its annual exercise near Kharian.',
+          about: ['actor:army'],
+          since: 0,
+          knownTo: 'all',
+        },
+      ],
+    });
+    const sent = async (who: string) => {
+      calls.length = 0;
+      director.ask(who, 'What is the army doing?');
+      await director.idle();
+      return calls.find((c) => c.job.startsWith('actor.reply'))?.input ?? '';
+    };
+    // The army itself is sent all three.
+    const army = await sent('army');
+    expect(army).toContain('Nightjar');
+    expect(army).toContain('Mangla');
+    expect(army).toContain('Kharian');
+    // The player's own adviser is sent what the government knows, and not the secret.
+    const adviser = await sent('interior_minister');
+    expect(adviser).not.toContain('Nightjar');
+    expect(adviser).toContain('Mangla');
+    expect(adviser).toContain('Kharian');
+    // A rival is sent only what everyone knows.
+    const rival = await sent('pti');
+    expect(rival).not.toContain('Nightjar');
+    expect(rival).not.toContain('Mangla');
+    expect(rival).toContain('Kharian');
+
+    // Over a stretch of play, nothing the cast or the news is sent holds the secret, and
+    // nothing but the adviser's own calls holds what only the government knows.
+    calls.length = 0;
+    director.addCard({
+      id: 'c-secret',
+      text: 'Launch a security operation in Balochistan.',
+      source: 'composer',
+      createdAt: '2026-11-01T00:00:00.000Z',
+    });
+    director.move({ days: 30 }, false);
+    await director.idle();
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(call.input, call.job).not.toContain('Nightjar');
+      expect(call.input, call.job).not.toContain('Mangla');
+    }
+
+    // Once the secret is learned by the government, its adviser is sent it; a rival is not.
+    ledger.append({ type: 'record.learned', id: 'secret', readers: ['office'] });
+    expect(await sent('interior_minister')).toContain('Nightjar');
+    expect(await sent('pti')).not.toContain('Nightjar');
+    // And once it is public, everyone is.
+    ledger.append({ type: 'record.learned', id: 'secret', readers: ['all'] });
+    expect(await sent('pti')).toContain('Nightjar');
+  }, 60_000);
 });

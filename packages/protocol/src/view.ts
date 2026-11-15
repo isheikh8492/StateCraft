@@ -31,6 +31,12 @@ export interface WorldEventView {
   place?: string;
   causes: string[];
   numbers: Figure[];
+  /**
+   * Who knows it happened, when not everyone does: actors' ids as `actor:<id>`, and `office`
+   * for the player's own government. Left out, it is public. An event the player's
+   * government does not know of is never sent to the app.
+   */
+  knownTo?: string[];
 }
 
 /** One thing that happened, as the chronicle shows it. Built from a recorded event. */
